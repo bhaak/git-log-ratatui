@@ -254,10 +254,16 @@ module GitLogRatatui
 
     ADD_LINE = { fg: "green" }.freeze
     DEL_LINE = { fg: "red" }.freeze
-    ADD_WORD = { bg: "dark green", fg: "light green" }.freeze
-    DEL_WORD = { bg: "dark red", fg: "light red" }.freeze
     HUNK_STYLE = { fg: "cyan" }.freeze
     META_STYLE = { fg: "yellow" }.freeze
+
+    def add_word_style
+      @tui.style(bg: RatatuiRuby::Style::Color.hex(0x003300), fg: "green")
+    end
+
+    def del_word_style
+      @tui.style(bg: RatatuiRuby::Style::Color.hex(0x330000), fg: "red")
+    end
 
     def render_diff(frame, area)
       commit = selected_commit
@@ -403,10 +409,9 @@ module GitLogRatatui
       words = type == :del ? old_words : new_words
       unchanged_set = type == :del ? lcs[:old] : lcs[:new]
       line_style_key = type == :del ? DEL_LINE : ADD_LINE
-      word_style_key = type == :del ? DEL_WORD : ADD_WORD
+      word_style = type == :del ? del_word_style : add_word_style
 
       line_style = @tui.style(**line_style_key)
-      word_style = @tui.style(**word_style_key)
 
       spans = [@tui.text_span(content: type == :del ? "-" : "+")]
       words.each_with_index do |word, i|
