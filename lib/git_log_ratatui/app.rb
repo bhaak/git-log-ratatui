@@ -68,6 +68,9 @@ module GitLogRatatui
       commits[@selected_index]
     end
 
+    FILE_HEADER_STYLE = { fg: "cyan", modifiers: [:bold] }.freeze
+    FILE_ENTRY_STYLE = { fg: "blue" }.freeze
+
     def refresh_diff
       commit = selected_commit
       raw_diff = commit ? Git.diff(@path, commit.hash) : []
@@ -76,13 +79,34 @@ module GitLogRatatui
       if @commit_info
         @metadata_lines = build_commit_metadata
         @diff_lines = raw_diff
+        @file_entries, @file_lines = build_file_list
         @metadata_count = @metadata_lines.length
+        @file_count = @file_lines.length
       else
         @metadata_lines = []
+        @file_lines = []
         @diff_lines = raw_diff
+        @file_entries = []
         @metadata_count = 0
+        @file_count = 0
       end
       @diff_scroll = 0
+    end
+
+    def build_file_list
+      entries = []
+      @diff_lines.each_with_index do |line, idx|
+        if (md = line.match(/\Adiff --git a\/(.*?) b\/(.*)/))
+          filename = md[2]
+          entries << { name: filename, diff_line: idx }
+        end
+      end
+      return [[], []] if entries.empty?
+
+      list = [["", "Changed files:", FILE_HEADER_STYLE]]
+      entries.each { |e| list << ["", e[:name], FILE_ENTRY_STYLE] }
+      list << ["", "", {}]
+      [entries, list]
     end
 
     SUBJECT_STYLE = { fg: "white", modifiers: [:bold] }.freeze
@@ -314,7 +338,7 @@ module GitLogRatatui
       commit = selected_commit
       title = commit ? "Diff — #{commit.hash[0, 8]}" : "Diff"
 
-      all_lines = @metadata_lines + @diff_lines
+      all_lines = @metadata_lines + @file_lines + @diff_lines
 
       if all_lines.empty?
         msg = commit ? "No changes in this commit." : "Select a commit to view diff."
@@ -363,8 +387,10 @@ module GitLogRatatui
     def styled_diff_line(line, idx)
       if idx < @metadata_count
         styled_metadata_line(line, idx)
+      elsif idx < @metadata_count + @file_count
+        styled_metadata_line(line, idx)
       else
-        styled_code_line(line, idx - @metadata_count)
+        styled_code_line(line, idx - @metadata_count - @file_count)
       end
     end
 
@@ -588,6 +614,12 @@ module GitLogRatatui
       in { type: :key, code: "enter" }
         handle_enter
         nil
+      in { type: :key, code: "n" } if @focus == :diff
+        handle_next_file
+        nil
+      in { type: :key, code: "p" } if @focus == :diff
+        handle_prev_file
+        nil
       in { type: :key, code:, modifiers: [] }
         handle_char(code) if @focus == :search && code.length == 1
         nil
@@ -715,6 +747,43 @@ module GitLogRatatui
       @focus = :commits
     end
 
+    def handle_next_file
+      return unless @focus == :diff
+      return if @file_entries.empty?
+
+      jump_to_nearest_file(1)
+    end
+
+    def handle_prev_file
+      return unless @focus == :diff
+      return if @file_entries.empty?
+
+      jump_to_nearest_file(-1)
+    end
+
+    def jump_to_nearest_file(direction)
+      current = @diff_scroll
+      all_lines_before_diff = @metadata_count + @file_count
+
+      if direction > 0
+        @file_entries.each do |entry|
+          target = all_lines_before_diff + entry[:diff_line]
+          if target > current
+            @diff_scroll = target
+            return
+          end
+        end
+      else
+        @file_entries.reverse_each do |entry|
+          target = all_lines_before_diff + entry[:diff_line]
+          if target < current
+            @diff_scroll = target
+            return
+          end
+        end
+      end
+    end
+
     def handle_char(char)
       @search_query = @search_query[0...@cursor_pos] + char + @search_query[@cursor_pos..]
       @cursor_pos += 1
@@ -747,7 +816,7 @@ module GitLogRatatui
     end
 
     def scroll_diff(direction)
-      total = @metadata_lines.length + @diff_lines.length
+      total = @metadata_count + @file_count + @diff_lines.length
       return if total == 0
 
       @diff_scroll += direction
@@ -810,6 +879,7 @@ module GitLogRatatui
       case panel
       when :branches then handle_branch_click(event)
       when :commits then handle_commit_click(event)
+      when :diff then handle_diff_click(event)
       end
     end
 
@@ -863,6 +933,23 @@ module GitLogRatatui
       return if commits.empty? || row_y >= commits.length
 
       @selected_index = row_y
+    end
+
+    def handle_diff_click(event)
+      area = @areas[:diff]
+      return unless area
+
+      content_line = (event.y - area.y - 1) + @diff_scroll
+      file_start = @metadata_count + 1
+      file_end = file_start + @file_entries.length - 1
+
+      if content_line >= file_start && content_line <= file_end
+        file_idx = content_line - file_start
+        entry = @file_entries[file_idx]
+        return unless entry
+
+        @diff_scroll = @metadata_count + @file_count + entry[:diff_line]
+      end
     end
   end
 end
