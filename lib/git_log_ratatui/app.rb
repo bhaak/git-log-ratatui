@@ -121,24 +121,32 @@ module GitLogRatatui
     def render_search(frame, area)
       branch_label = selected_branch || "all"
       prefix = " Search: "
-      search_text = "#{prefix}#{@search_query}"
 
-      paragraph = @tui.paragraph(
-        text: search_text,
+      text = if focused?(:search) && @search_query.empty?
+               @tui.text_line(spans: [
+                 @tui.text_span(content: prefix),
+                 @tui.text_span(content: " ", style: @tui.style(bg: :white, fg: :black))
+               ])
+             elsif focused?(:search)
+               @tui.text_line(spans: [
+                 @tui.text_span(content: prefix),
+                 @tui.text_span(content: @search_query),
+                 @tui.text_span(content: " ", style: @tui.style(bg: :white, fg: :black))
+               ])
+             else
+               @tui.text_line(spans: [
+                 @tui.text_span(content: "#{prefix}#{@search_query}")
+               ])
+             end
+
+      widget = @tui.paragraph(
+        text: text,
         block: @tui.block(
           title: "Git Log — #{@path} [#{branch_label}]",
           borders: [:all],
           border_style: focused?(:search) ? FOCUS_BORDER : nil
         )
       )
-
-      widget = if focused?(:search)
-                 cursor_x = 1 + prefix.length + @search_query.length
-                 cursor_y = 1
-                 @tui.overlay(layers: [paragraph, @tui.cursor(x: cursor_x, y: cursor_y)])
-               else
-                 paragraph
-               end
 
       frame.render_widget(widget, area)
     end
