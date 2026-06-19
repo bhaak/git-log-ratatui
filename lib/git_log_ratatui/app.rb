@@ -397,8 +397,17 @@ module GitLogRatatui
     def styled_metadata_line(line, idx)
       label, value, value_style = line
 
-      if label.empty?
+      if label.empty? && value.empty?
         return @tui.text_line(spans: [@tui.text_span(content: "")])
+      end
+
+      if label.empty?
+        value_span = if value_style.empty?
+                       @tui.text_span(content: value)
+                     else
+                       @tui.text_span(content: value, style: @tui.style(**value_style))
+                     end
+        return @tui.text_line(spans: [value_span])
       end
 
       label_text = label.ljust(LABEL_WIDTH)
