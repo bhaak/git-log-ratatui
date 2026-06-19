@@ -6,9 +6,12 @@ module GitLogRatatui
   class App
     def initialize(path = ".")
       @path = File.expand_path(path)
+      @branches = Git.branches(@path)
+      @branch_index = 0
       @all_commits = Git.commits(@path)
       @search_query = ""
       @selected_index = 0
+      @focus = :commits
     end
 
     def run
@@ -23,15 +26,29 @@ module GitLogRatatui
 
     private
 
-    def filtered_commits
-      return @all_commits if @search_query.empty?
+    def branch_names
+      ["All Branches"] + @branches
+    end
 
+    def selected_branch
+      return nil if @branch_index == 0
+
+      @branches[@branch_index - 1]
+    end
+
+    def filtered_commits
       query = @search_query.downcase
-      @all_commits.select do |c|
-        c.hash.downcase.include?(query) ||
-          c.author.downcase.include?(query) ||
-          c.date.downcase.include?(query) ||
-          c.subject.downcase.include?(query)
+      commits = @all_commits
+
+      if query.empty?
+        commits
+      else
+        commits.select do |c|
+          c.hash.downcase.include?(query) ||
+            c.author.downcase.include?(query) ||
+            c.date.downcase.include?(query) ||
+            c.subject.downcase.include?(query)
+        end
       end
     end
 
@@ -41,15 +58,28 @@ module GitLogRatatui
       @selected_index = nil if commits.empty?
 
       @tui.draw do |frame|
-        search_area, table_area, controls_area = split_layout(frame.area)
+        branch_area, right_area = horizontal_split(frame.area)
+        search_area, table_area, controls_area = vertical_split(right_area)
 
+        render_branches(frame, branch_area)
         render_search(frame, search_area)
         render_table(frame, table_area, commits)
         render_controls(frame, controls_area, commits)
       end
     end
 
-    def split_layout(area)
+    def horizontal_split(area)
+      @tui.layout_split(
+        area,
+        direction: :horizontal,
+        constraints: [
+          @tui.constraint_percentage(20),
+          @tui.constraint_percentage(80)
+        ]
+      )
+    end
+
+    def vertical_split(area)
       @tui.layout_split(
         area,
         direction: :vertical,
@@ -61,14 +91,40 @@ module GitLogRatatui
       )
     end
 
+    def render_branches(frame, area)
+      names = branch_names
+      items = names.each_with_index.map do |name, i|
+        if i == @branch_index && @focus == :branches
+          @tui.list_item(content: name, style: @tui.style(bg: :white, fg: :black))
+        elsif i == @branch_index
+          @tui.list_item(content: name, style: @tui.style(fg: :cyan))
+        else
+          @tui.list_item(content: name)
+        end
+      end
+
+      list = @tui.list(
+        items: items,
+        block: @tui.block(title: "Branches", borders: [:all]),
+        highlight_style: @tui.style(bg: :white, fg: :black),
+        highlight_symbol: "> "
+      )
+
+      list_state = @tui.list_state
+      list_state.selected_index = @branch_index
+
+      frame.render_stateful_widget(list, area, list_state)
+    end
+
     def render_search(frame, area)
+      branch_label = selected_branch || "all"
       prefix = " Search: "
       search_text = "#{prefix}#{@search_query}"
 
       widget = @tui.paragraph(
         text: search_text,
         block: @tui.block(
-          title: "Git Log — #{@path}",
+          title: "Git Log — #{@path} [#{branch_label}]",
           borders: [:all],
           border_style: { fg: "cyan" }
         )
@@ -139,8 +195,8 @@ module GitLogRatatui
       status_line = @tui.text_line(spans: [
         @tui.text_span(content: "quit", style: hotkey),
         @tui.text_span(content: ": q / C-c  "),
-        @tui.text_span(content: "up/down", style: hotkey),
-        @tui.text_span(content: ": j/k / arrows  "),
+        @tui.text_span(content: "focus", style: hotkey),
+        @tui.text_span(content: ": tab / l/h  "),
         @tui.text_span(content: "clear", style: hotkey),
         @tui.text_span(content: ": esc  "),
         @tui.text_span(content: "#{selected}/#{filtered}"),
@@ -161,32 +217,76 @@ module GitLogRatatui
       case event
       in { type: :key, code: "q" } | { type: :key, code: "c", modifiers: ["ctrl"] }
         :quit
+      in { type: :key, code: "tab" } | { type: :key, code: "l" }
+        @focus = @focus == :branches ? :commits : :branches
+        nil
+      in { type: :key, code: "h" }
+        @focus = @focus == :commits ? :branches : :commits
+        nil
       in { type: :key, code: "esc" }
         @search_query = ""
         @selected_index = 0
         nil
       in { type: :key, code: "backspace" }
-        return nil if @search_query.empty?
-
-        @search_query = @search_query[0...-1]
-        @selected_index = 0
+        handle_backspace
         nil
       in { type: :key, code: "down" } | { type: :key, code: "j" }
-        move_selection(1)
+        handle_down
+        nil
       in { type: :key, code: "up" } | { type: :key, code: "k" }
-        move_selection(-1)
+        handle_up
+        nil
+      in { type: :key, code: "enter" }
+        handle_enter
+        nil
       in { type: :key, code:, modifiers: [] }
-        if code.length == 1
-          @search_query += code
-          @selected_index = 0
-        end
+        handle_char(code) if code.length == 1
         nil
       else
         nil
       end
     end
 
-    def move_selection(direction)
+    def handle_backspace
+      return if @search_query.empty?
+
+      @search_query = @search_query[0...-1]
+      @selected_index = 0
+    end
+
+    def handle_down
+      if @focus == :branches
+        @branch_index = (@branch_index + 1) % branch_names.length
+      else
+        move_commit_selection(1)
+      end
+    end
+
+    def handle_up
+      if @focus == :branches
+        @branch_index -= 1
+        @branch_index = branch_names.length - 1 if @branch_index.negative?
+      else
+        move_commit_selection(-1)
+      end
+    end
+
+    def handle_enter
+      return unless @focus == :branches
+
+      branch = selected_branch
+      @all_commits = Git.commits(@path, branch: branch)
+      @selected_index = 0
+      @search_query = ""
+      @focus = :commits
+    end
+
+    def handle_char(char)
+      @search_query += char
+      @selected_index = 0
+    end
+
+    def move_commit_selection(direction)
       commits = filtered_commits
       return if commits.empty?
 
