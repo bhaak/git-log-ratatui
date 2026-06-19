@@ -454,6 +454,9 @@ module GitLogRatatui
       case event
       in { type: :key, code: "q" } | { type: :key, code: "c", modifiers: ["ctrl"] }
         :quit
+      in { type: :key, code: "z", modifiers: ["ctrl"] }
+        suspend
+        nil
       in { type: :key, code: "tab" } | { type: :key, code: "l" }
         cycle_focus(1)
         nil
@@ -520,6 +523,12 @@ module GitLogRatatui
       idx = PANELS.index(@focus)
       new_idx = (idx + direction) % PANELS.length
       @focus = PANELS[new_idx]
+    end
+
+    def suspend
+      RatatuiRuby.restore_terminal
+      Process.kill("TSTP", Process.pid)
+      RatatuiRuby.init_terminal
     end
 
     def handle_esc
