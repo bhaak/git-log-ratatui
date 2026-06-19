@@ -5,7 +5,7 @@ require "ratatui_ruby"
 module GitLogRatatui
   class App
     FOCUS_BORDER = { fg: "magenta" }.freeze
-    PANELS = %i[branches search commits].freeze
+    PANELS = %i[branches search commits diff].freeze
 
     def initialize(path = ".")
       @path = File.expand_path(path)
@@ -16,6 +16,8 @@ module GitLogRatatui
       @cursor_pos = 0
       @selected_index = 0
       @focus = :search
+      @diff_lines = []
+      @diff_scroll = 0
     end
 
     def run
@@ -56,25 +58,44 @@ module GitLogRatatui
       @cursor_pos = @cursor_pos.clamp(0, @search_query.length)
     end
 
+    def selected_commit
+      commits = filtered_commits
+      return nil unless @selected_index && @selected_index < commits.length
+
+      commits[@selected_index]
+    end
+
+    def refresh_diff
+      commit = selected_commit
+      @diff_lines = commit ? Git.diff(@path, commit.hash) : []
+      @diff_scroll = 0
+    end
+
     def render
       clamp_cursor
       commits = filtered_commits
       @selected_index = 0 if commits.any? && @selected_index >= commits.length
       @selected_index = nil if commits.empty?
 
+      prev_commit = @last_selected_index
+      @last_selected_index = @selected_index
+      refresh_diff if @selected_index != prev_commit
+
       @tui.draw do |frame|
         branch_area, right_area = horizontal_split(frame.area)
-        search_area, table_area, controls_area = vertical_split(right_area)
+        search_area, table_area, diff_area, controls_area = vertical_split(right_area)
 
         @areas = {
           branches: branch_area,
           search: search_area,
-          commits: table_area
+          commits: table_area,
+          diff: diff_area
         }
 
         render_branches(frame, branch_area)
         render_search(frame, search_area)
         render_table(frame, table_area, commits)
+        render_diff(frame, diff_area)
         render_controls(frame, controls_area, commits)
       end
     end
@@ -97,6 +118,7 @@ module GitLogRatatui
         constraints: [
           @tui.constraint_length(3),
           @tui.constraint_fill(1),
+          @tui.constraint_percentage(35),
           @tui.constraint_length(3)
         ]
       )
@@ -228,6 +250,72 @@ module GitLogRatatui
         ),
         area
       )
+    end
+
+    ADD_STYLE = { fg: "green" }.freeze
+    DEL_STYLE = { fg: "red" }.freeze
+    HUNK_STYLE = { fg: "cyan" }.freeze
+    META_STYLE = { fg: "yellow" }.freeze
+
+    def diff_line_style(line)
+      case line
+      when /\A\+/ then ADD_STYLE
+      when /\A-/ then DEL_STYLE
+      when /\A@@/ then HUNK_STYLE
+      when /\A(diff|index|---|\+\+\+)/ then META_STYLE
+      end
+    end
+
+    def render_diff(frame, area)
+      commit = selected_commit
+      title = commit ? "Diff — #{commit.hash[0, 8]}" : "Diff"
+
+      if @diff_lines.empty?
+        msg = commit ? "No changes in this commit." : "Select a commit to view diff."
+        widget = @tui.paragraph(
+          text: msg,
+          alignment: :center,
+          block: @tui.block(
+            title: title,
+            borders: [:all],
+            border_style: focused?(:diff) ? FOCUS_BORDER : nil
+          )
+        )
+        frame.render_widget(widget, area)
+        return
+      end
+
+      inner_height = area.height - 2
+      return if inner_height <= 0
+
+      visible_lines = @diff_lines[@diff_scroll, inner_height] || []
+
+      styled_lines = visible_lines.map do |line|
+        style = diff_line_style(line)
+        if style
+          @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
+        else
+          @tui.text_line(spans: [@tui.text_span(content: line)])
+        end
+      end
+
+      total_lines = @diff_lines.length
+      scroll_note = if total_lines > inner_height
+                      " lines #{@diff_scroll + 1}-#{[@diff_scroll + inner_height, total_lines].min}/#{total_lines}"
+                    else
+                      ""
+                    end
+
+      widget = @tui.paragraph(
+        text: styled_lines,
+        block: @tui.block(
+          title: "#{title}#{scroll_note}",
+          borders: [:all],
+          border_style: focused?(:diff) ? FOCUS_BORDER : nil
+        )
+      )
+
+      frame.render_widget(widget, area)
     end
 
     def render_controls(frame, area, commits)
@@ -400,6 +488,8 @@ module GitLogRatatui
         @branch_index = (@branch_index + 1) % branch_names.length
       when :commits
         move_commit_selection(1)
+      when :diff
+        scroll_diff(1)
       end
     end
 
@@ -410,6 +500,8 @@ module GitLogRatatui
         @branch_index = branch_names.length - 1 if @branch_index.negative?
       when :commits
         move_commit_selection(-1)
+      when :diff
+        scroll_diff(-1)
       end
     end
 
@@ -445,6 +537,13 @@ module GitLogRatatui
       @selected_index = new_index
     end
 
+    def scroll_diff(direction)
+      return if @diff_lines.empty?
+
+      @diff_scroll += direction
+      @diff_scroll = @diff_scroll.clamp(0, [@diff_lines.length - 1, 0].max)
+    end
+
     def handle_mouse(event)
       return unless event.pressed? && event.left?
 
@@ -456,6 +555,7 @@ module GitLogRatatui
       case panel
       when :branches then handle_branch_click(event)
       when :commits then handle_commit_click(event)
+      when :diff then handle_diff_click(event)
       end
     end
 
@@ -493,6 +593,10 @@ module GitLogRatatui
       return if commits.empty? || row_y >= commits.length
 
       @selected_index = row_y
+    end
+
+    def handle_diff_click(_event)
+      # just set focus, already done in handle_mouse
     end
   end
 end

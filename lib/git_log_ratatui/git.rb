@@ -38,5 +38,12 @@ module GitLogRatatui
 
       primary.sort + rest.sort
     end
+
+    def self.diff(path, commit_hash)
+      output = `git -C #{Shellwords.escape(path)} show #{Shellwords.escape(commit_hash)} --format='' 2>/dev/null`
+      return [] unless $?.success?
+
+      output.split("\n")
+    end
   end
 end
