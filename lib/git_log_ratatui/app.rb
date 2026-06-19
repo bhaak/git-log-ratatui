@@ -709,9 +709,9 @@ module GitLogRatatui
       commits_bottom = @areas[:commits]&.bottom
       diff_top = @areas[:diff]&.top
 
-      if (x - branch_right).abs <= 1
+      if (x - branch_right).abs <= 2
         :vertical
-      elsif commits_bottom && diff_top && (y - commits_bottom).abs <= 1
+      elsif commits_bottom && diff_top && (y - commits_bottom).abs <= 2
         :horizontal
       end
     end
