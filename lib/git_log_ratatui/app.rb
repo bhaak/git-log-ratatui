@@ -545,8 +545,14 @@ module GitLogRatatui
     end
 
     def handle_mouse(event)
-      return unless event.pressed? && event.left?
+      if event.pressed? && event.left?
+        handle_mouse_click(event)
+      elsif event.scroll?
+        handle_mouse_scroll(event)
+      end
+    end
 
+    def handle_mouse_click(event)
       panel = hit_test(event.x, event.y)
       return unless panel
 
@@ -555,7 +561,22 @@ module GitLogRatatui
       case panel
       when :branches then handle_branch_click(event)
       when :commits then handle_commit_click(event)
-      when :diff then handle_diff_click(event)
+      end
+    end
+
+    def handle_mouse_scroll(event)
+      panel = hit_test(event.x, event.y)
+      return unless panel
+
+      direction = event.scroll_down? ? 1 : -1
+
+      case panel
+      when :branches
+        @branch_index = (@branch_index + direction) % branch_names.length
+      when :commits
+        move_commit_selection(direction)
+      when :diff
+        scroll_diff(direction)
       end
     end
 
@@ -593,10 +614,6 @@ module GitLogRatatui
       return if commits.empty? || row_y >= commits.length
 
       @selected_index = row_y
-    end
-
-    def handle_diff_click(_event)
-      # just set focus, already done in handle_mouse
     end
   end
 end
