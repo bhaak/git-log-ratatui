@@ -398,6 +398,12 @@ module GitLogRatatui
       in { type: :key, code: "enter" }
         handle_enter
         nil
+      in { type: :key, code: "y" }
+        handle_copy(false)
+        nil
+      in { type: :key, code: "Y" }
+        handle_copy(true)
+        nil
       in { type: :key, code:, modifiers: [] }
         handle_char(code) if @focus == :search && code.length == 1
         nil
@@ -517,6 +523,21 @@ module GitLogRatatui
       @search_query = ""
       @cursor_pos = 0
       @focus = :commits
+    end
+
+    def handle_copy(full_hash)
+      commit = selected_commit
+      return unless commit
+
+      text = full_hash ? commit.hash : commit.hash[0, 8]
+      copy_to_clipboard(text)
+    end
+
+    def copy_to_clipboard(text)
+      IO.popen("pbcopy", "w") { |f| f.write(text) }
+      nil
+    rescue Errno::ENOENT
+      nil
     end
 
     def handle_char(char)
