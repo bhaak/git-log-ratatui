@@ -252,19 +252,12 @@ module GitLogRatatui
       )
     end
 
-    ADD_STYLE = { fg: "green" }.freeze
-    DEL_STYLE = { fg: "red" }.freeze
+    ADD_FG = { fg: "green" }.freeze
+    DEL_FG = { fg: "red" }.freeze
+    ADD_BG = { bg: "dark green", fg: "white" }.freeze
+    DEL_BG = { bg: "dark red", fg: "white" }.freeze
     HUNK_STYLE = { fg: "cyan" }.freeze
     META_STYLE = { fg: "yellow" }.freeze
-
-    def diff_line_style(line)
-      case line
-      when /\A\+/ then ADD_STYLE
-      when /\A-/ then DEL_STYLE
-      when /\A@@/ then HUNK_STYLE
-      when /\A(diff|index|---|\+\+\+)/ then META_STYLE
-      end
-    end
 
     def render_diff(frame, area)
       commit = selected_commit
@@ -290,13 +283,9 @@ module GitLogRatatui
 
       visible_lines = @diff_lines[@diff_scroll, inner_height] || []
 
-      styled_lines = visible_lines.map do |line|
-        style = diff_line_style(line)
-        if style
-          @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
-        else
-          @tui.text_line(spans: [@tui.text_span(content: line)])
-        end
+      styled_lines = visible_lines.each_with_index.map do |line, vi|
+        actual_idx = @diff_scroll + vi
+        styled_diff_line(line, actual_idx)
       end
 
       total_lines = @diff_lines.length
@@ -316,6 +305,121 @@ module GitLogRatatui
       )
 
       frame.render_widget(widget, area)
+    end
+
+    def styled_diff_line(line, idx)
+      meta_style = diff_meta_style(line)
+      return @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**meta_style))]) if meta_style
+
+      case line[0]
+      when "+"
+        styled_change_line(line, idx, :add)
+      when "-"
+        styled_change_line(line, idx, :del)
+      else
+        @tui.text_line(spans: [@tui.text_span(content: line)])
+      end
+    end
+
+    def styled_change_line(line, idx, type)
+      pair_line = find_pair_line(idx, type)
+      return plain_styled_line(line, type) unless pair_line
+
+      old_words, new_words = type == :del ? [tokenize(line), tokenize(pair_line)] : [tokenize(pair_line), tokenize(line)]
+      lcs_result = lcs_words(old_words, new_words)
+      word_highlight_spans(old_words, new_words, lcs_result, type)
+    end
+
+    def find_pair_line(idx, type)
+      return nil if idx < 0 || idx >= @diff_lines.length
+      return nil unless @diff_lines[idx].start_with?(type == :del ? "-" : "+")
+
+      if type == :del
+        pair_idx = idx + 1
+        while pair_idx < @diff_lines.length
+          break if @diff_lines[pair_idx].start_with?("+") || @diff_lines[pair_idx].start_with?(" ")
+          pair_idx += 1
+        end
+        return nil if pair_idx >= @diff_lines.length || !@diff_lines[pair_idx].start_with?("+")
+
+        @diff_lines[pair_idx]
+      else
+        pair_idx = idx - 1
+        while pair_idx >= 0
+          break if @diff_lines[pair_idx].start_with?("-") || @diff_lines[pair_idx].start_with?(" ")
+          pair_idx -= 1
+        end
+        return nil if pair_idx < 0 || !@diff_lines[pair_idx].start_with?("-")
+
+        @diff_lines[pair_idx]
+      end
+    end
+
+    def plain_styled_line(line, type)
+      style = type == :add ? ADD_FG : DEL_FG
+      @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
+    end
+
+    def tokenize(line)
+      line[1..].scan(/\S+|\s+/)
+    end
+
+    def lcs_words(a, b)
+      m = a.length
+      n = b.length
+      dp = Array.new(m + 1) { Array.new(n + 1, 0) }
+
+      (1..m).each do |i|
+        (1..n).each do |j|
+          dp[i][j] = if a[i - 1] == b[j - 1]
+                       dp[i - 1][j - 1] + 1
+                     else
+                       [dp[i - 1][j], dp[i][j - 1]].max
+                     end
+        end
+      end
+
+      old_set = Set.new
+      new_set = Set.new
+      i = m
+      j = n
+      while i > 0 && j > 0
+        if a[i - 1] == b[j - 1]
+          old_set.add(i - 1)
+          new_set.add(j - 1)
+          i -= 1
+          j -= 1
+        elsif dp[i - 1][j] > dp[i][j - 1]
+          i -= 1
+        else
+          j -= 1
+        end
+      end
+
+      { old: old_set, new: new_set }
+    end
+
+    def word_highlight_spans(old_words, new_words, lcs, type)
+      words = type == :del ? old_words : new_words
+      unchanged_set = type == :del ? lcs[:old] : lcs[:new]
+
+      spans = [@tui.text_span(content: type == :del ? "-" : "+")]
+      base_style = @tui.style(**(type == :del ? DEL_FG : ADD_FG))
+      hl_style = @tui.style(**(type == :del ? DEL_BG : ADD_BG))
+
+      words.each_with_index do |word, i|
+        style = unchanged_set.include?(i) ? base_style : hl_style
+        spans << @tui.text_span(content: word, style: style)
+      end
+
+      @tui.text_line(spans: spans)
+    end
+
+    def diff_meta_style(line)
+      case line
+      when /\A@@/ then HUNK_STYLE
+      when /\A(diff|index|---|\+\+\+)/ then META_STYLE
+      end
     end
 
     def render_controls(frame, area, commits)
