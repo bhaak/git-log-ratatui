@@ -526,14 +526,13 @@ module GitLogRatatui
     end
 
     def handle_paste(event)
-      return unless @focus == :search
-
       text = event.content
       return if text.empty?
 
-      @search_query = @search_query[0...@cursor_pos] + text + @search_query[@cursor_pos..]
-      @cursor_pos += text.length
+      @search_query = text
+      @cursor_pos = text.length
       @selected_index = 0
+      @focus = :search
     end
 
     def move_commit_selection(direction)
