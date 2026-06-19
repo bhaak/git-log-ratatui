@@ -13,6 +13,7 @@ module GitLogRatatui
       @branch_index = 0
       @all_commits = Git.commits(@path)
       @search_query = ""
+      @cursor_pos = 0
       @selected_index = 0
       @focus = :search
     end
@@ -51,7 +52,12 @@ module GitLogRatatui
       end
     end
 
+    def clamp_cursor
+      @cursor_pos = @cursor_pos.clamp(0, @search_query.length)
+    end
+
     def render
+      clamp_cursor
       commits = filtered_commits
       @selected_index = 0 if commits.any? && @selected_index >= commits.length
       @selected_index = nil if commits.empty?
@@ -94,11 +100,6 @@ module GitLogRatatui
       @focus == panel
     end
 
-    def border_for(panel)
-      border_style = focused?(panel) ? FOCUS_BORDER : nil
-      @tui.block(borders: [:all], border_style: border_style)
-    end
-
     def render_branches(frame, area)
       names = branch_names
       items = names.map { |name| @tui.list_item(content: name) }
@@ -122,17 +123,8 @@ module GitLogRatatui
       branch_label = selected_branch || "all"
       prefix = " Search: "
 
-      text = if focused?(:search) && @search_query.empty?
-               @tui.text_line(spans: [
-                 @tui.text_span(content: prefix),
-                 @tui.text_span(content: " ", style: @tui.style(bg: :white, fg: :black))
-               ])
-             elsif focused?(:search)
-               @tui.text_line(spans: [
-                 @tui.text_span(content: prefix),
-                 @tui.text_span(content: @search_query),
-                 @tui.text_span(content: " ", style: @tui.style(bg: :white, fg: :black))
-               ])
+      text = if focused?(:search)
+               render_search_with_cursor(prefix)
              else
                @tui.text_line(spans: [
                  @tui.text_span(content: "#{prefix}#{@search_query}")
@@ -149,6 +141,28 @@ module GitLogRatatui
       )
 
       frame.render_widget(widget, area)
+    end
+
+    def render_search_with_cursor(prefix)
+      before = @search_query[0, @cursor_pos]
+      at = @search_query[@cursor_pos]
+      after = @search_query[@cursor_pos + 1..]
+
+      cursor_style = @tui.style(bg: :white, fg: :black)
+
+      spans = [@tui.text_span(content: prefix)]
+
+      spans << @tui.text_span(content: before) unless before.empty?
+
+      if at
+        spans << @tui.text_span(content: at, style: cursor_style)
+      else
+        spans << @tui.text_span(content: " ", style: cursor_style)
+      end
+
+      spans << @tui.text_span(content: after) if after
+
+      @tui.text_line(spans: spans)
     end
 
     def render_table(frame, area, commits)
@@ -254,6 +268,21 @@ module GitLogRatatui
       in { type: :key, code: "backspace" }
         handle_backspace
         nil
+      in { type: :key, code: "delete" }
+        handle_delete
+        nil
+      in { type: :key, code: "left" }
+        handle_left
+        nil
+      in { type: :key, code: "right" }
+        handle_right
+        nil
+      in { type: :key, code: "home" }
+        handle_home
+        nil
+      in { type: :key, code: "end" }
+        handle_end
+        nil
       in { type: :key, code: "down" } | { type: :key, code: "j" }
         handle_down
         nil
@@ -281,15 +310,49 @@ module GitLogRatatui
       return unless @focus == :search
 
       @search_query = ""
+      @cursor_pos = 0
       @selected_index = 0
     end
 
     def handle_backspace
       return unless @focus == :search
-      return if @search_query.empty?
+      return if @search_query.empty? || @cursor_pos == 0
 
-      @search_query = @search_query[0...-1]
+      @search_query = @search_query[0...@cursor_pos - 1] + @search_query[@cursor_pos..]
+      @cursor_pos -= 1
       @selected_index = 0
+    end
+
+    def handle_delete
+      return unless @focus == :search
+      return if @cursor_pos >= @search_query.length
+
+      @search_query = @search_query[0...@cursor_pos] + @search_query[@cursor_pos + 1..]
+      @selected_index = 0
+    end
+
+    def handle_left
+      return unless @focus == :search
+
+      @cursor_pos -= 1 if @cursor_pos > 0
+    end
+
+    def handle_right
+      return unless @focus == :search
+
+      @cursor_pos += 1 if @cursor_pos < @search_query.length
+    end
+
+    def handle_home
+      return unless @focus == :search
+
+      @cursor_pos = 0
+    end
+
+    def handle_end
+      return unless @focus == :search
+
+      @cursor_pos = @search_query.length
     end
 
     def handle_down
@@ -318,11 +381,13 @@ module GitLogRatatui
       @all_commits = Git.commits(@path, branch: branch)
       @selected_index = 0
       @search_query = ""
+      @cursor_pos = 0
       @focus = :commits
     end
 
     def handle_char(char)
-      @search_query += char
+      @search_query = @search_query[0...@cursor_pos] + char + @search_query[@cursor_pos..]
+      @cursor_pos += 1
       @selected_index = 0
     end
 
