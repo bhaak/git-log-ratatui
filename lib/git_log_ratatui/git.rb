@@ -45,5 +45,28 @@ module GitLogRatatui
 
       output.split("\n")
     end
+
+    CommitInfo = Data.define(:subject, :hash, :parents, :author_name, :author_email, :author_date, :committer_name, :committer_email, :committer_date)
+
+    def self.commit_info(path, commit_hash)
+      fmt = "%s%x00%H%x00%P%x00%an%x00%ae%x00%ai%x00%cn%x00%ce%x00%ci"
+      output = `git -C #{Shellwords.escape(path)} show #{Shellwords.escape(commit_hash)} --no-patch --format='#{fmt}' 2>/dev/null`
+      return nil unless $?.success?
+
+      parts = output.chomp.split("\0")
+      return nil unless parts.size == 9
+
+      CommitInfo.new(
+        subject: parts[0],
+        hash: parts[1],
+        parents: parts[2],
+        author_name: parts[3],
+        author_email: parts[4],
+        author_date: parts[5],
+        committer_name: parts[6],
+        committer_email: parts[7],
+        committer_date: parts[8]
+      )
+    end
   end
 end

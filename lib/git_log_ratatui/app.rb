@@ -70,8 +70,46 @@ module GitLogRatatui
 
     def refresh_diff
       commit = selected_commit
-      @diff_lines = commit ? Git.diff(@path, commit.hash) : []
+      raw_diff = commit ? Git.diff(@path, commit.hash) : []
+      @commit_info = commit ? Git.commit_info(@path, commit.hash) : nil
+
+      if @commit_info
+        @metadata_lines = build_commit_metadata
+        @diff_lines = raw_diff
+        @metadata_count = @metadata_lines.length
+      else
+        @metadata_lines = []
+        @diff_lines = raw_diff
+        @metadata_count = 0
+      end
       @diff_scroll = 0
+    end
+
+    def build_commit_metadata
+      info = @commit_info
+      lines = []
+
+      lines << info.subject
+      lines << info.hash
+      parents = info.parents.empty? ? "—" : info.parents
+      lines << "Parents: #{parents}"
+
+      author = "#{info.author_name} <#{info.author_email}>"
+      lines << "Author: #{author}"
+      lines << "Author date: #{info.author_date}"
+
+      same_committer = info.author_name == info.committer_name && info.author_email == info.committer_email
+      unless same_committer
+        committer = "#{info.committer_name} <#{info.committer_email}>"
+        lines << "Committer: #{committer}"
+      end
+
+      unless same_committer && info.author_date == info.committer_date
+        lines << "Committer date: #{info.committer_date}"
+      end
+
+      lines << ""
+      lines
     end
 
     def render
@@ -268,11 +306,16 @@ module GitLogRatatui
       @tui.style(bg: RatatuiRuby::Style::Color.hex(0x330000), fg: "red")
     end
 
+    SUBJECT_STYLE = { fg: "white", modifiers: [:bold] }.freeze
+    LABEL_STYLE = { fg: "dark gray" }.freeze
+
     def render_diff(frame, area)
       commit = selected_commit
       title = commit ? "Diff — #{commit.hash[0, 8]}" : "Diff"
 
-      if @diff_lines.empty?
+      all_lines = @metadata_lines + @diff_lines
+
+      if all_lines.empty?
         msg = commit ? "No changes in this commit." : "Select a commit to view diff."
         widget = @tui.paragraph(
           text: msg,
@@ -290,14 +333,14 @@ module GitLogRatatui
       inner_height = area.height - 2
       return if inner_height <= 0
 
-      visible_lines = @diff_lines[@diff_scroll, inner_height] || []
+      visible_lines = all_lines[@diff_scroll, inner_height] || []
 
       styled_lines = visible_lines.each_with_index.map do |line, vi|
         actual_idx = @diff_scroll + vi
         styled_diff_line(line, actual_idx)
       end
 
-      total_lines = @diff_lines.length
+      total_lines = all_lines.length
       scroll_note = if total_lines > inner_height
                       " lines #{@diff_scroll + 1}-#{[@diff_scroll + inner_height, total_lines].min}/#{total_lines}"
                     else
@@ -317,14 +360,27 @@ module GitLogRatatui
     end
 
     def styled_diff_line(line, idx)
+      if idx < @metadata_count
+        styled_metadata_line(line, idx)
+      else
+        styled_code_line(line, idx - @metadata_count)
+      end
+    end
+
+    def styled_metadata_line(line, idx)
+      style = idx == 0 ? SUBJECT_STYLE : LABEL_STYLE
+      @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
+    end
+
+    def styled_code_line(line, idx)
       meta_style = diff_meta_style(line)
       return @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**meta_style))]) if meta_style
 
-      case line[0]
+      case line[0] || ""
       when "+"
-        styled_change_line(line, idx, :add)
+        styled_change_line(line, idx + @metadata_count, :add)
       when "-"
-        styled_change_line(line, idx, :del)
+        styled_change_line(line, idx + @metadata_count, :del)
       else
         @tui.text_line(spans: [@tui.text_span(content: line)])
       end
@@ -677,10 +733,11 @@ module GitLogRatatui
     end
 
     def scroll_diff(direction)
-      return if @diff_lines.empty?
+      total = @metadata_lines.length + @diff_lines.length
+      return if total == 0
 
       @diff_scroll += direction
-      @diff_scroll = @diff_scroll.clamp(0, [@diff_lines.length - 1, 0].max)
+      @diff_scroll = @diff_scroll.clamp(0, total - 1)
     end
 
     def handle_mouse(event)
