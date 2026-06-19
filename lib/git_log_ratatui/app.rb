@@ -4,6 +4,9 @@ require "ratatui_ruby"
 
 module GitLogRatatui
   class App
+    FOCUS_BORDER = { fg: "magenta" }.freeze
+    PANELS = %i[branches search commits].freeze
+
     def initialize(path = ".")
       @path = File.expand_path(path)
       @branches = Git.branches(@path)
@@ -11,7 +14,7 @@ module GitLogRatatui
       @all_commits = Git.commits(@path)
       @search_query = ""
       @selected_index = 0
-      @focus = :commits
+      @focus = :search
     end
 
     def run
@@ -38,17 +41,13 @@ module GitLogRatatui
 
     def filtered_commits
       query = @search_query.downcase
-      commits = @all_commits
+      return @all_commits if query.empty?
 
-      if query.empty?
-        commits
-      else
-        commits.select do |c|
-          c.hash.downcase.include?(query) ||
-            c.author.downcase.include?(query) ||
-            c.date.downcase.include?(query) ||
-            c.subject.downcase.include?(query)
-        end
+      @all_commits.select do |c|
+        c.hash.downcase.include?(query) ||
+          c.author.downcase.include?(query) ||
+          c.date.downcase.include?(query) ||
+          c.subject.downcase.include?(query)
       end
     end
 
@@ -91,22 +90,27 @@ module GitLogRatatui
       )
     end
 
+    def focused?(panel)
+      @focus == panel
+    end
+
+    def border_for(panel)
+      border_style = focused?(panel) ? FOCUS_BORDER : nil
+      @tui.block(borders: [:all], border_style: border_style)
+    end
+
     def render_branches(frame, area)
       names = branch_names
-      items = names.each_with_index.map do |name, i|
-        if i == @branch_index && @focus == :branches
-          @tui.list_item(content: name, style: @tui.style(bg: :white, fg: :black))
-        elsif i == @branch_index
-          @tui.list_item(content: name, style: @tui.style(fg: :cyan))
-        else
-          @tui.list_item(content: name)
-        end
-      end
+      items = names.map { |name| @tui.list_item(content: name) }
 
       list = @tui.list(
         items: items,
         selected_index: @branch_index,
-        block: @tui.block(title: "Branches", borders: [:all]),
+        block: @tui.block(
+          title: "Branches",
+          borders: [:all],
+          border_style: focused?(:branches) ? FOCUS_BORDER : nil
+        ),
         highlight_style: @tui.style(bg: :white, fg: :black),
         highlight_symbol: "> "
       )
@@ -124,7 +128,7 @@ module GitLogRatatui
         block: @tui.block(
           title: "Git Log — #{@path} [#{branch_label}]",
           borders: [:all],
-          border_style: { fg: "cyan" }
+          border_style: focused?(:search) ? FOCUS_BORDER : nil
         )
       )
 
@@ -158,7 +162,10 @@ module GitLogRatatui
         header: ["Hash", "Author", "Date", "Subject"],
         rows: rows,
         widths: widths,
-        block: @tui.block(borders: [:all]),
+        block: @tui.block(
+          borders: [:all],
+          border_style: focused?(:commits) ? FOCUS_BORDER : nil
+        ),
         selected_row: @selected_index,
         row_highlight_style: highlight_style,
         highlight_symbol: "> ",
@@ -178,7 +185,11 @@ module GitLogRatatui
       )
 
       frame.render_widget(
-        @tui.block(borders: [:all], children: [widget]),
+        @tui.block(
+          borders: [:all],
+          border_style: focused?(:commits) ? FOCUS_BORDER : nil,
+          children: [widget]
+        ),
         area
       )
     end
@@ -194,8 +205,8 @@ module GitLogRatatui
         @tui.text_span(content: "quit", style: hotkey),
         @tui.text_span(content: ": q / C-c  "),
         @tui.text_span(content: "focus", style: hotkey),
-        @tui.text_span(content: ": tab / l/h  "),
-        @tui.text_span(content: "clear", style: hotkey),
+        @tui.text_span(content: ": tab  "),
+        @tui.text_span(content: "clr", style: hotkey),
         @tui.text_span(content: ": esc  "),
         @tui.text_span(content: "#{selected}/#{filtered}"),
         @tui.text_span(content: filtered != total ? " (filtered from #{total})" : "")
@@ -216,14 +227,13 @@ module GitLogRatatui
       in { type: :key, code: "q" } | { type: :key, code: "c", modifiers: ["ctrl"] }
         :quit
       in { type: :key, code: "tab" } | { type: :key, code: "l" }
-        @focus = @focus == :branches ? :commits : :branches
+        cycle_focus(1)
         nil
       in { type: :key, code: "h" }
-        @focus = @focus == :commits ? :branches : :commits
+        cycle_focus(-1)
         nil
       in { type: :key, code: "esc" }
-        @search_query = ""
-        @selected_index = 0
+        handle_esc
         nil
       in { type: :key, code: "backspace" }
         handle_backspace
@@ -238,14 +248,28 @@ module GitLogRatatui
         handle_enter
         nil
       in { type: :key, code:, modifiers: [] }
-        handle_char(code) if code.length == 1
+        handle_char(code) if @focus == :search && code.length == 1
         nil
       else
         nil
       end
     end
 
+    def cycle_focus(direction)
+      idx = PANELS.index(@focus)
+      new_idx = (idx + direction) % PANELS.length
+      @focus = PANELS[new_idx]
+    end
+
+    def handle_esc
+      return unless @focus == :search
+
+      @search_query = ""
+      @selected_index = 0
+    end
+
     def handle_backspace
+      return unless @focus == :search
       return if @search_query.empty?
 
       @search_query = @search_query[0...-1]
@@ -253,18 +277,20 @@ module GitLogRatatui
     end
 
     def handle_down
-      if @focus == :branches
+      case @focus
+      when :branches
         @branch_index = (@branch_index + 1) % branch_names.length
-      else
+      when :commits
         move_commit_selection(1)
       end
     end
 
     def handle_up
-      if @focus == :branches
+      case @focus
+      when :branches
         @branch_index -= 1
         @branch_index = branch_names.length - 1 if @branch_index.negative?
-      else
+      when :commits
         move_commit_selection(-1)
       end
     end
