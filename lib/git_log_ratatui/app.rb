@@ -404,6 +404,9 @@ module GitLogRatatui
       in { type: :mouse }
         handle_mouse(event)
         nil
+      in { type: :paste }
+        handle_paste(event)
+        nil
       else
         nil
       end
@@ -519,6 +522,17 @@ module GitLogRatatui
     def handle_char(char)
       @search_query = @search_query[0...@cursor_pos] + char + @search_query[@cursor_pos..]
       @cursor_pos += 1
+      @selected_index = 0
+    end
+
+    def handle_paste(event)
+      return unless @focus == :search
+
+      text = event.content
+      return if text.empty?
+
+      @search_query = @search_query[0...@cursor_pos] + text + @search_query[@cursor_pos..]
+      @cursor_pos += text.length
       @selected_index = 0
     end
 
