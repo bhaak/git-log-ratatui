@@ -367,7 +367,7 @@ module GitLogRatatui
     end
 
     def tokenize(line)
-      line[1..].scan(/\S+|\s+/)
+      line[1..].scan(/[\[\]\(\)\{\}]|[^\[\]\(\)\{\}\s]+|\s+/)
     end
 
     def lcs_words(a, b)
