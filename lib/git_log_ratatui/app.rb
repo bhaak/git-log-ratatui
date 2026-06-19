@@ -105,15 +105,13 @@ module GitLogRatatui
 
       list = @tui.list(
         items: items,
+        selected_index: @branch_index,
         block: @tui.block(title: "Branches", borders: [:all]),
         highlight_style: @tui.style(bg: :white, fg: :black),
         highlight_symbol: "> "
       )
 
-      list_state = @tui.list_state
-      list_state.selected_index = @branch_index
-
-      frame.render_stateful_widget(list, area, list_state)
+      frame.render_widget(list, area)
     end
 
     def render_search(frame, area)
