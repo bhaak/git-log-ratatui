@@ -22,6 +22,8 @@ module GitLogRatatui
       @diff_height_pct = 35
       @dragging = nil
       @selected_file_index = nil
+      @branch_tree = build_branch_tree
+      @branch_expanded = {}
     end
 
     def run
@@ -36,14 +38,56 @@ module GitLogRatatui
 
     private
 
-    def branch_names
-      ["All Branches"] + @branches
+    TreeItem = Data.define(:name, :depth, :expandable, :expanded, :branch, :full_path)
+
+    def build_branch_tree
+      tree = { children: {} }
+      @branches.each do |branch|
+        parts = branch.split("/")
+        current = tree
+        parts.each do |part|
+          current[:children][part] ||= { children: {} }
+          current = current[:children][part]
+        end
+        current[:branch_name] = branch
+      end
+      tree
+    end
+
+    def flat_branch_items
+      items = [TreeItem.new(name: "All Branches", depth: 0, expandable: false, expanded: false, branch: nil, full_path: "")]
+
+      flush = lambda do |node, depth, parent_path|
+        names = node[:children].keys
+        sorted = names.partition { |n| n == "main" || n == "master" }.flatten
+        sorted.each do |key|
+          child = node[:children][key]
+          is_leaf = child[:children].empty?
+          full_path = parent_path.empty? ? key : "#{parent_path}/#{key}"
+          expanded = @branch_expanded[full_path] || false
+          items << TreeItem.new(
+            name: key,
+            depth: depth,
+            expandable: !is_leaf,
+            expanded: expanded,
+            branch: is_leaf ? child[:branch_name] : nil,
+            full_path: full_path
+          )
+          if !is_leaf && expanded
+            flush.call(child, depth + 1, full_path)
+          end
+        end
+      end
+
+      flush.call(@branch_tree, 1, "")
+      items
     end
 
     def selected_branch
-      return nil if @branch_index == 0
+      items = flat_branch_items
+      return nil unless @branch_index && @branch_index < items.length
 
-      @branches[@branch_index - 1]
+      items[@branch_index].branch
     end
 
     def filtered_commits
@@ -200,11 +244,22 @@ module GitLogRatatui
     end
 
     def render_branches(frame, area)
-      names = branch_names
-      items = names.map { |name| @tui.list_item(content: name) }
+      items = flat_branch_items
+      list_items = items.map do |item|
+        indent = "  " * item.depth
+
+        if item.expandable
+          marker = item.expanded ? "▼ " : "▶ "
+        else
+          marker = "  "
+        end
+
+        display = "#{indent}#{marker}#{item.name}"
+        @tui.list_item(content: display)
+      end
 
       list = @tui.list(
-        items: items,
+        items: list_items,
         selected_index: @branch_index,
         block: @tui.block(
           title: "Branches",
@@ -758,7 +813,7 @@ module GitLogRatatui
     def handle_down
       case @focus
       when :branches
-        @branch_index = (@branch_index + 1) % branch_names.length
+        @branch_index = (@branch_index + 1) % flat_branch_items.length
       when :commits
         move_commit_selection(1)
       when :diff
@@ -774,7 +829,7 @@ module GitLogRatatui
       case @focus
       when :branches
         @branch_index -= 1
-        @branch_index = branch_names.length - 1 if @branch_index.negative?
+        @branch_index = flat_branch_items.length - 1 if @branch_index.negative?
       when :commits
         move_commit_selection(-1)
       when :diff
@@ -813,12 +868,17 @@ module GitLogRatatui
     def handle_enter
       case @focus
       when :branches
-        branch = selected_branch
-        @all_commits = Git.commits(@path, branch: branch)
-        @selected_index = 0
-        @search_query = ""
-        @cursor_pos = 0
-        @focus = :commits
+        items = flat_branch_items
+        return unless @branch_index && @branch_index < items.length
+
+        item = items[@branch_index]
+        if item.expandable
+          toggle_branch_expand(item)
+        elsif @branch_index == 0
+          load_branch_commits(nil)
+        elsif item.branch
+          load_branch_commits(item.branch)
+        end
       when :diff
         return if @file_entries.empty? || @selected_file_index.nil?
 
@@ -827,6 +887,18 @@ module GitLogRatatui
 
         @diff_scroll = @metadata_count + @file_count + entry[:diff_line]
       end
+    end
+
+    def toggle_branch_expand(item)
+      @branch_expanded[item.full_path] = !item.expanded
+    end
+
+    def load_branch_commits(branch)
+      @all_commits = Git.commits(@path, branch: branch)
+      @selected_index = 0
+      @search_query = ""
+      @cursor_pos = 0
+      @focus = :commits
     end
 
     def handle_next_file
@@ -962,7 +1034,7 @@ module GitLogRatatui
 
       case panel
       when :branches
-        @branch_index = (@branch_index + direction) % branch_names.length
+        @branch_index = (@branch_index + direction) % flat_branch_items.length
       when :commits
         move_commit_selection(direction)
       when :diff
@@ -981,16 +1053,19 @@ module GitLogRatatui
       item_y = event.y - area.y - 1
       return if item_y.negative?
 
-      names = branch_names
-      return if item_y >= names.length
+      items = flat_branch_items
+      return if item_y >= items.length
 
       @branch_index = item_y
-      branch = selected_branch
-      @all_commits = Git.commits(@path, branch: branch)
-      @selected_index = 0
-      @search_query = ""
-      @cursor_pos = 0
-      @focus = :commits
+      item = items[item_y]
+
+      if item.expandable
+        toggle_branch_expand(item)
+      elsif item_y == 0
+        load_branch_commits(nil)
+      elsif item.branch
+        load_branch_commits(item.branch)
+      end
     end
 
     def handle_commit_click(event)
