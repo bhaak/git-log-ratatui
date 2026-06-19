@@ -18,6 +18,9 @@ module GitLogRatatui
       @focus = :search
       @diff_lines = []
       @diff_scroll = 0
+      @branch_width_pct = 20
+      @diff_height_pct = 35
+      @dragging = nil
     end
 
     def run
@@ -105,8 +108,8 @@ module GitLogRatatui
         area,
         direction: :horizontal,
         constraints: [
-          @tui.constraint_percentage(20),
-          @tui.constraint_percentage(80)
+          @tui.constraint_percentage(@branch_width_pct),
+          @tui.constraint_percentage(100 - @branch_width_pct)
         ]
       )
     end
@@ -118,7 +121,7 @@ module GitLogRatatui
         constraints: [
           @tui.constraint_length(3),
           @tui.constraint_fill(1),
-          @tui.constraint_percentage(35),
+          @tui.constraint_percentage(@diff_height_pct),
           @tui.constraint_length(3)
         ]
       )
@@ -682,10 +685,49 @@ module GitLogRatatui
 
     def handle_mouse(event)
       if event.pressed? && event.left?
-        handle_mouse_click(event)
+        border = find_resize_border(event.x, event.y)
+        if border
+          @dragging = border
+        else
+          @dragging = nil
+          handle_mouse_click(event)
+        end
+      elsif (event.drag? || event.moved?) && @dragging
+        handle_resize_drag(event)
+      elsif event.released?
+        @dragging = nil
+        nil
       elsif event.scroll?
         handle_mouse_scroll(event)
       end
+    end
+
+    def find_resize_border(x, y)
+      return nil unless @areas && @areas[:branches]
+
+      branch_right = @areas[:branches].right
+      commits_bottom = @areas[:commits]&.bottom
+      diff_top = @areas[:diff]&.top
+
+      if (x - branch_right).abs <= 1
+        :vertical
+      elsif commits_bottom && diff_top && (y - commits_bottom).abs <= 1
+        :horizontal
+      end
+    end
+
+    def handle_resize_drag(event)
+      case @dragging
+      when :vertical
+        total = @areas[:branches].width + @areas[:search].width
+        new_width = event.x.clamp(10, total - 20)
+        @branch_width_pct = (new_width.to_f / total * 100).clamp(10, 40)
+      when :horizontal
+        total = @areas[:branches].height
+        border_y = event.y.clamp(5, total - 5)
+        @diff_height_pct = ((total - border_y - 3).to_f / total * 100).clamp(10, 65)
+      end
+      nil
     end
 
     def handle_mouse_click(event)
