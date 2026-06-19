@@ -4,8 +4,9 @@ require "ratatui_ruby"
 
 module GitLogRatatui
   class App
-    def initialize
-      @all_commits = Git.commits
+    def initialize(path = ".")
+      @path = File.expand_path(path)
+      @all_commits = Git.commits(@path)
       @search_query = ""
       @selected_index = 0
     end
@@ -67,7 +68,7 @@ module GitLogRatatui
       widget = @tui.paragraph(
         text: search_text,
         block: @tui.block(
-          title: "Git Log",
+          title: "Git Log — #{@path}",
           borders: [:all],
           border_style: { fg: "cyan" }
         )

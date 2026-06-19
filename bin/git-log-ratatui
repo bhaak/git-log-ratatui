@@ -4,4 +4,5 @@
 require "bundler/setup"
 require_relative "../lib/git_log_ratatui"
 
-GitLogRatatui::App.new.run
+path = ARGV[0] || "."
+GitLogRatatui::App.new(path).run
