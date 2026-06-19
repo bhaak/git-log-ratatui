@@ -8,7 +8,7 @@ module GitLogRatatui
 
     def self.commits(path = ".", branch: nil)
       scope = branch ? Shellwords.escape(branch) : "--all"
-      output = `git -C #{Shellwords.escape(path)} log #{scope} --oneline --decorate --format=%H%x00%an%x00%ad%x00%s --date=short 2>/dev/null`
+      output = `git -C #{Shellwords.escape(path)} log #{scope} --oneline --decorate --format=%H%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M' 2>/dev/null`
       return [] unless $?.success?
 
       output.split("\n").map do |line|

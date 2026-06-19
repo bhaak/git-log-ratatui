@@ -178,24 +178,24 @@ module GitLogRatatui
         @tui.table_row(
           cells: [
             @tui.table_cell(content: c.hash[0, 8]),
+            @tui.table_cell(content: c.subject),
             @tui.table_cell(content: c.author),
-            @tui.table_cell(content: c.date),
-            @tui.table_cell(content: c.subject)
+            @tui.table_cell(content: c.date)
           ]
         )
       end
 
       widths = [
         @tui.constraint_length(10),
+        @tui.constraint_fill(1),
         @tui.constraint_percentage(15),
-        @tui.constraint_length(12),
-        @tui.constraint_fill(1)
+        @tui.constraint_length(18)
       ]
 
       highlight_style = @tui.style(bg: :white, fg: :black)
 
       table = @tui.table(
-        header: ["Hash", "Author", "Date", "Subject"],
+        header: ["Hash", "Subject", "Author", "Date"],
         rows: rows,
         widths: widths,
         block: @tui.block(
