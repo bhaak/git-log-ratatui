@@ -252,10 +252,10 @@ module GitLogRatatui
       )
     end
 
-    ADD_FG = { fg: "green" }.freeze
-    DEL_FG = { fg: "red" }.freeze
-    ADD_BG = { bg: "dark green", fg: "white" }.freeze
-    DEL_BG = { bg: "dark red", fg: "white" }.freeze
+    ADD_LINE = { bg: "dark green", fg: "white" }.freeze
+    DEL_LINE = { bg: "dark red", fg: "white" }.freeze
+    ADD_WORD = { bg: "green", fg: "light green" }.freeze
+    DEL_WORD = { bg: "red", fg: "light red" }.freeze
     HUNK_STYLE = { fg: "cyan" }.freeze
     META_STYLE = { fg: "yellow" }.freeze
 
@@ -356,8 +356,8 @@ module GitLogRatatui
     end
 
     def plain_styled_line(line, type)
-      style = type == :add ? ADD_FG : DEL_FG
-      @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
+      line_style = @tui.style(**(type == :add ? ADD_LINE : DEL_LINE))
+      @tui.text_line(spans: [@tui.text_span(content: line)], style: line_style)
     end
 
     def tokenize(line)
@@ -402,17 +402,22 @@ module GitLogRatatui
     def word_highlight_spans(old_words, new_words, lcs, type)
       words = type == :del ? old_words : new_words
       unchanged_set = type == :del ? lcs[:old] : lcs[:new]
+      line_style_key = type == :del ? DEL_LINE : ADD_LINE
+      word_style_key = type == :del ? DEL_WORD : ADD_WORD
+
+      line_style = @tui.style(**line_style_key)
+      word_style = @tui.style(**word_style_key)
 
       spans = [@tui.text_span(content: type == :del ? "-" : "+")]
-      base_style = @tui.style(**(type == :del ? DEL_FG : ADD_FG))
-      hl_style = @tui.style(**(type == :del ? DEL_BG : ADD_BG))
-
       words.each_with_index do |word, i|
-        style = unchanged_set.include?(i) ? base_style : hl_style
-        spans << @tui.text_span(content: word, style: style)
+        if unchanged_set.include?(i)
+          spans << @tui.text_span(content: word)
+        else
+          spans << @tui.text_span(content: word, style: word_style)
+        end
       end
 
-      @tui.text_line(spans: spans)
+      @tui.text_line(spans: spans, style: line_style)
     end
 
     def diff_meta_style(line)
