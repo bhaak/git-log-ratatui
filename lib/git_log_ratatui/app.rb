@@ -21,6 +21,7 @@ module GitLogRatatui
       @branch_width_pct = 20
       @diff_height_pct = 35
       @dragging = nil
+      @selected_file_index = nil
     end
 
     def run
@@ -91,6 +92,7 @@ module GitLogRatatui
         @file_count = 0
       end
       @diff_scroll = 0
+      @selected_file_index = @file_entries.empty? ? nil : 0
     end
 
     def build_file_list
@@ -402,10 +404,16 @@ module GitLogRatatui
       end
 
       if label.empty?
-        value_span = if value_style.empty?
+        entry_style = value_style
+        if selected_file_entry?(idx)
+          selected_fg = value_style[:fg] || "black"
+          entry_style = { bg: "white", fg: selected_fg }
+        end
+
+        value_span = if entry_style.empty?
                        @tui.text_span(content: value)
                      else
-                       @tui.text_span(content: value, style: @tui.style(**value_style))
+                       @tui.text_span(content: value, style: @tui.style(**entry_style))
                      end
         return @tui.text_line(spans: [value_span])
       end
@@ -419,6 +427,14 @@ module GitLogRatatui
                    end
 
       @tui.text_line(spans: [label_span, value_span])
+    end
+
+    def selected_file_entry?(idx)
+      return false if @file_entries.empty? || @selected_file_index.nil?
+
+      file_start = @metadata_count + 1
+      file_idx = idx - file_start
+      file_idx >= 0 && file_idx < @file_entries.length && file_idx == @selected_file_index
     end
 
     def styled_code_line(line, idx)
@@ -547,13 +563,25 @@ module GitLogRatatui
 
       hotkey = @tui.style(modifiers: [:bold])
 
+      bindings = case @focus
+                 when :branches
+                   "arrows select  enter load "
+                 when :search
+                   "←→ home/end  esc clear  "
+                 when :commits
+                   "arrows select  "
+                 when :diff
+                   "arrows select file  enter jump  n/p next/prev  home/end top/bottom  "
+                 else
+                   ""
+                 end
+
       status_line = @tui.text_line(spans: [
         @tui.text_span(content: "quit", style: hotkey),
         @tui.text_span(content: ": q / C-c  "),
         @tui.text_span(content: "focus", style: hotkey),
         @tui.text_span(content: ": tab  "),
-        @tui.text_span(content: "clr", style: hotkey),
-        @tui.text_span(content: ": esc  "),
+        @tui.text_span(content: bindings),
         @tui.text_span(content: "#{selected}/#{filtered}"),
         @tui.text_span(content: filtered != total ? " (filtered from #{total})" : "")
       ])
@@ -693,15 +721,20 @@ module GitLogRatatui
     end
 
     def handle_home
-      return unless @focus == :search
-
-      @cursor_pos = 0
+      if @focus == :diff
+        @diff_scroll = 0
+      elsif @focus == :search
+        @cursor_pos = 0
+      end
     end
 
     def handle_end
-      return unless @focus == :search
-
-      @cursor_pos = @search_query.length
+      if @focus == :diff
+        total = @metadata_count + @file_count + @diff_lines.length
+        @diff_scroll = [total - 1, 0].max
+      elsif @focus == :search
+        @cursor_pos = @search_query.length
+      end
     end
 
     def handle_word_left
@@ -729,7 +762,7 @@ module GitLogRatatui
       when :commits
         move_commit_selection(1)
       when :diff
-        scroll_diff(1)
+        select_next_file
       end
     end
 
@@ -741,55 +774,72 @@ module GitLogRatatui
       when :commits
         move_commit_selection(-1)
       when :diff
-        scroll_diff(-1)
+        select_prev_file
+      end
+    end
+
+    def select_next_file
+      return if @file_entries.empty?
+
+      if @selected_file_index.nil? || @selected_file_index >= @file_entries.length - 1
+        @selected_file_index = 0
+      else
+        @selected_file_index += 1
+      end
+    end
+
+    def select_prev_file
+      return if @file_entries.empty?
+
+      if @selected_file_index.nil? || @selected_file_index <= 0
+        @selected_file_index = @file_entries.length - 1
+      else
+        @selected_file_index -= 1
       end
     end
 
     def handle_enter
-      return unless @focus == :branches
+      case @focus
+      when :branches
+        branch = selected_branch
+        @all_commits = Git.commits(@path, branch: branch)
+        @selected_index = 0
+        @search_query = ""
+        @cursor_pos = 0
+        @focus = :commits
+      when :diff
+        return if @file_entries.empty? || @selected_file_index.nil?
 
-      branch = selected_branch
-      @all_commits = Git.commits(@path, branch: branch)
-      @selected_index = 0
-      @search_query = ""
-      @cursor_pos = 0
-      @focus = :commits
+        entry = @file_entries[@selected_file_index]
+        return unless entry
+
+        @diff_scroll = @metadata_count + @file_count + entry[:diff_line]
+      end
     end
 
     def handle_next_file
       return unless @focus == :diff
       return if @file_entries.empty?
 
-      jump_to_nearest_file(1)
+      if @selected_file_index.nil? || @selected_file_index >= @file_entries.length - 1
+        @selected_file_index = 0
+        @diff_scroll = @metadata_count + @file_count + @file_entries[0][:diff_line]
+      else
+        @selected_file_index += 1
+        @diff_scroll = @metadata_count + @file_count + @file_entries[@selected_file_index][:diff_line]
+      end
     end
 
     def handle_prev_file
       return unless @focus == :diff
       return if @file_entries.empty?
 
-      jump_to_nearest_file(-1)
-    end
-
-    def jump_to_nearest_file(direction)
-      current = @diff_scroll
-      all_lines_before_diff = @metadata_count + @file_count
-
-      if direction > 0
-        @file_entries.each do |entry|
-          target = all_lines_before_diff + entry[:diff_line]
-          if target > current
-            @diff_scroll = target
-            return
-          end
-        end
+      if @selected_file_index.nil? || @selected_file_index <= 0
+        @diff_scroll = 0
+        @selected_file_index = 0
       else
-        @file_entries.reverse_each do |entry|
-          target = all_lines_before_diff + entry[:diff_line]
-          if target < current
-            @diff_scroll = target
-            return
-          end
-        end
+        @selected_file_index -= 1
+        @diff_scroll = @metadata_count + @file_count + @file_entries[@selected_file_index][:diff_line]
       end
     end
 
@@ -954,9 +1004,10 @@ module GitLogRatatui
 
       if content_line >= file_start && content_line <= file_end
         file_idx = content_line - file_start
-        entry = @file_entries[file_idx]
-        return unless entry
+        return if file_idx >= @file_entries.length
 
+        @selected_file_index = file_idx
+        entry = @file_entries[file_idx]
         @diff_scroll = @metadata_count + @file_count + entry[:diff_line]
       end
     end
