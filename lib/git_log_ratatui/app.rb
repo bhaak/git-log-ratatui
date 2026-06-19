@@ -262,6 +262,18 @@ module GitLogRatatui
       in { type: :key, code: "h" }
         cycle_focus(-1)
         nil
+      in { type: :key, code: "a", modifiers: ["ctrl"] }
+        handle_home
+        nil
+      in { type: :key, code: "e", modifiers: ["ctrl"] }
+        handle_end
+        nil
+      in { type: :key, code: "left", modifiers: ["ctrl"] }
+        handle_word_left
+        nil
+      in { type: :key, code: "right", modifiers: ["ctrl"] }
+        handle_word_right
+        nil
       in { type: :key, code: "esc" }
         handle_esc
         nil
@@ -353,6 +365,25 @@ module GitLogRatatui
       return unless @focus == :search
 
       @cursor_pos = @search_query.length
+    end
+
+    def handle_word_left
+      return unless @focus == :search
+
+      pos = @cursor_pos - 1
+      pos -= 1 while pos > 0 && @search_query[pos] == " "
+      pos -= 1 while pos > 0 && @search_query[pos - 1] != " "
+      pos -= 1 while pos > 0 && @search_query[pos] != " "
+      @cursor_pos = [pos, 0].max
+    end
+
+    def handle_word_right
+      return unless @focus == :search
+
+      pos = @cursor_pos
+      pos += 1 while pos < @search_query.length && @search_query[pos] != " "
+      pos += 1 while pos < @search_query.length && @search_query[pos] == " "
+      @cursor_pos = pos
     end
 
     def handle_down
