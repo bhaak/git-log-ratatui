@@ -474,6 +474,12 @@ module GitLogRatatui
       return if item_y >= names.length
 
       @branch_index = item_y
+      branch = selected_branch
+      @all_commits = Git.commits(@path, branch: branch)
+      @selected_index = 0
+      @search_query = ""
+      @cursor_pos = 0
+      @focus = :commits
     end
 
     def handle_commit_click(event)
