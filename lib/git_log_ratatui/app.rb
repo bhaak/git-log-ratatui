@@ -372,9 +372,8 @@ module GitLogRatatui
 
       pos = @cursor_pos - 1
       pos -= 1 while pos > 0 && @search_query[pos] == " "
-      pos -= 1 while pos > 0 && @search_query[pos - 1] != " "
-      pos -= 1 while pos > 0 && @search_query[pos] != " "
-      @cursor_pos = [pos, 0].max
+      pos -= 1 while pos >= 0 && @search_query[pos] != " "
+      @cursor_pos = pos + 1
     end
 
     def handle_word_right
