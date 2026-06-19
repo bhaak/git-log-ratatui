@@ -460,7 +460,7 @@ module GitLogRatatui
       in { type: :key, code: "tab" } | { type: :key, code: "l" }
         cycle_focus(1)
         nil
-      in { type: :key, code: "h" }
+      in { type: :key, code: "tab", modifiers: ["shift"] } | { type: :key, code: "h" }
         cycle_focus(-1)
         nil
       in { type: :key, code: "a", modifiers: ["ctrl"] }
