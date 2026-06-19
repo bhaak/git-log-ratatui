@@ -85,31 +85,36 @@ module GitLogRatatui
       @diff_scroll = 0
     end
 
+    SUBJECT_STYLE = { fg: "white", modifiers: [:bold] }.freeze
+    VALUE_STYLE = { fg: "white" }.freeze
+    LABEL_STYLE = { fg: "dark gray" }.freeze
+    LABEL_WIDTH = 15
+
     def build_commit_metadata
       info = @commit_info
-      lines = []
+      pairs = []
 
-      lines << info.subject
-      lines << info.hash
+      pairs << ["Subject:", info.subject, SUBJECT_STYLE]
+      pairs << ["Hash:", info.hash, VALUE_STYLE]
       parents = info.parents.empty? ? "—" : info.parents
-      lines << "Parents: #{parents}"
+      pairs << ["Parents:", parents, VALUE_STYLE]
 
       author = "#{info.author_name} <#{info.author_email}>"
-      lines << "Author: #{author}"
-      lines << "Author date: #{info.author_date}"
+      pairs << ["Author:", author, VALUE_STYLE]
+      pairs << ["Author date:", info.author_date, VALUE_STYLE]
 
       same_committer = info.author_name == info.committer_name && info.author_email == info.committer_email
       unless same_committer
         committer = "#{info.committer_name} <#{info.committer_email}>"
-        lines << "Committer: #{committer}"
+        pairs << ["Committer:", committer, VALUE_STYLE]
       end
 
       unless same_committer && info.author_date == info.committer_date
-        lines << "Committer date: #{info.committer_date}"
+        pairs << ["Committer date:", info.committer_date, VALUE_STYLE]
       end
 
-      lines << ""
-      lines
+      pairs << ["", "", {}]
+      pairs
     end
 
     def render
@@ -306,9 +311,6 @@ module GitLogRatatui
       @tui.style(bg: RatatuiRuby::Style::Color.hex(0x330000), fg: "red")
     end
 
-    SUBJECT_STYLE = { fg: "white", modifiers: [:bold] }.freeze
-    LABEL_STYLE = { fg: "dark gray" }.freeze
-
     def render_diff(frame, area)
       commit = selected_commit
       title = commit ? "Diff — #{commit.hash[0, 8]}" : "Diff"
@@ -368,8 +370,21 @@ module GitLogRatatui
     end
 
     def styled_metadata_line(line, idx)
-      style = idx == 0 ? SUBJECT_STYLE : LABEL_STYLE
-      @tui.text_line(spans: [@tui.text_span(content: line, style: @tui.style(**style))])
+      label, value, value_style = line
+
+      if label.empty?
+        return @tui.text_line(spans: [@tui.text_span(content: "")])
+      end
+
+      label_text = label.ljust(LABEL_WIDTH)
+      label_span = @tui.text_span(content: label_text, style: @tui.style(**LABEL_STYLE))
+      value_span = if value_style.empty?
+                     @tui.text_span(content: value)
+                   else
+                     @tui.text_span(content: value, style: @tui.style(**value_style))
+                   end
+
+      @tui.text_line(spans: [label_span, value_span])
     end
 
     def styled_code_line(line, idx)
