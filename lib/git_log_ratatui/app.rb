@@ -762,7 +762,11 @@ module GitLogRatatui
       when :commits
         move_commit_selection(1)
       when :diff
-        select_next_file
+        if file_list_visible?
+          select_next_file
+        else
+          scroll_diff(1)
+        end
       end
     end
 
@@ -774,8 +778,16 @@ module GitLogRatatui
       when :commits
         move_commit_selection(-1)
       when :diff
-        select_prev_file
+        if file_list_visible?
+          select_prev_file
+        else
+          scroll_diff(-1)
+        end
       end
+    end
+
+    def file_list_visible?
+      @file_entries.any? && @diff_scroll < @metadata_count + @file_count
     end
 
     def select_next_file
