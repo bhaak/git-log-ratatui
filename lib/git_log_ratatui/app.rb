@@ -66,6 +66,12 @@ module GitLogRatatui
         branch_area, right_area = horizontal_split(frame.area)
         search_area, table_area, controls_area = vertical_split(right_area)
 
+        @areas = {
+          branches: branch_area,
+          search: search_area,
+          commits: table_area
+        }
+
         render_branches(frame, branch_area)
         render_search(frame, search_area)
         render_table(frame, table_area, commits)
@@ -307,6 +313,9 @@ module GitLogRatatui
       in { type: :key, code:, modifiers: [] }
         handle_char(code) if @focus == :search && code.length == 1
         nil
+      in { type: :mouse }
+        handle_mouse(event)
+        nil
       else
         nil
       end
@@ -434,6 +443,50 @@ module GitLogRatatui
       end
 
       @selected_index = new_index
+    end
+
+    def handle_mouse(event)
+      return unless event.pressed? && event.left?
+
+      panel = hit_test(event.x, event.y)
+      return unless panel
+
+      @focus = panel
+
+      case panel
+      when :branches then handle_branch_click(event)
+      when :commits then handle_commit_click(event)
+      end
+    end
+
+    def hit_test(x, y)
+      PANELS.find { |panel| @areas[panel]&.contains?(x, y) }
+    end
+
+    def handle_branch_click(event)
+      area = @areas[:branches]
+      return unless area
+
+      item_y = event.y - area.y - 1
+      return if item_y.negative?
+
+      names = branch_names
+      return if item_y >= names.length
+
+      @branch_index = item_y
+    end
+
+    def handle_commit_click(event)
+      area = @areas[:commits]
+      return unless area
+
+      row_y = event.y - area.y - 2
+      return if row_y.negative?
+
+      commits = filtered_commits
+      return if commits.empty? || row_y >= commits.length
+
+      @selected_index = row_y
     end
   end
 end
