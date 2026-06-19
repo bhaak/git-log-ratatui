@@ -252,10 +252,10 @@ module GitLogRatatui
       )
     end
 
-    ADD_LINE = { bg: "dark green", fg: "white" }.freeze
-    DEL_LINE = { bg: "dark red", fg: "white" }.freeze
-    ADD_WORD = { bg: "green", fg: "light green" }.freeze
-    DEL_WORD = { bg: "red", fg: "light red" }.freeze
+    ADD_LINE = { fg: "green" }.freeze
+    DEL_LINE = { fg: "red" }.freeze
+    ADD_WORD = { bg: "dark green", fg: "light green" }.freeze
+    DEL_WORD = { bg: "dark red", fg: "light red" }.freeze
     HUNK_STYLE = { fg: "cyan" }.freeze
     META_STYLE = { fg: "yellow" }.freeze
 
