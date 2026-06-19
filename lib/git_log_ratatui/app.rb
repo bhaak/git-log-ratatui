@@ -86,7 +86,6 @@ module GitLogRatatui
     end
 
     SUBJECT_STYLE = { fg: "white", modifiers: [:bold] }.freeze
-    VALUE_STYLE = { fg: "white" }.freeze
     LABEL_STYLE = { fg: "dark gray" }.freeze
     LABEL_WIDTH = 15
 
@@ -95,22 +94,22 @@ module GitLogRatatui
       pairs = []
 
       pairs << ["Subject:", info.subject, SUBJECT_STYLE]
-      pairs << ["Hash:", info.hash, VALUE_STYLE]
+      pairs << ["Hash:", info.hash, {}]
       parents = info.parents.empty? ? "—" : info.parents
-      pairs << ["Parents:", parents, VALUE_STYLE]
+      pairs << ["Parents:", parents, {}]
 
       author = "#{info.author_name} <#{info.author_email}>"
-      pairs << ["Author:", author, VALUE_STYLE]
-      pairs << ["Author date:", info.author_date, VALUE_STYLE]
+      pairs << ["Author:", author, {}]
+      pairs << ["Author date:", info.author_date, {}]
 
       same_committer = info.author_name == info.committer_name && info.author_email == info.committer_email
       unless same_committer
         committer = "#{info.committer_name} <#{info.committer_email}>"
-        pairs << ["Committer:", committer, VALUE_STYLE]
+        pairs << ["Committer:", committer, {}]
       end
 
       unless same_committer && info.author_date == info.committer_date
-        pairs << ["Committer date:", info.committer_date, VALUE_STYLE]
+        pairs << ["Committer date:", info.committer_date, {}]
       end
 
       pairs << ["", "", {}]
