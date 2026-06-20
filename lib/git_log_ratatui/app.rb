@@ -330,9 +330,14 @@ module GitLogRatatui
     def render_table(frame, area, commits)
       return render_empty_table(frame, area) if commits.empty?
 
+      max_graph = commits.map { |c| c.graph.length }.max
+      graph_width = [max_graph, 4].max
+
       rows = commits.map do |c|
+        graph = c.graph.ljust(graph_width)
         @tui.table_row(
           cells: [
+            @tui.table_cell(content: graph),
             @tui.table_cell(content: c.hash[0, 8]),
             @tui.table_cell(content: c.subject),
             @tui.table_cell(content: c.author),
@@ -342,6 +347,7 @@ module GitLogRatatui
       end
 
       widths = [
+        @tui.constraint_length(graph_width),
         @tui.constraint_length(10),
         @tui.constraint_fill(1),
         @tui.constraint_percentage(15),
@@ -351,7 +357,7 @@ module GitLogRatatui
       highlight_style = @tui.style(bg: :white, fg: :black)
 
       table = @tui.table(
-        header: ["Hash", "Subject", "Author", "Date"],
+        header: ["Graph", "Hash", "Subject", "Author", "Date"],
         rows: rows,
         widths: widths,
         block: @tui.block(

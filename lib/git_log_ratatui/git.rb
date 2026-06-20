@@ -4,19 +4,25 @@ require "shellwords"
 
 module GitLogRatatui
   module Git
-    Commit = Data.define(:hash, :author, :date, :subject)
+    Commit = Data.define(:hash, :author, :date, :subject, :graph)
+
+    GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
 
     def self.commits(path = ".", branch: nil)
       scope = branch ? Shellwords.escape(branch) : "--all"
-      output = `git -C #{Shellwords.escape(path)} log #{scope} --oneline --decorate --format=%H%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M' 2>/dev/null`
+      fmt = "--format=%H%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M'"
+      output = `git -C #{Shellwords.escape(path)} log #{scope} --graph #{fmt} 2>/dev/null`
       return [] unless $?.success?
 
-      output.split("\n").map do |line|
-        parts = line.split("\0")
-        next unless parts.size == 4
+      output.split("\n").filter_map do |line|
+        md = line.match(GRAPH_LINE_RE)
+        next unless md
 
-        Commit.new(hash: parts[0], author: parts[1], date: parts[2], subject: parts[3])
-      end.compact
+        parts = line[md.end(0)..].split("\0")
+        next unless parts.size == 3
+
+        Commit.new(graph: md[1], hash: md[2], author: parts[0], date: parts[1], subject: parts[2])
+      end
     end
 
     def self.branches(path = ".")
