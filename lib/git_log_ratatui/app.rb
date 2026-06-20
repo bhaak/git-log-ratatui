@@ -38,7 +38,7 @@ module GitLogRatatui
 
     private
 
-    TreeItem = Data.define(:name, :depth, :expandable, :expanded, :branch, :full_path)
+    TreeItem = Data.define(:name, :depth, :expandable, :expanded, :branch, :full_path, :tree_prefix)
 
     def build_branch_tree
       tree = { children: {} }
@@ -55,31 +55,37 @@ module GitLogRatatui
     end
 
     def flat_branch_items
-      items = [TreeItem.new(name: "All Branches", depth: 0, expandable: false, expanded: false, branch: nil, full_path: "")]
+      items = [TreeItem.new(name: "All Branches", depth: 0, expandable: false, expanded: false, branch: nil, full_path: "", tree_prefix: "")]
 
-      flush = lambda do |node, depth, parent_path|
+      flush = lambda do |node, depth, parent_path, ancestors|
         names = node[:children].keys
         sorted = names.partition { |n| n == "main" || n == "master" }.flatten
-        sorted.each do |key|
+        sorted.each_with_index do |key, idx|
           child = node[:children][key]
           is_leaf = child[:children].empty?
           full_path = parent_path.empty? ? key : "#{parent_path}/#{key}"
           expanded = @branch_expanded[full_path] || false
+          is_last = idx == sorted.length - 1
+
+          prefix = ancestors.map { |a| a ? "  " : "│ " }.join
+          connector = is_last ? "└" : "├"
           items << TreeItem.new(
             name: key,
             depth: depth,
             expandable: !is_leaf,
             expanded: expanded,
             branch: is_leaf ? child[:branch_name] : nil,
-            full_path: full_path
+            full_path: full_path,
+            tree_prefix: "#{prefix}#{connector}"
           )
+
           if !is_leaf && expanded
-            flush.call(child, depth + 1, full_path)
+            flush.call(child, depth + 1, full_path, ancestors + [is_last])
           end
         end
       end
 
-      flush.call(@branch_tree, 1, "")
+      flush.call(@branch_tree, 1, "", [])
       items
     end
 
@@ -245,16 +251,18 @@ module GitLogRatatui
 
     def render_branches(frame, area)
       items = flat_branch_items
-      list_items = items.map do |item|
-        indent = "  " * item.depth
-
+      list_items = items.map.with_index do |item, i|
         if item.expandable
           marker = item.expanded ? "▼ " : "▶ "
         else
           marker = "  "
         end
 
-        display = "#{indent}#{marker}#{item.name}"
+        if i == 0
+          display = item.name
+        else
+          display = "#{item.tree_prefix}#{marker}#{item.name}"
+        end
         @tui.list_item(content: display)
       end
 
@@ -706,6 +714,9 @@ module GitLogRatatui
       in { type: :key, code: "enter" }
         handle_enter
         nil
+      in { type: :key, code: " " }
+        handle_space
+        nil
       in { type: :key, code: "n" } if @focus == :diff
         handle_next_file
         nil
@@ -764,15 +775,19 @@ module GitLogRatatui
     end
 
     def handle_left
-      return unless @focus == :search
-
-      @cursor_pos -= 1 if @cursor_pos > 0
+      if @focus == :branches
+        branch_toggle(false)
+      elsif @focus == :search
+        @cursor_pos -= 1 if @cursor_pos > 0
+      end
     end
 
     def handle_right
-      return unless @focus == :search
-
-      @cursor_pos += 1 if @cursor_pos < @search_query.length
+      if @focus == :branches
+        branch_toggle(true)
+      elsif @focus == :search
+        @cursor_pos += 1 if @cursor_pos < @search_query.length
+      end
     end
 
     def handle_home
@@ -873,7 +888,7 @@ module GitLogRatatui
 
         item = items[@branch_index]
         if item.expandable
-          toggle_branch_expand(item)
+          @branch_expanded[item.full_path] = !item.expanded
         elsif @branch_index == 0
           load_branch_commits(nil)
         elsif item.branch
@@ -889,8 +904,15 @@ module GitLogRatatui
       end
     end
 
-    def toggle_branch_expand(item)
-      @branch_expanded[item.full_path] = !item.expanded
+    def branch_toggle(expand)
+      items = flat_branch_items
+      return unless @branch_index && @branch_index < items.length
+
+      item = items[@branch_index]
+      return unless item.expandable
+      return if item.expanded == expand
+
+      @branch_expanded[item.full_path] = expand
     end
 
     def load_branch_commits(branch)
@@ -925,6 +947,18 @@ module GitLogRatatui
         @selected_file_index -= 1
         @diff_scroll = @metadata_count + @file_count + @file_entries[@selected_file_index][:diff_line]
       end
+    end
+
+    def handle_space
+      return unless @focus == :branches
+
+      items = flat_branch_items
+      return unless @branch_index && @branch_index < items.length
+
+      item = items[@branch_index]
+      return unless item.expandable
+
+      @branch_expanded[item.full_path] = !item.expanded
     end
 
     def handle_char(char)
@@ -1060,7 +1094,7 @@ module GitLogRatatui
       item = items[item_y]
 
       if item.expandable
-        toggle_branch_expand(item)
+        @branch_expanded[item.full_path] = !item.expanded
       elsif item_y == 0
         load_branch_commits(nil)
       elsif item.branch
