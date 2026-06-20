@@ -4,9 +4,10 @@ require "shellwords"
 
 module GitLogRatatui
   module Git
-    Commit = Data.define(:hash, :author, :date, :subject, :graph)
+    Commit = Data.define(:hash, :author, :date, :subject, :graph, :graph_only)
 
     GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
+    GRAPH_ONLY_RE = /\A([|\/\\_ ]+)\z/
 
     def self.commits(path = ".", branch: nil)
       scope = branch ? Shellwords.escape(branch) : "--all"
@@ -16,12 +17,14 @@ module GitLogRatatui
 
       output.split("\n").filter_map do |line|
         md = line.match(GRAPH_LINE_RE)
-        next unless md
+        if md
+          parts = line[md.end(0)..].split("\0")
+          next unless parts.size == 3
 
-        parts = line[md.end(0)..].split("\0")
-        next unless parts.size == 3
-
-        Commit.new(graph: md[1].tr("*", "◦"), hash: md[2], author: parts[0], date: parts[1], subject: parts[2])
+          Commit.new(graph: md[1].tr("*", "◦"), hash: md[2], author: parts[0], date: parts[1], subject: parts[2], graph_only: false)
+        elsif (gm = line.match(GRAPH_ONLY_RE))
+          Commit.new(graph: gm[1], hash: "", author: "", date: "", subject: "", graph_only: true)
+        end
       end
     end
 
