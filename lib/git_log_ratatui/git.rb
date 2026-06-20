@@ -4,13 +4,13 @@ require "shellwords"
 
 module GitLogRatatui
   module Git
-    Commit = Data.define(:hash, :author, :date, :subject, :graph)
+    Commit = Data.define(:hash, :author, :date, :subject, :graph, :merge)
 
     GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
 
     def self.commits(path = ".", branch: nil)
       scope = branch ? Shellwords.escape(branch) : "--all"
-      fmt = "--format=%H%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M'"
+      fmt = "--format=%H%x00%P%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M'"
       output = `git -C #{Shellwords.escape(path)} log #{scope} --graph #{fmt} 2>/dev/null`
       return [] unless $?.success?
 
@@ -19,9 +19,17 @@ module GitLogRatatui
         next unless md
 
         parts = line[md.end(0)..].split("\0")
-        next unless parts.size == 3
+        next unless parts.size == 4
 
-        Commit.new(graph: unicode_graph(md[1]), hash: md[2], author: parts[0], date: parts[1], subject: parts[2])
+        parents = parts[0].split
+        Commit.new(
+          graph: unicode_graph(md[1]),
+          hash: md[2],
+          author: parts[1],
+          date: parts[2],
+          subject: parts[3],
+          merge: parents.size > 1
+        )
       end
     end
 

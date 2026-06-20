@@ -335,15 +335,24 @@ module GitLogRatatui
 
       rows = commits.map do |c|
         graph = c.graph.ljust(graph_width)
-        @tui.table_row(
-          cells: [
-            @tui.table_cell(content: graph),
-            @tui.table_cell(content: c.hash[0, 8]),
-            @tui.table_cell(content: c.subject),
-            @tui.table_cell(content: c.author),
-            @tui.table_cell(content: c.date)
-          ]
-        )
+        cells = if c.merge
+                  [
+                    @tui.table_cell(content: graph, style: @tui.style(fg: "yellow")),
+                    @tui.table_cell(content: c.hash[0, 8]),
+                    @tui.table_cell(content: c.subject),
+                    @tui.table_cell(content: c.author),
+                    @tui.table_cell(content: c.date)
+                  ]
+                else
+                  [
+                    @tui.table_cell(content: graph),
+                    @tui.table_cell(content: c.hash[0, 8]),
+                    @tui.table_cell(content: c.subject),
+                    @tui.table_cell(content: c.author),
+                    @tui.table_cell(content: c.date)
+                  ]
+                end
+        @tui.table_row(cells: cells)
       end
 
       widths = [
