@@ -21,7 +21,7 @@ module GitLogRatatui
         parts = line[md.end(0)..].split("\0")
         next unless parts.size == 3
 
-        Commit.new(graph: md[1], hash: md[2], author: parts[0], date: parts[1], subject: parts[2])
+        Commit.new(graph: md[1].tr("*", "◦"), hash: md[2], author: parts[0], date: parts[1], subject: parts[2])
       end
     end
 
