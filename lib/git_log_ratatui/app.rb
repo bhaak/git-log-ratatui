@@ -639,34 +639,36 @@ module GitLogRatatui
       filtered = commits.length
       selected = @selected_index ? @selected_index + 1 : "-"
 
-      hotkey = @tui.style(modifiers: [:bold])
+      key_style = @tui.style(fg: "yellow")
+      dim = @tui.style(fg: "dark gray")
 
-      bindings = case @focus
-                 when :branches
-                   "arrows select  enter load "
-                 when :search
-                   "←→ home/end  esc clear  "
-                 when :commits
-                   "arrows select  "
-                 when :diff
-                   "arrows select file  enter jump  n/p next/prev  home/end top/bottom  "
-                 else
-                   ""
-                 end
+      pairs = [["q", "Quit"], ["tab", "Focus"]]
 
-      status_line = @tui.text_line(spans: [
-        @tui.text_span(content: "quit", style: hotkey),
-        @tui.text_span(content: ": q / C-c  "),
-        @tui.text_span(content: "focus", style: hotkey),
-        @tui.text_span(content: ": tab  "),
-        @tui.text_span(content: bindings),
-        @tui.text_span(content: "#{selected}/#{filtered}"),
-        @tui.text_span(content: filtered != total ? " (filtered from #{total})" : "")
-      ])
+      case @focus
+      when :branches
+        pairs += [["↑↓", "Nav"], ["→←", "Expand"], ["␣", "Toggle"], ["enter", "Load"]]
+      when :search
+        pairs += [["esc", "Clear"]]
+      when :commits
+        pairs += [["↑↓", "Nav"]]
+      when :diff
+        pairs += [["↑↓", "File"], ["enter", "Jump"], ["n/p", "Next/prev"], ["home/end", "Top/bottom"]]
+      end
+
+      count_text = "#{selected}/#{filtered}#{filtered != total ? " (filtered from #{total})" : ""}"
+
+      spans = []
+      pairs.each do |key, desc|
+        spans << @tui.text_span(content: "<", style: dim)
+        spans << @tui.text_span(content: key, style: key_style)
+        spans << @tui.text_span(content: ": #{desc}>  ", style: dim)
+      end
+
+      spans << right_count
 
       widget = @tui.paragraph(
-        text: status_line,
-        block: @tui.block(borders: [:all])
+        text: @tui.text_line(spans: spans),
+        block: @tui.block(title: "Help", borders: [:all])
       )
 
       frame.render_widget(widget, area)
