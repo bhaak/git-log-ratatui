@@ -337,18 +337,14 @@ module GitLogRatatui
 
       rows = commits.map do |c|
         graph = c.graph.ljust(graph_width)
-        graph_content = if c.decorations.empty?
-                          graph
-                        else
-                          "#{graph} #{c.decorations}"
-                        end
+        subject = c.decorations.empty? ? c.subject : "#{c.decorations} #{c.subject}"
 
         if c.graph_only
           @tui.table_row(
             cells: [
-              @tui.table_cell(content: graph_content),
+              @tui.table_cell(content: graph),
               @tui.table_cell(content: ""),
-              @tui.table_cell(content: ""),
+              @tui.table_cell(content: c.decorations),
               @tui.table_cell(content: ""),
               @tui.table_cell(content: "")
             ]
@@ -356,9 +352,9 @@ module GitLogRatatui
         elsif c.merge
           @tui.table_row(
             cells: [
-              @tui.table_cell(content: graph_content, style: @tui.style(fg: "yellow")),
+              @tui.table_cell(content: graph, style: @tui.style(fg: "yellow")),
               @tui.table_cell(content: c.hash[0, 8]),
-              @tui.table_cell(content: c.subject),
+              @tui.table_cell(content: subject),
               @tui.table_cell(content: c.author),
               @tui.table_cell(content: c.date)
             ]
@@ -366,9 +362,9 @@ module GitLogRatatui
         else
           @tui.table_row(
             cells: [
-              @tui.table_cell(content: graph_content),
+              @tui.table_cell(content: graph),
               @tui.table_cell(content: c.hash[0, 8]),
-              @tui.table_cell(content: c.subject),
+              @tui.table_cell(content: subject),
               @tui.table_cell(content: c.author),
               @tui.table_cell(content: c.date)
             ]
