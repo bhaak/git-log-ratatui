@@ -247,6 +247,20 @@ module GitLogRatatui
       )
     end
 
+    def deco_cell_style(decorations)
+      return nil if decorations.empty?
+
+      if decorations.include?("HEAD")
+        @tui.style(fg: "green")
+      elsif decorations.include?("tag:")
+        @tui.style(fg: "cyan")
+      elsif decorations.match?(%r{[^/]/[^/]})
+        @tui.style(fg: "magenta")
+      else
+        @tui.style(fg: "yellow")
+      end
+    end
+
     def focused?(panel)
       @focus == panel
     end
@@ -338,13 +352,14 @@ module GitLogRatatui
       rows = commits.map do |c|
         graph = c.graph.ljust(graph_width)
         subject = c.decorations.empty? ? c.subject : "#{c.decorations} #{c.subject}"
+        deco_style = deco_cell_style(c.decorations)
 
         if c.graph_only
           @tui.table_row(
             cells: [
               @tui.table_cell(content: graph),
               @tui.table_cell(content: ""),
-              @tui.table_cell(content: c.decorations),
+              @tui.table_cell(content: c.decorations, style: deco_style),
               @tui.table_cell(content: ""),
               @tui.table_cell(content: "")
             ]
