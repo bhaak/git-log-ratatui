@@ -4,33 +4,59 @@ require "shellwords"
 
 module GitLogRatatui
   module Git
-    Commit = Data.define(:hash, :author, :date, :subject, :graph, :merge)
+    Commit = Data.define(:hash, :author, :date, :subject, :graph, :merge, :graph_only, :decorations)
 
     GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
+    GRAPH_ONLY_RE = /\A([|\/\\_ ]+)\z/
 
     def self.commits(path = ".", branch: nil)
       scope = branch ? Shellwords.escape(branch) : "--all"
-      fmt = "--format=%H%x00%P%x00%an%x00%ad%x00%s --date=format:'%Y-%m-%d %H:%M'"
+      fmt = "--format=%H%x00%an%x00%ad%x00%s%x00%d%x00%P --date=format:'%Y-%m-%d %H:%M'"
       output = `git -C #{Shellwords.escape(path)} log #{scope} --graph #{fmt} 2>/dev/null`
       return [] unless $?.success?
 
+      prev_decorations = ""
       output.split("\n").filter_map do |line|
         md = line.match(GRAPH_LINE_RE)
-        next unless md
+        if md
+          parts = line[md.end(0)..].split("\0", -1)
+          next if parts.size < 3
 
-        parts = line[md.end(0)..].split("\0")
-        next unless parts.size == 4
+          parents_str = parts.pop || ""
+          decorations = parse_decorations(parts.pop || "")
+          subject = parts.pop || ""
+          date = parts.pop || ""
+          author = parts.pop || ""
+          parents = parents_str.split
 
-        parents = parts[0].split
-        Commit.new(
-          graph: unicode_graph(md[1]),
-          hash: md[2],
-          author: parts[1],
-          date: parts[2],
-          subject: parts[3],
-          merge: parents.size > 1
-        )
+          prev_decorations = decorations
+          Commit.new(
+            graph: unicode_graph(md[1]),
+            hash: md[2],
+            author: author,
+            date: date,
+            subject: subject,
+            merge: parents.size > 1,
+            graph_only: false,
+            decorations: decorations
+          )
+        elsif (gm = line.match(GRAPH_ONLY_RE))
+          Commit.new(
+            graph: unicode_graph(gm[1]),
+            hash: "",
+            author: "",
+            date: "",
+            subject: "",
+            merge: false,
+            graph_only: true,
+            decorations: prev_decorations
+          )
+        end
       end
+    end
+
+    def self.parse_decorations(raw)
+      raw.strip
     end
 
     def self.unicode_graph(graph)

@@ -101,7 +101,8 @@ module GitLogRatatui
       return @all_commits if query.empty?
 
       @all_commits.select do |c|
-        c.hash.downcase.include?(query) ||
+        c.graph_only ||
+          c.hash.downcase.include?(query) ||
           c.author.downcase.include?(query) ||
           c.date.downcase.include?(query) ||
           c.subject.downcase.include?(query)
@@ -116,7 +117,8 @@ module GitLogRatatui
       commits = filtered_commits
       return nil unless @selected_index && @selected_index < commits.length
 
-      commits[@selected_index]
+      c = commits[@selected_index]
+      c.graph_only ? nil : c
     end
 
     FILE_HEADER_STYLE = { fg: "cyan", modifiers: [:bold] }.freeze
@@ -335,7 +337,15 @@ module GitLogRatatui
 
       rows = commits.map do |c|
         graph = c.graph.ljust(graph_width)
-        cells = if c.merge
+        cells = if c.graph_only
+                  [
+                    @tui.table_cell(content: "#{graph} #{c.decorations}"),
+                    @tui.table_cell(content: ""),
+                    @tui.table_cell(content: ""),
+                    @tui.table_cell(content: ""),
+                    @tui.table_cell(content: "")
+                  ]
+                elsif c.merge
                   [
                     @tui.table_cell(content: graph, style: @tui.style(fg: "yellow")),
                     @tui.table_cell(content: c.hash[0, 8]),
@@ -1000,15 +1010,20 @@ module GitLogRatatui
       commits = filtered_commits
       return if commits.empty?
 
-      new_index = (@selected_index || 0) + direction
+      attempts = 0
+      loop do
+        new_index = (@selected_index || 0) + direction
 
-      if new_index.negative?
-        new_index = commits.length - 1
-      elsif new_index >= commits.length
-        new_index = 0
+        if new_index.negative?
+          new_index = commits.length - 1
+        elsif new_index >= commits.length
+          new_index = 0
+        end
+
+        @selected_index = new_index
+        break unless commits[new_index].graph_only
+        break if (attempts += 1) >= commits.length
       end
-
-      @selected_index = new_index
     end
 
     def scroll_diff(direction)
@@ -1130,6 +1145,8 @@ module GitLogRatatui
 
       commits = filtered_commits
       return if commits.empty? || row_y >= commits.length
+
+      return if commits[row_y].graph_only
 
       @selected_index = row_y
     end
