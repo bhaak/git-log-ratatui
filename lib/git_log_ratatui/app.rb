@@ -661,7 +661,9 @@ module GitLogRatatui
       pairs.each do |key, desc|
         spans << @tui.text_span(content: "<", style: dim)
         spans << @tui.text_span(content: key, style: key_style)
-        spans << @tui.text_span(content: ": #{desc}>  ", style: dim)
+        spans << @tui.text_span(content: ": ", style: dim)
+        spans << @tui.text_span(content: desc)
+        spans << @tui.text_span(content: ">  ", style: dim)
       end
 
       spans << @tui.text_span(content: count_text, style: dim)
