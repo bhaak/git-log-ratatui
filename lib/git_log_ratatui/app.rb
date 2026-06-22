@@ -664,7 +664,7 @@ module GitLogRatatui
         spans << @tui.text_span(content: ": #{desc}>  ", style: dim)
       end
 
-      spans << right_count
+      spans << @tui.text_span(content: count_text, style: dim)
 
       widget = @tui.paragraph(
         text: @tui.text_line(spans: spans),
