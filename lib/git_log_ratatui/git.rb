@@ -4,7 +4,7 @@ require "shellwords"
 
 module GitLogRatatui
   module Git
-    Commit = Data.define(:hash, :author, :date, :subject, :graph, :merge, :graph_only, :decorations)
+    Commit = Data.define(:hash, :author, :date, :subject, :graph, :merge, :graph_only, :decorations, :deco_line)
 
     GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
     GRAPH_ONLY_RE = /\A([|\/\\_ ]+)\z/
@@ -38,7 +38,8 @@ module GitLogRatatui
             subject: subject,
             merge: parents.size > 1,
             graph_only: false,
-            decorations: decorations
+            decorations: decorations,
+            deco_line: false
           )
         elsif (gm = line.match(GRAPH_ONLY_RE))
           Commit.new(
@@ -49,7 +50,8 @@ module GitLogRatatui
             subject: "",
             merge: false,
             graph_only: true,
-            decorations: prev_decorations
+            decorations: prev_decorations,
+            deco_line: false
           )
         end
       end

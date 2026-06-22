@@ -349,43 +349,71 @@ module GitLogRatatui
       max_graph = commits.map { |c| c.graph.length }.max
       graph_width = [max_graph, 4].max
 
-      rows = commits.map do |c|
-        graph = c.graph.ljust(graph_width)
-        subject = c.decorations.empty? ? c.subject : "#{c.decorations} #{c.subject}"
-        deco_style = deco_cell_style(c.decorations)
+      expanded = []
+      expanded_mapping = {}
+      commits.each_with_index do |c, idx|
+        if !c.graph_only && !c.decorations.empty?
+          deco_graph = c.graph.sub("*", "│").ljust(graph_width)
+          expanded << { type: :deco, deco: c.decorations, graph: deco_graph }
+        end
+        expanded_mapping[expanded.length] = idx
+        expanded << { type: :commit, commit: c, idx: idx }
+      end
+      @commit_row_mapping = expanded_mapping
 
-        if c.graph_only
+      rows = expanded.map do |entry|
+        if entry[:type] == :deco
           @tui.table_row(
             cells: [
-              @tui.table_cell(content: graph),
+              @tui.table_cell(content: entry[:graph]),
               @tui.table_cell(content: ""),
-              @tui.table_cell(content: c.decorations, style: deco_style),
+              @tui.table_cell(content: entry[:deco], style: deco_cell_style(entry[:deco])),
               @tui.table_cell(content: ""),
               @tui.table_cell(content: "")
             ]
           )
-        elsif c.merge
-          @tui.table_row(
-            cells: [
-              @tui.table_cell(content: graph, style: @tui.style(fg: "yellow")),
-              @tui.table_cell(content: c.hash[0, 8]),
-              @tui.table_cell(content: subject),
-              @tui.table_cell(content: c.author),
-              @tui.table_cell(content: c.date)
-            ]
-          )
         else
-          @tui.table_row(
-            cells: [
-              @tui.table_cell(content: graph),
-              @tui.table_cell(content: c.hash[0, 8]),
-              @tui.table_cell(content: subject),
-              @tui.table_cell(content: c.author),
-              @tui.table_cell(content: c.date)
-            ]
-          )
+          c = entry[:commit]
+          graph = c.graph.ljust(graph_width)
+          subject = c.subject
+
+          if c.graph_only
+            @tui.table_row(
+              cells: [
+                @tui.table_cell(content: graph),
+                @tui.table_cell(content: ""),
+                @tui.table_cell(content: c.decorations, style: deco_cell_style(c.decorations)),
+                @tui.table_cell(content: ""),
+                @tui.table_cell(content: "")
+              ]
+            )
+          elsif c.merge
+            @tui.table_row(
+              cells: [
+                @tui.table_cell(content: graph, style: @tui.style(fg: "yellow")),
+                @tui.table_cell(content: c.hash[0, 8]),
+                @tui.table_cell(content: subject),
+                @tui.table_cell(content: c.author),
+                @tui.table_cell(content: c.date)
+              ]
+            )
+          else
+            @tui.table_row(
+              cells: [
+                @tui.table_cell(content: graph),
+                @tui.table_cell(content: c.hash[0, 8]),
+                @tui.table_cell(content: subject),
+                @tui.table_cell(content: c.author),
+                @tui.table_cell(content: c.date)
+              ]
+            )
+          end
         end
       end
+
+      display_selected = expanded.each_with_index
+                                 .find { |(entry, _)| entry[:type] == :commit && entry[:idx] == @selected_index }
+                                 &.last
 
       widths = [
         @tui.constraint_length(graph_width),
@@ -405,7 +433,7 @@ module GitLogRatatui
           borders: [:all],
           border_style: focused?(:commits) ? FOCUS_BORDER : nil
         ),
-        selected_row: @selected_index,
+        selected_row: display_selected,
         row_highlight_style: highlight_style,
         highlight_symbol: "> ",
         column_spacing: 1
@@ -1165,12 +1193,10 @@ module GitLogRatatui
       row_y = event.y - area.y - 2
       return if row_y.negative?
 
-      commits = filtered_commits
-      return if commits.empty? || row_y >= commits.length
+      mapped = @commit_row_mapping[row_y]
+      return unless mapped
 
-      return if commits[row_y].graph_only
-
-      @selected_index = row_y
+      @selected_index = mapped
     end
 
     def handle_diff_click(event)
