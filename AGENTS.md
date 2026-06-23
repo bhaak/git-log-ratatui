@@ -1,0 +1,5 @@
+- write in English
+- write unit tests
+- write comments
+- when in Rust, give each window its own thread, stream data in parallel
+- commit after each step
