@@ -34,11 +34,13 @@ pub fn render(
     // Build the inner content
     let inner_area = block.inner(area);
 
-    // Build display text with cursor
+    // Build display text with cursor and "Search: " prefix
+    let prefix = " Search: ";
     let display: Vec<Span> = if is_focused && inner_area.width > 2 {
-        let max_visible = (inner_area.width as usize).saturating_sub(2);
+        let prefix_len = prefix.chars().count();
+        let max_visible = (inner_area.width as usize).saturating_sub(2).saturating_sub(prefix_len);
         let char_count = search_query.chars().count();
-        let char_start = if char_count > max_visible {
+        let char_start = if char_count > max_visible && max_visible > 0 {
             char_count - max_visible
         } else {
             0
@@ -46,16 +48,18 @@ pub fn render(
         let visible: String = search_query
             .chars()
             .skip(char_start)
-            .take(max_visible)
+            .take(max_visible.max(1))
             .collect();
         let visible_char_count = visible.chars().count();
-        // Compute cursor position in characters
         let cursor_char_pos = search_query[..cursor_pos.min(search_query.len())]
             .chars()
             .count();
         let cursor_rel = cursor_char_pos.saturating_sub(char_start);
 
-        let mut spans = Vec::new();
+        let mut spans = vec![Span::styled(
+            prefix,
+            Style::default().fg(Color::DarkGray),
+        )];
         for (i, ch) in visible.chars().enumerate() {
             if i == cursor_rel {
                 spans.push(Span::styled(
@@ -71,7 +75,6 @@ pub fn render(
                 ));
             }
         }
-        // Show cursor at end if it's past the last visible character
         if cursor_rel >= visible_char_count {
             spans.push(Span::styled(
                 " ",
@@ -82,15 +85,14 @@ pub fn render(
         }
         spans
     } else {
-        // Not focused: show search text or placeholder
         if search_query.is_empty() {
             vec![Span::styled(
-                format!("<{}>", branch_label),
+                format!("{}<{}>", prefix, branch_label),
                 Style::default().fg(Color::DarkGray),
             )]
         } else {
             vec![Span::styled(
-                search_query.to_string(),
+                format!("{}{}", prefix, search_query),
                 Style::default().fg(Color::White),
             )]
         }

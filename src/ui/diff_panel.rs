@@ -20,6 +20,7 @@ pub fn render(
     selected_file_index: usize,
     diff_scroll: usize,
     is_focused: bool,
+    short_hash: Option<&str>,
 ) {
     if area.width < 4 || area.height < 2 {
         return;
@@ -37,6 +38,12 @@ pub fn render(
     let start = (diff_scroll + 1).min(total);
     let end = (diff_scroll + visible).min(total);
 
+    let diff_title = if let Some(hash) = short_hash {
+        format!(" Diff \u{2014} {}", hash)
+    } else {
+        " Diff".to_string()
+    };
+
     let scroll_info = if total > 0 {
         format!(" lines {}-{}/{} ", start, end, total)
     } else {
@@ -46,7 +53,7 @@ pub fn render(
     let paragraph = Paragraph::new(all_lines)
         .block(
             Block::default()
-                .title(format!(" Diff{}", scroll_info))
+                .title(format!("{}{}", diff_title, scroll_info))
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )
@@ -286,7 +293,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
 
     // Parents
     let parents_text = if commit_info.parents.is_empty() {
-        "\u{2500}".to_string()
+        "\u{2014}".to_string()
     } else {
         commit_info.parents.join(" ")
     };
@@ -304,7 +311,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Date:          ", label_style),
+        Span::styled("Author date:   ", label_style),
         Span::styled(&commit_info.author_date, value_style),
     ]));
 
@@ -327,7 +334,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
         && !commit_info.committer_date.is_empty()
     {
         lines.push(Line::from(vec![
-            Span::styled("Comm. Date:    ", label_style),
+            Span::styled("Committer date:", label_style),
             Span::styled(&commit_info.committer_date, value_style),
         ]));
     }

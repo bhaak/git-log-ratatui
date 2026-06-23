@@ -200,8 +200,8 @@ impl App {
     fn rebuild_branch_tree(&mut self) {
         // Build tree, inserting "All Branches" as a virtual root item
         let all_item = TreeItem {
-            name: "  All Branches".to_string(),
-            depth: 1,
+            name: "All Branches".to_string(),
+            depth: 0,
             expandable: false,
             expanded: false,
             is_branch: true,
@@ -215,8 +215,8 @@ impl App {
         let mut root = tree::build_branch_tree(&self.all_branches);
         tree::sort_tree(&mut root);
 
-        // Flatten with depth starting at 1 so items have depth >= 2
-        let branch_items = tree::flatten_tree(&root, 1, &self.expanded_nodes);
+        // Flatten with depth starting at 0 so items have depth >= 1
+        let branch_items = tree::flatten_tree(&root, 0, &self.expanded_nodes);
         items.extend(branch_items);
 
         self.branch_tree = items;
@@ -563,6 +563,7 @@ impl App {
                         } else {
                             self.request_commits(Some(item.full_path.clone()));
                         }
+                        self.focus = Panel::Commits;
                     } else if item.expandable {
                         // Toggle expandable directory on Enter
                         let new_state = !item.expanded;
@@ -794,6 +795,7 @@ impl App {
                         } else {
                             self.request_commits(Some(item.full_path.clone()));
                         }
+                        self.focus = Panel::Commits;
                     }
                 }
             }
@@ -1062,6 +1064,9 @@ impl App {
             !self.search_query.is_empty(),
         );
 
+        let short_hash = self.commit_info.as_ref().map(|info| {
+            &info.hash[..std::cmp::min(8, info.hash.len())]
+        });
         ui::diff_panel::render(
             frame,
             diff_area,
@@ -1072,6 +1077,7 @@ impl App {
             self.selected_file_index,
             self.diff_scroll,
             self.focus == Panel::Diff,
+            short_hash,
         );
 
         let count_info = ui::help_bar::format_commit_count(
