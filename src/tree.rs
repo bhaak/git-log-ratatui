@@ -113,9 +113,14 @@ pub fn flatten_tree(
     let display_name = if depth == 0 {
         String::new()
     } else if node.full_path.is_empty() {
+        // Directory: marker followed by space and name with trailing /
         format!("{}{} {}/", prefix, marker, node.name)
-    } else {
+    } else if expandable {
+        // Expandable branch: marker followed by space and name
         format!("{}{} {}", prefix, marker, node.name)
+    } else {
+        // Leaf branch: marker already has padding spaces
+        format!("{}{}{}", prefix, marker, node.name)
     };
 
     if depth > 0 {
@@ -157,6 +162,7 @@ fn build_tree_prefix(depth: usize) -> String {
 }
 
 /// Build a full tree prefix with correct connector for the last child.
+#[allow(dead_code)]
 pub fn build_tree_item_prefix(path: &str, full_tree: &[TreeItem]) -> String {
     // Find all ancestors and determine if each is the last child in its group
     let parts: Vec<&str> = path.split('/').collect();
@@ -181,6 +187,7 @@ pub fn build_tree_item_prefix(path: &str, full_tree: &[TreeItem]) -> String {
 }
 
 /// Check if a path is the last child in its sibling group at the given depth.
+#[allow(dead_code)]
 fn is_last_child_in_group(items: &[TreeItem], path: &str, depth: usize) -> bool {
     // Find all items at this depth sharing the same prefix
     let parent_path = {
@@ -209,4 +216,105 @@ fn is_last_child_in_group(items: &[TreeItem], path: &str, depth: usize) -> bool 
     }
 
     siblings.last().map(|s| s.full_path == path).unwrap_or(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_simple_tree() {
+        let branches = vec![
+            "main".to_string(),
+            "feature/login".to_string(),
+            "feature/signup".to_string(),
+        ];
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+
+        // root has 2 children: feature/ and main
+        assert_eq!(root.children.len(), 2);
+        assert_eq!(root.children[0].name, "main");
+        assert_eq!(root.children[1].name, "feature");
+
+        // feature/ has 2 children: login and signup
+        let feature = &root.children[1];
+        assert_eq!(feature.children.len(), 2);
+    }
+
+    #[test]
+    fn test_flatten_collapsed() {
+        let branches = vec![
+            "main".to_string(),
+            "feature/login".to_string(),
+        ];
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+
+        let expanded: BTreeMap<String, bool> = BTreeMap::new();
+        let items = flatten_tree(&root, 0, &expanded);
+
+        // Default: intermediate nodes (directories) are expanded.
+        // main is a leaf (not expandable), feature/ is expandable and expanded.
+        // Items: main, feature/, login
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].name, "  main");
+        assert!(!items[0].expandable);
+        assert_eq!(items[1].name, "▼ feature/");
+        assert!(items[1].expandable);
+        assert!(items[1].expanded);
+        assert_eq!(items[2].name, "│    login");
+        assert!(items[2].is_branch);
+    }
+
+    #[test]
+    fn test_flatten_expanded() {
+        let branches = vec![
+            "main".to_string(),
+            "feature/login".to_string(),
+        ];
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+
+        let mut expanded: BTreeMap<String, bool> = BTreeMap::new();
+        expanded.insert("feature/".to_string(), true);
+
+        // Re-sort and flatten with expansion
+        let items = flatten_tree(&root, 0, &expanded);
+
+        // Should have 3 items: main, feature/, feature/login
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].name, "  main");
+        // child "login" at depth 2
+        assert_eq!(items[2].name, "│    login");
+        assert_eq!(items[2].depth, 2);
+        assert!(items[2].is_branch);
+    }
+
+    #[test]
+    fn test_sort_tree_main_master_first() {
+        let branches = vec![
+            "develop".to_string(),
+            "master".to_string(),
+            "main".to_string(),
+            "feature".to_string(),
+        ];
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+
+        assert_eq!(root.children[0].name, "main");
+        assert_eq!(root.children[1].name, "master");
+        assert_eq!(root.children[2].name, "develop");
+        assert_eq!(root.children[3].name, "feature");
+    }
+
+    #[test]
+    fn test_empty_tree() {
+        let branches: Vec<String> = Vec::new();
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+        let expanded = BTreeMap::new();
+        let items = flatten_tree(&root, 0, &expanded);
+        assert!(items.is_empty());
+    }
 }

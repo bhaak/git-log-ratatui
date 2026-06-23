@@ -4,34 +4,6 @@ use std::thread;
 
 use crate::models::*;
 
-/// Spawns a background thread that listens for Git commands and sends back results.
-/// Returns a channel sender for sending commands.
-pub fn spawn_git_worker() -> mpsc::Sender<GitCommand> {
-    let (tx, rx) = mpsc::channel::<GitCommand>();
-    let (result_tx, _result_rx) = mpsc::channel::<GitResult>();
-
-    thread::spawn(move || {
-        for cmd in rx {
-            let result = match cmd {
-                GitCommand::FetchBranches { repo_path, scope } => {
-                    fetch_branches(&repo_path, scope)
-                }
-                GitCommand::FetchCommits { repo_path, branch } => {
-                    fetch_commits(&repo_path, branch.as_deref())
-                }
-                GitCommand::FetchDiff { repo_path, hash } => {
-                    fetch_diff(&repo_path, &hash)
-                }
-            };
-            if result_tx.send(result).is_err() {
-                break; // receiver dropped
-            }
-        }
-    });
-
-    tx
-}
-
 /// Fetch branches from the repository.
 fn fetch_branches(repo_path: &str, scope: BranchScope) -> GitResult {
     let mut cmd = Command::new("git");
@@ -368,5 +340,76 @@ impl GitWorker {
     /// Try to receive a result (non-blocking).
     pub fn try_recv(&self) -> Option<GitResult> {
         self.result_receiver.try_recv().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_graph_simple() {
+        let graph = extract_graph("| * some text");
+        assert_eq!(graph, "| * ");
+    }
+
+    #[test]
+    fn test_extract_graph_no_graph() {
+        let graph = extract_graph("commit text");
+        assert_eq!(graph, "");
+    }
+
+    #[test]
+    fn test_parse_decorations_head_to_main() {
+        let decos = parse_decorations("HEAD -> main");
+        assert_eq!(decos.len(), 2);
+        assert_eq!(decos[0].label, "HEAD");
+        assert_eq!(decos[0].kind, DecorationKind::Head);
+        assert_eq!(decos[1].label, "main");
+        assert_eq!(decos[1].kind, DecorationKind::LocalBranch);
+    }
+
+    #[test]
+    fn test_parse_decorations_tag() {
+        let decos = parse_decorations("tag: v1.0");
+        assert_eq!(decos.len(), 1);
+        assert_eq!(decos[0].label, "v1.0");
+        assert_eq!(decos[0].kind, DecorationKind::Tag);
+    }
+
+    #[test]
+    fn test_parse_decorations_remote() {
+        let decos = parse_decorations("origin/main");
+        assert_eq!(decos.len(), 1);
+        assert_eq!(decos[0].label, "origin/main");
+        assert_eq!(decos[0].kind, DecorationKind::RemoteBranch);
+    }
+
+    #[test]
+    fn test_parse_decorations_empty() {
+        let decos = parse_decorations("");
+        assert!(decos.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorations_multiple() {
+        let decos = parse_decorations("HEAD -> main, tag: v1.0, origin/main");
+        assert_eq!(decos.len(), 4); // HEAD, main, v1.0, origin/main
+        assert_eq!(decos[0].label, "HEAD");
+        assert_eq!(decos[0].kind, DecorationKind::Head);
+        assert_eq!(decos[1].label, "main");
+        assert_eq!(decos[1].kind, DecorationKind::LocalBranch);
+        assert_eq!(decos[2].label, "v1.0");
+        assert_eq!(decos[2].kind, DecorationKind::Tag);
+        assert_eq!(decos[3].label, "origin/main");
+        assert_eq!(decos[3].kind, DecorationKind::RemoteBranch);
+    }
+
+    #[test]
+    fn test_convert_graph_chars() {
+        // Test via commit_table's function — but it's private.
+        // Test via extract_graph instead, which is exported.
+        let graph = extract_graph("| * /");
+        assert_eq!(graph, "| * /");
     }
 }

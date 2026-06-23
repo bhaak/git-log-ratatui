@@ -2,7 +2,7 @@
 /// Tokenizes lines by word boundaries and special characters,
 /// finds unchanged tokens via LCS, and returns changed token ranges.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenSpan {
     pub text: String,
     pub changed: bool,
@@ -126,5 +126,87 @@ pub fn diff_tokens_removed(line: &str, next_line: Option<&str>) -> Vec<TokenSpan
                 changed: true,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tokenize_simple() {
+        let tokens = tokenize("hello world");
+        assert_eq!(tokens, vec!["hello", " ", "world"]);
+    }
+
+    #[test]
+    fn test_tokenize_special_chars() {
+        let tokens = tokenize("foo = bar");
+        assert_eq!(tokens, vec!["foo", " ", "=", " ", "bar"]);
+    }
+
+    #[test]
+    fn test_tokenize_empty() {
+        let tokens = tokenize("");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn test_tokenize_single_word() {
+        let tokens = tokenize("hello");
+        assert_eq!(tokens, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_tokenize_underscore() {
+        let tokens = tokenize("my_var");
+        assert_eq!(tokens, vec!["my_var"]);
+    }
+
+    #[test]
+    fn test_diff_tokens_added_no_prev() {
+        let spans = diff_tokens_added("new line", None);
+        assert_eq!(spans[0].changed, true);
+        assert_eq!(spans[0].text, "new");
+        assert_eq!(spans[2].changed, true);
+        assert_eq!(spans[2].text, "line");
+    }
+
+    #[test]
+    fn test_diff_tokens_added_with_prev() {
+        let spans = diff_tokens_added("new foo baz", Some("old foo bar"));
+        assert_eq!(spans[0].text, "new");
+        assert!(spans[0].changed);
+        assert_eq!(spans[2].text, "foo");
+        assert!(!spans[2].changed);
+        assert_eq!(spans[4].text, "baz");
+        assert!(spans[4].changed);
+    }
+
+    #[test]
+    fn test_diff_tokens_removed_no_next() {
+        let spans = diff_tokens_removed("old line", None);
+        assert_eq!(spans[0].changed, true);
+        assert_eq!(spans[0].text, "old");
+        assert_eq!(spans[2].changed, true);
+        assert_eq!(spans[2].text, "line");
+    }
+
+    #[test]
+    fn test_mark_unchanged_identical() {
+        let a = vec!["a".to_string(), "b".to_string()];
+        let b = vec!["a".to_string(), "b".to_string()];
+        let (a_unchanged, b_unchanged) = super::mark_unchanged(&a, &b);
+        assert_eq!(a_unchanged, vec![true, true]);
+        assert_eq!(b_unchanged, vec![true, true]);
+    }
+
+    #[test]
+    fn test_mark_unchanged_all_different() {
+        let a = vec!["x".to_string()];
+        let b = vec!["y".to_string()];
+        let (a_unchanged, b_unchanged) = super::mark_unchanged(&a, &b);
+        assert_eq!(a_unchanged, vec![false]);
+        assert_eq!(b_unchanged, vec![false]);
     }
 }

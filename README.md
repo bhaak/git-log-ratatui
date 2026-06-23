@@ -98,6 +98,12 @@ If no path is given, the current directory is used.
 Each window has its own background git worker thread using mpsc channels.
 The main event loop polls all channels non-blocking and requests data on demand.
 
+## Testing
+
+```sh
+cargo test
+```
+
 ## Dependencies
 
 - [ratatui](https://crates.io/crates/ratatui) — TUI framework

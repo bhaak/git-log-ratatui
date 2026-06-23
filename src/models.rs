@@ -2,6 +2,7 @@ use std::fmt;
 
 /// Represents a parsed commit from `git log`.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Commit {
     pub hash: String,
     pub author: String,
@@ -58,6 +59,7 @@ pub struct BranchNode {
 
 /// A flattened item in the branch tree display list.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TreeItem {
     pub name: String,
     pub depth: usize,
@@ -171,4 +173,66 @@ pub enum GitResult {
         file_entries: Vec<FileEntry>,
     },
     Error(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_branch_scope_next_all_to_local() {
+        assert_eq!(BranchScope::All.next(), BranchScope::Local);
+    }
+
+    #[test]
+    fn test_branch_scope_next_local_to_remote() {
+        assert_eq!(BranchScope::Local.next(), BranchScope::Remote);
+    }
+
+    #[test]
+    fn test_branch_scope_next_remote_to_all() {
+        assert_eq!(BranchScope::Remote.next(), BranchScope::All);
+    }
+
+    #[test]
+    fn test_branch_scope_label() {
+        assert_eq!(BranchScope::All.label(), "all");
+        assert_eq!(BranchScope::Local.label(), "local");
+        assert_eq!(BranchScope::Remote.label(), "remote");
+    }
+
+    #[test]
+    fn test_panel_next_cycles_forward() {
+        assert_eq!(Panel::Branches.next(), Panel::Search);
+        assert_eq!(Panel::Search.next(), Panel::Scope);
+        assert_eq!(Panel::Scope.next(), Panel::Commits);
+        assert_eq!(Panel::Commits.next(), Panel::Diff);
+        assert_eq!(Panel::Diff.next(), Panel::Branches);
+    }
+
+    #[test]
+    fn test_panel_prev_cycles_backward() {
+        assert_eq!(Panel::Branches.prev(), Panel::Diff);
+        assert_eq!(Panel::Diff.prev(), Panel::Commits);
+        assert_eq!(Panel::Commits.prev(), Panel::Scope);
+        assert_eq!(Panel::Scope.prev(), Panel::Search);
+        assert_eq!(Panel::Search.prev(), Panel::Branches);
+    }
+
+    #[test]
+    fn test_panel_display() {
+        assert_eq!(Panel::Branches.to_string(), "Branches");
+        assert_eq!(Panel::Search.to_string(), "Search");
+        assert_eq!(Panel::Scope.to_string(), "Scope");
+        assert_eq!(Panel::Commits.to_string(), "Commits");
+        assert_eq!(Panel::Diff.to_string(), "Diff");
+    }
+
+    #[test]
+    fn test_commit_info_default() {
+        let info = CommitInfo::default();
+        assert!(info.subject.is_empty());
+        assert!(info.hash.is_empty());
+        assert!(info.parents.is_empty());
+    }
 }
