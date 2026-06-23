@@ -251,14 +251,26 @@ module GitLogRatatui
       return nil if decorations.empty?
 
       if decorations.include?("HEAD")
-        @tui.style(fg: "green")
+        @tui.style(bg: RatatuiRuby::Style::Color.hex(0x005500), fg: "white")
       elsif decorations.include?("tag:")
-        @tui.style(fg: "cyan")
+        @tui.style(bg: RatatuiRuby::Style::Color.hex(0x005555), fg: "white")
       elsif decorations.match?(%r{[^/]/[^/]})
-        @tui.style(fg: "magenta")
+        @tui.style(bg: RatatuiRuby::Style::Color.hex(0x550055), fg: "white")
       else
-        @tui.style(fg: "yellow")
+        @tui.style(bg: RatatuiRuby::Style::Color.hex(0x555500), fg: "white")
       end
+    end
+
+    def format_decorations(raw)
+      return "" if raw.empty?
+
+      raw
+        .sub(/\A\((.*)\)\z/) { $1 }
+        .gsub(", ", "  ")
+    end
+
+    def deco_graph(commit_graph)
+      commit_graph.sub("*", "│")
     end
 
     def focused?(panel)
@@ -353,8 +365,7 @@ module GitLogRatatui
       expanded_mapping = {}
       commits.each_with_index do |c, idx|
         if !c.graph_only && !c.decorations.empty?
-          deco_graph = c.graph.sub("*", "│").ljust(graph_width)
-          expanded << { type: :deco, deco: c.decorations, graph: deco_graph }
+          expanded << { type: :deco, deco: c.decorations, graph: deco_graph(c.graph).ljust(graph_width) }
         end
         expanded_mapping[expanded.length] = idx
         expanded << { type: :commit, commit: c, idx: idx }
@@ -367,7 +378,7 @@ module GitLogRatatui
             cells: [
               @tui.table_cell(content: entry[:graph]),
               @tui.table_cell(content: ""),
-              @tui.table_cell(content: entry[:deco], style: deco_cell_style(entry[:deco])),
+              @tui.table_cell(content: format_decorations(entry[:deco]), style: deco_cell_style(entry[:deco])),
               @tui.table_cell(content: ""),
               @tui.table_cell(content: "")
             ]
@@ -382,7 +393,7 @@ module GitLogRatatui
               cells: [
                 @tui.table_cell(content: graph),
                 @tui.table_cell(content: ""),
-                @tui.table_cell(content: c.decorations, style: deco_cell_style(c.decorations)),
+                @tui.table_cell(content: format_decorations(c.decorations), style: deco_cell_style(c.decorations)),
                 @tui.table_cell(content: ""),
                 @tui.table_cell(content: "")
               ]
