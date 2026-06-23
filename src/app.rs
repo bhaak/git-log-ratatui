@@ -116,9 +116,10 @@ impl App {
 
         loop {
             self.process_git_results();
-            terminal
-                .draw(|frame| self.render(frame))
-                .map_err(|e| format!("Render error: {}", e))?;
+            let draw_result = terminal.draw(|frame| self.render(frame));
+            if let Err(e) = draw_result {
+                return Err(format!("Render error: {}", e));
+            }
             if !self.handle_event()? {
                 break;
             }
@@ -975,11 +976,16 @@ impl App {
         let branch_area = horizontal[0];
         let right_area = horizontal[1];
 
+        // Use flexible constraints that won't overflow small terminals
+        let search_h = Constraint::Length(3.min(right_area.height / 3));
+        let diff_h = Constraint::Percentage(self.diff_height_pct.min(90));
+        let help_h = Constraint::Length(3.min(right_area.height.saturating_sub(6) / 2));
+
         let main_split = Layout::vertical([
-            Constraint::Length(3),
+            search_h,
             Constraint::Min(0),
-            Constraint::Percentage(self.diff_height_pct),
-            Constraint::Length(3),
+            diff_h,
+            help_h,
         ])
         .split(right_area);
 
@@ -989,7 +995,7 @@ impl App {
 
         let search_split = Layout::horizontal([
             Constraint::Min(0),
-            Constraint::Length(10),
+            Constraint::Length(10.min(search_scope_area.width.saturating_sub(2))),
         ])
         .split(search_scope_area);
         let search_area = search_split[0];
@@ -1003,6 +1009,11 @@ impl App {
     fn render(&mut self, frame: &mut Frame) {
         let full = frame.area();
         self.last_size = Some((full.width, full.height));
+
+        // Guard against zero-size terminal (can happen during resize)
+        if full.width < 20 || full.height < 8 {
+            return;
+        }
 
         let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) = self.compute_areas(full);
 

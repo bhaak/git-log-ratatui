@@ -16,6 +16,10 @@ pub fn render(
     title: &str,
     is_focused: bool,
 ) {
+    if area.width < 4 || area.height < 2 {
+        return;
+    }
+
     let border_style = if is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {

@@ -10,6 +10,10 @@ use crate::models::Panel;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
 pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &str) {
+    if area.width < 10 || area.height < 2 {
+        return;
+    }
+
     let key_style = Style::default()
         .fg(Color::Yellow)
         .add_modifier(Modifier::BOLD);

@@ -15,6 +15,10 @@ pub fn render(
     selected_index: usize,
     is_focused: bool,
 ) -> ListState {
+    if area.width < 4 || area.height < 2 {
+        return ListState::default();
+    }
+
     let border_style = if is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {

@@ -33,6 +33,11 @@ pub fn render(
         Style::default().fg(Color::Gray)
     };
 
+    // Guard against zero-size area
+    if area.width < 10 || area.height < 3 {
+        return TableState::default();
+    }
+
     // Empty state messages
     if commits.is_empty() && total_loaded > 0 {
         let msg = if search_active {

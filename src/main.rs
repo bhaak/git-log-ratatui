@@ -62,16 +62,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = {
         let mut app = app::App::new(repo_path);
-        app.run(&mut terminal)
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.run(&mut terminal)
+        }))
     };
 
     // Cleanup terminal
     disable_raw_mode()?;
     let _ = io::stdout().execute(LeaveAlternateScreen);
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        Err(panic) => {
+            let msg = if let Some(s) = panic.downcast_ref::<String>() {
+                s.clone()
+            } else if let Some(s) = panic.downcast_ref::<&str>() {
+                s.to_string()
+            } else {
+                "Unknown panic".to_string()
+            };
+            eprintln!("Panic: {}", msg);
+            std::process::exit(1);
+        }
     }
 
     Ok(())
