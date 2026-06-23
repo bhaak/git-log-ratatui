@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -282,7 +282,7 @@ impl App {
     // --- Events ---
 
     fn handle_event(&mut self) -> Result<bool, String> {
-        if !event::poll(std::time::Duration::from_millis(16)).map_err(|e| format!("Poll error: {}", e))? {
+        if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| format!("Poll error: {}", e))? {
             return Ok(true);
         }
 
@@ -293,6 +293,10 @@ impl App {
                 self.handle_key(key)
             }
             Event::Mouse(mouse) => {
+                // Ignore move events to avoid redrawing on every mouse movement.
+                if let MouseEventKind::Moved = mouse.kind {
+                    return Ok(true);
+                }
                 // Track mouse position for scroll
                 if let MouseEventKind::Down(_) | MouseEventKind::Drag(_) = mouse.kind {
                     self.last_mouse_pos = Some((mouse.column, mouse.row));
@@ -507,7 +511,11 @@ impl App {
     }
 
     fn suspend(&mut self) {
-        let _ = execute!(std::io::stdout(), LeaveAlternateScreen,);
+        let _ = execute!(
+            std::io::stdout(),
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+        );
         disable_raw_mode().ok();
 
         #[cfg(unix)]
@@ -516,6 +524,11 @@ impl App {
         }
 
         enable_raw_mode().ok();
+        let _ = execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            EnableMouseCapture,
+        );
     }
 
     // --- Panel key handlers ---
