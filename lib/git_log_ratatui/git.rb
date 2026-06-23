@@ -9,10 +9,17 @@ module GitLogRatatui
     GRAPH_LINE_RE = /\A([ *|\/\\_]*?) (\h{40})\0/
     GRAPH_ONLY_RE = /\A([|\/\\_ ]+)\z/
 
-    def self.commits(path = ".", branch: nil)
-      scope = branch ? Shellwords.escape(branch) : "--all"
+    SCOPE_FLAGS = {
+      all: "--all",
+      local: "--branches",
+      remote: "--remotes"
+    }.freeze
+
+    def self.commits(path = ".", branch: nil, scope: :all)
+      scope_flag = SCOPE_FLAGS[scope] || "--all"
+      ref = branch ? Shellwords.escape(branch) : scope_flag
       fmt = "--format=%H%x00%an%x00%ad%x00%s%x00%d%x00%P --date=format:'%Y-%m-%d %H:%M'"
-      output = `git -C #{Shellwords.escape(path)} log #{scope} --graph #{fmt} 2>/dev/null`
+      output = `git -C #{Shellwords.escape(path)} log #{ref} --graph #{fmt} 2>/dev/null`
       return [] unless $?.success?
 
       prev_decorations = ""

@@ -7,11 +7,15 @@ module GitLogRatatui
     FOCUS_BORDER = { fg: "magenta" }.freeze
     PANELS = %i[branches search commits diff].freeze
 
+    SCOPES = %i[all local remote].freeze
+    SCOPE_LABELS = { all: "all", local: "local", remote: "remote" }.freeze
+
     def initialize(path = ".")
       @path = File.expand_path(path)
       @branches = Git.branches(@path)
       @branch_index = 0
-      @all_commits = Git.commits(@path)
+      @all_commits = Git.commits(@path, scope: :all)
+      @branch_scope = :all
       @search_query = ""
       @cursor_pos = 0
       @selected_index = 0
@@ -324,7 +328,7 @@ module GitLogRatatui
       widget = @tui.paragraph(
         text: text,
         block: @tui.block(
-          title: "Git Log — #{@path} [#{branch_label}]",
+          title: "Git Log — #{@path} [#{selected_branch || SCOPE_LABELS[@branch_scope]}]",
           borders: [:all],
           border_style: focused?(:search) ? FOCUS_BORDER : nil
         )
@@ -753,8 +757,8 @@ module GitLogRatatui
       case event
       in { type: :key, code: "q" } | { type: :key, code: "c", modifiers: ["ctrl"] }
         :quit
-      in { type: :key, code: "z", modifiers: ["ctrl"] }
-        suspend
+      in { type: :key, code: "s", modifiers: ["ctrl"] }
+        cycle_branch_scope
         nil
       in { type: :key, code: "tab" } | { type: :key, code: "l" }
         cycle_focus(1)
@@ -1006,7 +1010,7 @@ module GitLogRatatui
     end
 
     def load_branch_commits(branch)
-      @all_commits = Git.commits(@path, branch: branch)
+      @all_commits = Git.commits(@path, branch: branch, scope: @branch_scope)
       @selected_index = 0
       @search_query = ""
       @cursor_pos = 0
@@ -1049,6 +1053,19 @@ module GitLogRatatui
       return unless item.expandable
 
       @branch_expanded[item.full_path] = !item.expanded
+    end
+
+    def cycle_branch_scope
+      idx = SCOPES.index(@branch_scope) || 0
+      @branch_scope = SCOPES[(idx + 1) % SCOPES.length]
+      @branches = Git.branches(@path)
+      @branch_tree = build_branch_tree
+      @branch_expanded = {}
+      @branch_index = 0
+      @all_commits = Git.commits(@path, scope: @branch_scope)
+      @selected_index = 0
+      @search_query = ""
+      @cursor_pos = 0
     end
 
     def handle_char(char)
