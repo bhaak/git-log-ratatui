@@ -1164,8 +1164,11 @@ module GitLogRatatui
       return unless panel
 
       if panel == :search && @focus == :search
-        cycle_branch_scope
-        return
+        area = @areas[:search]
+        if area && event.y <= area.y + 1 && event.x >= area.right - 14
+          cycle_branch_scope
+          return
+        end
       end
 
       @focus = panel
