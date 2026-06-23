@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Row, Table, TableState},
+    widgets::{Block, Borders, Paragraph, Row, Table, TableState},
     Frame,
 };
 
@@ -15,6 +15,7 @@ const COL_AUTHOR: u16 = 15;
 const COL_DATE: u16 = 18;
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
+/// Render the commit table with git graph, decorations, and merge highlighting.
 /// Column order matches Ruby: Graph | Hash | Subject | Author | Date
 pub fn render(
     frame: &mut Frame,
@@ -23,12 +24,42 @@ pub fn render(
     visible_index: usize,
     is_focused: bool,
     visible_to_commit: &[usize],
+    total_loaded: usize,   // total commits before filtering (for empty state)
+    search_active: bool,    // whether a search filter is active (for empty state)
 ) -> TableState {
     let border_style = if is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {
         Style::default().fg(Color::Gray)
     };
+
+    // Empty state messages
+    if commits.is_empty() && total_loaded > 0 {
+        let msg = if search_active {
+            "No commits match your search."
+        } else {
+            "No commits found in this repository."
+        };
+        let block = Block::default()
+            .title(" Commits ")
+            .borders(Borders::ALL)
+            .border_style(border_style);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.width > 4 && inner.height > 1 {
+            let p = Paragraph::new(Span::styled(msg, Style::default().fg(Color::DarkGray)))
+                .block(Block::default());
+            let centered = Rect::new(
+                inner.x + inner.width.saturating_sub(msg.len() as u16) / 2,
+                inner.y + inner.height / 2,
+                (msg.len() as u16).min(inner.width),
+                1,
+            );
+            frame.render_widget(p, centered);
+        }
+        return TableState::default();
+    }
 
     let header_style = Style::default()
         .fg(Color::Yellow)

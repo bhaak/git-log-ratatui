@@ -156,6 +156,8 @@ pub enum GitCommand {
     FetchCommits {
         repo_path: String,
         branch: Option<String>,
+        /// Branch scope to use when branch is None.
+        scope: BranchScope,
     },
     /// Fetch diff and commit info for a specific commit hash.
     FetchDiff {

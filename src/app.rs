@@ -143,6 +143,7 @@ impl App {
         self.git_worker.send(GitCommand::FetchCommits {
             repo_path: self.repo_path.clone(),
             branch,
+            scope: self.branch_scope,
         });
     }
 
@@ -231,7 +232,8 @@ impl App {
                 .all_commits
                 .iter()
                 .filter(|c| {
-                    c.hash.to_lowercase().contains(&q)
+                    c.graph_only
+                        || c.hash.to_lowercase().contains(&q)
                         || c.author.to_lowercase().contains(&q)
                         || c.date.to_lowercase().contains(&q)
                         || c.subject.to_lowercase().contains(&q)
@@ -664,24 +666,31 @@ impl App {
     }
 
     fn handle_diff_keys(&mut self, key: KeyEvent) {
+        // Determine if we're scrolled past the metadata+file section
+        let file_section_end = ui::diff_panel::diff_line_offset(
+            self.commit_info.as_ref(),
+            &self.file_entries,
+        );
+        let past_meta = self.diff_scroll >= file_section_end || self.file_entries.is_empty();
+
         match key.code {
             KeyCode::Up => {
-                if !self.file_entries.is_empty() {
+                if past_meta {
+                    self.diff_scroll = self.diff_scroll.saturating_sub(1);
+                } else {
                     if self.selected_file_index > 0 {
                         self.selected_file_index -= 1;
                     } else {
                         self.selected_file_index = self.file_entries.len() - 1;
                     }
-                } else {
-                    self.diff_scroll = self.diff_scroll.saturating_sub(1);
                 }
             }
             KeyCode::Down => {
-                if !self.file_entries.is_empty() {
+                if past_meta {
+                    self.diff_scroll += 1;
+                } else {
                     self.selected_file_index = (self.selected_file_index + 1)
                         % self.file_entries.len();
-                } else {
-                    self.diff_scroll += 1;
                 }
             }
             KeyCode::Enter => {
@@ -710,15 +719,17 @@ impl App {
                 if !self.file_entries.is_empty() {
                     if self.selected_file_index > 0 {
                         self.selected_file_index -= 1;
+                        let offset = ui::diff_panel::diff_line_offset(
+                            self.commit_info.as_ref(),
+                            &self.file_entries,
+                        );
+                        if let Some(entry) = self.file_entries.get(self.selected_file_index) {
+                            self.diff_scroll = entry.diff_line + offset;
+                        }
                     } else {
-                        self.selected_file_index = self.file_entries.len() - 1;
-                    }
-                    let offset = ui::diff_panel::diff_line_offset(
-                        self.commit_info.as_ref(),
-                        &self.file_entries,
-                    );
-                    if let Some(entry) = self.file_entries.get(self.selected_file_index) {
-                        self.diff_scroll = entry.diff_line + offset;
+                        // Wrap from first: reset to top
+                        self.diff_scroll = 0;
+                        self.selected_file_index = 0;
                     }
                 }
             }
@@ -750,10 +761,10 @@ impl App {
                 self.dragging = None;
             }
             MouseEventKind::ScrollDown => {
-                self.handle_scroll_at(mouse.column, mouse.row, -1);
+                self.handle_scroll_at(mouse.column, mouse.row, 1);
             }
             MouseEventKind::ScrollUp => {
-                self.handle_scroll_at(mouse.column, mouse.row, 1);
+                self.handle_scroll_at(mouse.column, mouse.row, -1);
             }
             _ => {}
         }
@@ -844,7 +855,7 @@ impl App {
         }
     }
 
-    fn handle_mouse_drag(&mut self, col: u16, _row: u16) {
+    fn handle_mouse_drag(&mut self, col: u16, row: u16) {
         match self.dragging {
             Some(DragDirection::Vertical) => {
                 if let Some((tw, _)) = self.last_size {
@@ -854,7 +865,7 @@ impl App {
             }
             Some(DragDirection::Horizontal) => {
                 if let Some((_, th)) = self.last_size {
-                    let pct = (((th - 3) as f32) / (th as f32) * 100.0 - 0.0) as u16;
+                    let pct = (((th.saturating_sub(row).saturating_sub(3)) as f32) / (th as f32) * 100.0) as u16;
                     self.diff_height_pct = pct.clamp(MIN_DIFF_PCT, MAX_DIFF_PCT);
                 }
             }
@@ -863,28 +874,47 @@ impl App {
     }
 
     /// Scroll the panel under the mouse cursor (position-aware).
-    fn handle_scroll_at(&mut self, col: u16, row: u16, _direction: i32) {
+    fn handle_scroll_at(&mut self, col: u16, row: u16, direction: i32) {
         let Some((tw, th)) = self.last_size else { return };
         let full = Rect::new(0, 0, tw, th);
         let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
         let pos = (col, row);
 
-        // Determine scroll direction from the actual event
-        let _scroll_down = matches!(
-            self.last_mouse_pos,
-            None
-        ); // We handle it via actual event kind
-
         if rect_contains(&branch_area, pos) {
-            // Already handled via direct scroll up/down branches
+            if direction > 0 {
+                // Scroll down
+                if self.branch_index + 1 < self.branch_tree.len() {
+                    self.branch_index += 1;
+                } else {
+                    self.branch_index = 0;
+                }
+            } else {
+                // Scroll up
+                if self.branch_index > 0 {
+                    self.branch_index -= 1;
+                } else if !self.branch_tree.is_empty() {
+                    self.branch_index = self.branch_tree.len() - 1;
+                }
+            }
         } else if rect_contains(&table_area, pos) {
-            // Scroll commits
+            if self.visible_count() > 0 {
+                if direction > 0 {
+                    self.selected_index = (self.selected_index + 1) % self.visible_count();
+                } else {
+                    if self.selected_index > 0 {
+                        self.selected_index -= 1;
+                    } else {
+                        self.selected_index = self.visible_count() - 1;
+                    }
+                }
+            }
         } else if rect_contains(&diff_area, pos) {
-            self.diff_scroll = self.diff_scroll.saturating_sub(1);
+            if direction > 0 {
+                self.diff_scroll += 1;
+            } else {
+                self.diff_scroll = self.diff_scroll.saturating_sub(1);
+            }
         }
-
-        // Actually do the scroll based on the scroll event that called us
-        // The caller already determined scroll direction, handle based on that
     }
 
     #[allow(dead_code)]
@@ -1016,6 +1046,8 @@ impl App {
             self.selected_index,
             self.focus == Panel::Commits,
             &self.visible_to_commit,
+            self.all_commits.len(),
+            !self.search_query.is_empty(),
         );
 
         ui::diff_panel::render(

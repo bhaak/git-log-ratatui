@@ -41,21 +41,23 @@ fn fetch_branches(repo_path: &str, scope: BranchScope) -> GitResult {
 }
 
 /// Fetch commits from the repository using `git log --graph`.
-fn fetch_commits(repo_path: &str, branch: Option<&str>) -> GitResult {
+fn fetch_commits(repo_path: &str, branch: Option<&str>, scope: BranchScope) -> GitResult {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(repo_path)
         .arg("log")
         .arg("--graph")
         .arg("--date=format:%Y-%m-%d %H:%M")
-        .arg("--format=%H%x00%an%x00%ad%x00%s%x00%d%x00%P")
-        .arg("-n")
-        .arg("500");
+        .arg("--format=%H%x00%an%x00%ad%x00%s%x00%d%x00%P");
 
     if let Some(branch) = branch {
         cmd.arg(branch);
     } else {
-        cmd.arg("--all");
+        match scope {
+            BranchScope::All => { cmd.arg("--all"); }
+            BranchScope::Local => { cmd.arg("--branches"); }
+            BranchScope::Remote => { cmd.arg("--remotes"); }
+        }
     }
 
     match cmd.output() {
@@ -313,9 +315,9 @@ impl GitWorker {
                     GitCommand::FetchBranches { repo_path, scope } => {
                         fetch_branches(&repo_path, scope)
                     }
-                    GitCommand::FetchCommits { repo_path, branch } => {
-                        fetch_commits(&repo_path, branch.as_deref())
-                    }
+                GitCommand::FetchCommits { repo_path, branch, scope } => {
+                    fetch_commits(&repo_path, branch.as_deref(), scope)
+                }
                     GitCommand::FetchDiff { repo_path, hash } => {
                         fetch_diff(&repo_path, &hash)
                     }
