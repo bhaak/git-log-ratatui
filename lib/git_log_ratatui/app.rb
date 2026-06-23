@@ -5,7 +5,7 @@ require "ratatui_ruby"
 module GitLogRatatui
   class App
     FOCUS_BORDER = { fg: "magenta" }.freeze
-    PANELS = %i[branches search commits diff].freeze
+    PANELS = %i[branches search scope commits diff].freeze
 
     SCOPES = %i[all local remote].freeze
     SCOPE_LABELS = { all: "all", local: "local", remote: "remote" }.freeze
@@ -211,16 +211,19 @@ module GitLogRatatui
       @tui.draw do |frame|
         branch_area, right_area = horizontal_split(frame.area)
         search_area, table_area, diff_area, controls_area = vertical_split(right_area)
+        search_left, scope_area = scope_split(search_area)
 
         @areas = {
           branches: branch_area,
-          search: search_area,
+          search: search_left,
+          scope: scope_area,
           commits: table_area,
           diff: diff_area
         }
 
         render_branches(frame, branch_area)
-        render_search(frame, search_area)
+        render_search(frame, search_left)
+        render_scope(frame, scope_area)
         render_table(frame, table_area, commits)
         render_diff(frame, diff_area)
         render_controls(frame, controls_area, commits)
@@ -277,8 +280,35 @@ module GitLogRatatui
       commit_graph.sub("*", "│")
     end
 
+    def scope_split(area)
+      @tui.layout_split(
+        area,
+        direction: :horizontal,
+        constraints: [
+          @tui.constraint_fill(1),
+          @tui.constraint_length(10)
+        ]
+      )
+    end
+
     def focused?(panel)
       @focus == panel
+    end
+
+    def render_scope(frame, area)
+      scope_text = SCOPE_LABELS[@branch_scope].to_s
+
+      widget = @tui.paragraph(
+        text: scope_text,
+        alignment: :center,
+        block: @tui.block(
+          title: "Scope",
+          borders: [:all],
+          border_style: focused?(:scope) ? FOCUS_BORDER : nil
+        )
+      )
+
+      frame.render_widget(widget, area)
     end
 
     def render_branches(frame, area)
@@ -328,7 +358,7 @@ module GitLogRatatui
       widget = @tui.paragraph(
         text: text,
         block: @tui.block(
-          title: "Git Log — #{@path} [#{selected_branch || SCOPE_LABELS[@branch_scope]}]",
+          title: "Git Log — #{@path} [#{selected_branch || "all"}]",
           borders: [:all],
           border_style: focused?(:search) ? FOCUS_BORDER : nil
         )
@@ -1163,12 +1193,9 @@ module GitLogRatatui
       panel = hit_test(event.x, event.y)
       return unless panel
 
-      if panel == :search && @focus == :search
-        area = @areas[:search]
-        if area && event.y <= area.y + 1 && event.x >= area.right - 14
-          cycle_branch_scope
-          return
-        end
+      if panel == :scope
+        cycle_branch_scope
+        return
       end
 
       @focus = panel
