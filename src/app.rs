@@ -593,8 +593,9 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.cursor_pos > 0 {
-                    self.cursor_pos -= 1;
-                    self.search_query.remove(self.cursor_pos);
+                    let prev = prev_char_boundary(&self.search_query, self.cursor_pos);
+                    self.search_query.remove(prev);
+                    self.cursor_pos = prev;
                     self.apply_search_filter();
                 }
             }
@@ -608,14 +609,14 @@ impl App {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.cursor_pos = prev_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
-                    self.cursor_pos = self.cursor_pos.saturating_sub(1);
+                    self.cursor_pos = prev_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.cursor_pos = next_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
-                    self.cursor_pos = (self.cursor_pos + 1).min(self.search_query.len());
+                    self.cursor_pos = next_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Home => {
@@ -626,7 +627,7 @@ impl App {
             }
             KeyCode::Char(ch) => {
                 self.search_query.insert(self.cursor_pos, ch);
-                self.cursor_pos += 1;
+                self.cursor_pos += ch.len_utf8();
                 self.apply_search_filter();
             }
             _ => {}
@@ -1106,42 +1107,87 @@ fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
         && pos.1 < rect.y + rect.height
 }
 
-fn prev_word_boundary(s: &str, mut pos: usize) -> usize {
-    while pos > 0 {
-        pos -= 1;
-        if s.as_bytes()
-            .get(pos)
-            .map(|&b| b.is_ascii_alphanumeric() || b == b'_')
-            .unwrap_or(false)
-        {
-            while pos > 0 {
-                let prev = s.as_bytes()[pos - 1];
-                if !prev.is_ascii_alphanumeric() && prev != b'_' {
-                    break;
-                }
-                pos -= 1;
-            }
+/// Move to the previous char boundary (for single-step left).
+fn prev_char_boundary(s: &str, pos: usize) -> usize {
+    if pos == 0 {
+        return 0;
+    }
+    for (i, _) in s.char_indices() {
+        if i >= pos {
+            // i is at or past pos; previous boundary is the one before
             break;
         }
     }
-    pos
+    // Walk backwards from pos-1 to find a char boundary
+    for i in (0..pos).rev() {
+        if s.is_char_boundary(i) {
+            return i;
+        }
+    }
+    0
 }
 
-fn next_word_boundary(s: &str, mut pos: usize) -> usize {
-    let len = s.len();
-    while pos < len {
-        let ch = s.as_bytes()[pos];
-        if !ch.is_ascii_alphanumeric() && ch != b'_' {
+/// Move to the next char boundary (for single-step right).
+fn next_char_boundary(s: &str, pos: usize) -> usize {
+    if pos >= s.len() {
+        return s.len();
+    }
+    // Find next char boundary after pos
+    for (i, _) in s.char_indices().skip(1) {
+        if i > pos {
+            return i;
+        }
+    }
+    s.len()
+}
+
+fn prev_word_boundary(s: &str, pos: usize) -> usize {
+    // Ensure pos is at a char boundary
+    let pos = prev_char_boundary(s, pos);
+    if pos == 0 {
+        return 0;
+    }
+    // Work with chars from the end backward
+    let chars: Vec<(usize, char)> = s.char_indices().collect();
+    let char_pos = chars.iter().position(|&(i, _)| i == pos).unwrap_or(chars.len());
+    if char_pos == 0 {
+        return 0;
+    }
+    let mut idx = char_pos - 1;
+    // If at a word char, skip to start of word
+    loop {
+        let (_bi, ch) = chars.get(idx).copied().unwrap_or((0, '\0'));
+        if ch.is_alphanumeric() || ch == '_' {
+            if idx == 0 { return 0; }
+            idx = idx.saturating_sub(1);
+        } else {
+            // Found non-word char; the boundary is right after it
+            return chars.get(idx + 1).map(|&(i, _)| i).unwrap_or(0);
+        }
+    }
+}
+
+fn next_word_boundary(s: &str, pos: usize) -> usize {
+    let chars: Vec<(usize, char)> = s.char_indices().collect();
+    let char_pos = chars.iter().position(|&(i, _)| i >= pos).unwrap_or(chars.len());
+    let mut idx = char_pos;
+    // Skip word characters
+    while idx < chars.len() {
+        let (_, ch) = chars[idx];
+        if ch.is_alphanumeric() || ch == '_' {
+            idx += 1;
+        } else {
             break;
         }
-        pos += 1;
     }
-    while pos < len {
-        let ch = s.as_bytes()[pos];
-        if ch.is_ascii_alphanumeric() || ch == b'_' {
+    // Skip non-word characters
+    while idx < chars.len() {
+        let (_, ch) = chars[idx];
+        if !ch.is_alphanumeric() && ch != '_' {
+            idx += 1;
+        } else {
             break;
         }
-        pos += 1;
     }
-    pos
+    chars.get(idx).map(|&(i, _)| i).unwrap_or(s.len())
 }

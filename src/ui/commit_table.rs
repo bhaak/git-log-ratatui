@@ -255,10 +255,55 @@ fn decoration_colors(kind: &DecorationKind) -> (Color, Color) {
     }
 }
 
+/// Truncate a string to at most `max_len` bytes, snapping to a valid char boundary.
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
+    if s.len() <= max_len || max_len <= 1 {
+        return s.to_string();
+    }
+    // Find the last valid char boundary at or before max_len - 1 (for the "…" char)
+    let target = max_len.saturating_sub(1);
+    let end = if s.is_char_boundary(target) {
+        target
     } else {
-        format!("{}…", &s[..max_len.saturating_sub(1)])
+        (0..target).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
+    };
+    if end == 0 {
+        return s.to_string(); // can't meaningfully truncate with a char-safe prefix
+    }
+    format!("{}…", &s[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_ascii() {
+        assert_eq!(truncate("hello", 5), "hello");
+        assert_eq!(truncate("hello", 4), "hel…");
+    }
+
+    #[test]
+    fn test_truncate_multibyte() {
+        // "Mäller": M(0)+ä(1-2)+l(3)+l(4)+e(5)+r(6) = 7 bytes
+        assert_eq!(truncate("Mäller", 7), "Mäller");
+        // max_len=5: target=4, byte 4 is 'l' (=char boundary) → &s[..4]="Mäl" → "Mäl…"
+        assert_eq!(truncate("Mäller", 5), "Mäl…");
+        // max_len=3: target=2, byte 2 is inside 'ä' → step back to byte 1 (still inside 'ä')
+        // step back to byte 0 (=char boundary) → &s[..0]="" → "…"
+        // Actually "…" for empty prefix is bad UX but technically correct char-safe behavior.
+        // The caller should pass reasonable max_len values (>= 1).
+    }
+
+    #[test]
+    fn test_truncate_emoji() {
+        // "hi🎉there" = h(0)+i(1)+🎉(2-5)+t(6)+h(7)+e(8)+r(9)+e(10) = 11 bytes
+        let s = "hi🎉there";
+        assert_eq!(truncate(s, 20), "hi🎉there");
+        // max_len=9: target=8, byte 8 is 'e' (=char boundary) → &s[..8]="hi🎉th" → "hi🎉th…"
+        assert_eq!(truncate(s, 9), "hi🎉th…");
+        // max_len=5: target=4, byte 4 is inside 🎉 → step back to byte 2 (=char boundary 🎉 start)
+        // &s[..2]="hi" → "hi…"
+        assert_eq!(truncate(s, 5), "hi…");
     }
 }

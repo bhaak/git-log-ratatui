@@ -37,13 +37,23 @@ pub fn render(
     // Build display text with cursor
     let display: Vec<Span> = if is_focused && inner_area.width > 2 {
         let max_visible = (inner_area.width as usize).saturating_sub(2);
-        let start = if search_query.len() > max_visible {
-            search_query.len() - max_visible
+        let char_count = search_query.chars().count();
+        let char_start = if char_count > max_visible {
+            char_count - max_visible
         } else {
             0
         };
-        let visible: String = search_query.chars().skip(start).take(max_visible).collect();
-        let cursor_rel = cursor_pos.saturating_sub(start).min(visible.len());
+        let visible: String = search_query
+            .chars()
+            .skip(char_start)
+            .take(max_visible)
+            .collect();
+        let visible_char_count = visible.chars().count();
+        // Compute cursor position in characters
+        let cursor_char_pos = search_query[..cursor_pos.min(search_query.len())]
+            .chars()
+            .count();
+        let cursor_rel = cursor_char_pos.saturating_sub(char_start);
 
         let mut spans = Vec::new();
         for (i, ch) in visible.chars().enumerate() {
@@ -61,8 +71,8 @@ pub fn render(
                 ));
             }
         }
-        // Show cursor at end if it's past the last character
-        if cursor_rel >= visible.len() {
+        // Show cursor at end if it's past the last visible character
+        if cursor_rel >= visible_char_count {
             spans.push(Span::styled(
                 " ",
                 Style::default()
