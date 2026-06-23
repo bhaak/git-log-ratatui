@@ -1163,6 +1163,11 @@ module GitLogRatatui
       panel = hit_test(event.x, event.y)
       return unless panel
 
+      if panel == :search && @focus == :search
+        cycle_branch_scope
+        return
+      end
+
       @focus = panel
 
       case panel
