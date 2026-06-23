@@ -16,32 +16,29 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
     let desc_style = Style::default().fg(Color::White);
     let bracket_style = Style::default().fg(Color::DarkGray);
 
-    let common = vec![
-        ("q", "Quit"),
-        ("Tab", "Focus"),
-    ];
+    let common = vec![("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
 
     let context: Vec<(&str, &str)> = match focus {
         Panel::Branches => vec![
-            ("\u{2191}\u{2193}", "Nav"),
-            ("\u{2192}\u{2190}", "Expand"),
+            ("j/k/↑↓", "Nav"),
+            ("→←", "Expand"),
             ("Space", "Toggle"),
             ("Enter", "Load"),
         ],
         Panel::Search => vec![
             ("Esc", "Clear"),
             ("Ctrl+V", "Paste"),
+            ("Ctrl+A/E", "Home/End"),
         ],
-        Panel::Scope => vec![
-            ("Ctrl+S", "Cycle"),
-        ],
+        Panel::Scope => vec![("Space/Enter", "Cycle"), ("Ctrl+S", "Cycle")],
         Panel::Commits => vec![
-            ("\u{2191}\u{2193}", "Nav"),
+            ("j/k/↑↓", "Nav"),
             ("y", "Copy hash 7"),
             ("Y", "Copy full"),
+            ("Enter", "→ Diff"),
         ],
         Panel::Diff => vec![
-            ("\u{2191}\u{2193}", "File"),
+            ("j/k/↑↓", "File"),
             ("Enter", "Jump"),
             ("n/p", "Next/prev"),
             ("Home/End", "Top/bottom"),
@@ -49,8 +46,6 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
     };
 
     let mut spans: Vec<Span> = Vec::new();
-    spans.push(Span::styled(commit_count_info, desc_style));
-    spans.push(Span::raw("  "));
 
     for (key, desc) in common.iter().chain(context.iter()) {
         spans.push(Span::styled("<", bracket_style));
@@ -61,8 +56,11 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
         spans.push(Span::raw("  "));
     }
 
+    spans.push(Span::styled(commit_count_info, desc_style));
+
     let paragraph = Paragraph::new(Line::from(spans)).block(
         Block::default()
+            .title(" Help ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray)),
     );
@@ -71,6 +69,13 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
 }
 
 /// Format commit count information string.
-pub fn format_commit_count(selected: usize, filtered: usize, total: usize) -> String {
-    format!("{}/{} (filtered from {})", selected + 1, filtered, total)
+/// Shows dash when no commits, or "selected/total" or "selected/total (filtered from full)".
+pub fn format_commit_count(selected: usize, visible: usize, total: usize) -> String {
+    if visible == 0 {
+        " - ".to_string()
+    } else if visible == total {
+        format!(" {}/{} ", selected + 1, visible)
+    } else {
+        format!(" {}/{} (filtered from {}) ", selected + 1, visible, total)
+    }
 }

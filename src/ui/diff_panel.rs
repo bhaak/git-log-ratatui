@@ -13,7 +13,7 @@ use crate::models::*;
 pub fn render(
     frame: &mut Frame,
     area: Rect,
-    _commit_info: Option<&CommitInfo>,
+    commit_info: Option<&CommitInfo>,
     diff_lines: &[String],
     file_entries: &[FileEntry],
     _file_lines: &[String],
@@ -27,20 +27,19 @@ pub fn render(
         Style::default().fg(Color::Gray)
     };
 
-    let total_lines = build_diff_display(diff_lines, file_entries, diff_scroll, selected_file_index);
-    let displayed = total_lines.len();
+    let all_lines = build_all_lines(commit_info, diff_lines, file_entries, selected_file_index);
+    let total = all_lines.len();
+    let visible = area.height.saturating_sub(2) as usize;
+    let start = (diff_scroll + 1).min(total);
+    let end = (diff_scroll + visible).min(total);
 
-    let scroll_info = if diff_lines.is_empty() {
-        String::new()
-    } else {
-        let visible = area.height.saturating_sub(2) as usize;
-        let total = displayed;
-        let start = diff_scroll + 1;
-        let end = (diff_scroll + visible).min(total);
+    let scroll_info = if total > 0 {
         format!(" lines {}-{}/{} ", start, end, total)
+    } else {
+        String::new()
     };
 
-    let paragraph = Paragraph::new(total_lines)
+    let paragraph = Paragraph::new(all_lines)
         .block(
             Block::default()
                 .title(format!(" Diff{}", scroll_info))
@@ -52,25 +51,38 @@ pub fn render(
     frame.render_widget(paragraph, area);
 }
 
-/// Build the full diff display lines: metadata, files, and diff content.
-fn build_diff_display(
-    diff_lines: &[String],
-    file_entries: &[FileEntry],
-    _diff_scroll: usize,
+/// Build the complete display: metadata + file list header + file entries + a gap + diff content.
+fn build_all_lines<'a>(
+    commit_info: Option<&'a CommitInfo>,
+    diff_lines: &'a [String],
+    file_entries: &'a [FileEntry],
     selected_file_index: usize,
-) -> Vec<Line<'static>> {
+) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
     if diff_lines.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Select a commit to view diff.",
-            Style::default().fg(Color::DarkGray),
-        )));
+        if commit_info.is_some() {
+            lines.push(Line::from(Span::styled(
+                "No changes in this commit.",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "Select a commit to view diff.",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
         return lines;
     }
 
-    // Metadata is built separately by the caller
-    // Changed files header
+    // Commit metadata
+    if let Some(info) = commit_info {
+        lines.extend(build_metadata_lines(info));
+    }
+
+    let metadata_len = lines.len();
+
+    // Changed files header + entries
     if !file_entries.is_empty() {
         lines.push(Line::from(Span::styled(
             "Changed files:",
@@ -81,9 +93,7 @@ fn build_diff_display(
 
         for (i, entry) in file_entries.iter().enumerate() {
             let style = if i == selected_file_index {
-                Style::default()
-                    .bg(Color::White)
-                    .fg(Color::Black)
+                Style::default().bg(Color::White).fg(Color::Black)
             } else {
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
@@ -96,9 +106,13 @@ fn build_diff_display(
         lines.push(Line::from(""));
     }
 
+    let _file_header_len = lines.len() - metadata_len;
+
     // Diff content with word-level highlighting
-    let mut prev_removed: Option<String> = None;
-    for line in diff_lines {
+    // Collect diff lines into indexed pairs for LCS matching
+    let _diff_pairs = build_diff_pairs(diff_lines);
+
+    for (line_idx, line) in diff_lines.iter().enumerate() {
         if line.starts_with("@@") {
             lines.push(Line::from(Span::styled(
                 line.clone(),
@@ -115,6 +129,7 @@ fn build_diff_display(
             )));
         } else if line.starts_with('+') {
             let content = &line[1..];
+            let prev_removed = find_prev_removed_line(diff_lines, line_idx);
             let tokens = lcs::diff_tokens_added(content, prev_removed.as_deref());
             let spans: Vec<Span> = tokens
                 .into_iter()
@@ -139,11 +154,10 @@ fn build_diff_display(
                 combined.extend(spans);
                 lines.push(Line::from(combined));
             }
-            prev_removed = None;
         } else if line.starts_with('-') {
             let content = &line[1..];
-            prev_removed = Some(content.to_string());
-            let tokens = lcs::diff_tokens_removed(content, None);
+            let next_added = find_next_added_line(diff_lines, line_idx);
+            let tokens = lcs::diff_tokens_removed(content, next_added.as_deref());
             let spans: Vec<Span> = tokens
                 .into_iter()
                 .map(|t| {
@@ -172,15 +186,78 @@ fn build_diff_display(
                 line.clone(),
                 Style::default().fg(Color::Gray),
             )));
-            prev_removed = None;
         }
     }
 
     lines
 }
 
+/// Build diff line pairs for LCS matching: maps each `-` line to its corresponding `+` line
+/// and vice versa, using Ruby's bidirectional search algorithm.
+fn build_diff_pairs(diff_lines: &[String]) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+    let mut removed_stack: Vec<usize> = Vec::new();
+    let mut added_stack: Vec<usize> = Vec::new();
+
+    for (i, line) in diff_lines.iter().enumerate() {
+        if line.starts_with('-') {
+            if let Some(&added_idx) = added_stack.first() {
+                // Pair the earliest added with this removed
+                pairs.push((i, added_idx));
+                added_stack.remove(0);
+            } else {
+                removed_stack.push(i);
+            }
+        } else if line.starts_with('+') {
+            if let Some(&removed_idx) = removed_stack.first() {
+                pairs.push((removed_idx, i));
+                removed_stack.remove(0);
+            } else {
+                added_stack.push(i);
+            }
+        } else if !line.starts_with("@@")
+            && !line.starts_with("diff ")
+            && !line.starts_with("index ")
+            && !line.starts_with("--- ")
+            && !line.starts_with("+++ ")
+        {
+            // Context line: flush remaining stacks
+            removed_stack.clear();
+            added_stack.clear();
+        }
+    }
+
+    pairs
+}
+
+/// Find the previous removed line that pairs with the current added line.
+fn find_prev_removed_line(diff_lines: &[String], current: usize) -> Option<String> {
+    let pairs = build_diff_pairs(diff_lines);
+    for (removed_idx, added_idx) in &pairs {
+        if *added_idx == current {
+            if let Some(line) = diff_lines.get(*removed_idx) {
+                return Some(line[1..].to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Find the next added line that pairs with the current removed line.
+fn find_next_added_line(diff_lines: &[String], current: usize) -> Option<String> {
+    let pairs = build_diff_pairs(diff_lines);
+    for (removed_idx, added_idx) in &pairs {
+        if *removed_idx == current {
+            if let Some(line) = diff_lines.get(*added_idx) {
+                return Some(line[1..].to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Build the metadata display lines for a commit.
-pub fn build_metadata_lines(commit_info: &CommitInfo) -> Vec<Line<'_>> {
+pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let label_style = Style::default()
         .fg(Color::DarkGray)
@@ -199,31 +276,31 @@ pub fn build_metadata_lines(commit_info: &CommitInfo) -> Vec<Line<'_>> {
 
     // Hash
     lines.push(Line::from(vec![
-        Span::styled("Hash:       ", label_style),
+        Span::styled("Hash:          ", label_style),
         Span::styled(&commit_info.hash, value_style),
     ]));
 
     // Parents
     let parents_text = if commit_info.parents.is_empty() {
-        "—".to_string()
+        "\u{2500}".to_string()
     } else {
         commit_info.parents.join(" ")
     };
     lines.push(Line::from(vec![
-        Span::styled("Parents:    ", label_style),
+        Span::styled("Parents:       ", label_style),
         Span::styled(parents_text, dim_style),
     ]));
 
     // Author
     lines.push(Line::from(vec![
-        Span::styled("Author:     ", label_style),
+        Span::styled("Author:        ", label_style),
         Span::styled(
             format!("{} <{}>", commit_info.author_name, commit_info.author_email),
             value_style,
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Date:       ", label_style),
+        Span::styled("Date:          ", label_style),
         Span::styled(&commit_info.author_date, value_style),
     ]));
 
@@ -232,7 +309,7 @@ pub fn build_metadata_lines(commit_info: &CommitInfo) -> Vec<Line<'_>> {
         || commit_info.committer_email != commit_info.author_email
     {
         lines.push(Line::from(vec![
-            Span::styled("Committer:  ", label_style),
+            Span::styled("Committer:     ", label_style),
             Span::styled(
                 format!(
                     "{} <{}>",
@@ -246,7 +323,7 @@ pub fn build_metadata_lines(commit_info: &CommitInfo) -> Vec<Line<'_>> {
         && !commit_info.committer_date.is_empty()
     {
         lines.push(Line::from(vec![
-            Span::styled("Comm. Date: ", label_style),
+            Span::styled("Comm. Date:    ", label_style),
             Span::styled(&commit_info.committer_date, value_style),
         ]));
     }
@@ -261,4 +338,87 @@ pub fn build_file_lines(file_entries: &[FileEntry]) -> Vec<String> {
         .iter()
         .map(|e| format!("  {}", e.name))
         .collect()
+}
+
+/// Calculate the offset of the first diff line in the rendered output
+/// (metadata lines + file header lines + separator).
+pub fn diff_line_offset(
+    commit_info: Option<&CommitInfo>,
+    file_entries: &[FileEntry],
+) -> usize {
+    let mut offset = 0;
+    if let Some(info) = commit_info {
+        offset += build_metadata_lines(info).len();
+    }
+    if !file_entries.is_empty() {
+        offset += 1; // "Changed files:" header
+        offset += file_entries.len(); // file entries
+        offset += 1; // separator blank line
+    }
+    offset
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_diff_pairs_simple() {
+        let lines = vec![
+            "-old".to_string(),
+            "+new".to_string(),
+        ];
+        let pairs = build_diff_pairs(&lines);
+        assert_eq!(pairs, vec![(0, 1)]);
+    }
+
+    #[test]
+    fn test_build_diff_pairs_with_context() {
+        let lines = vec![
+            "-old1".to_string(),
+            " context".to_string(),
+            "+new1".to_string(),
+        ];
+        let pairs = build_diff_pairs(&lines);
+        // Context line clears stacks, so -old1 is unmatched and +new1 is unmatched
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn test_build_diff_pairs_multiple() {
+        let lines = vec![
+            "-old1".to_string(),
+            "+new1".to_string(),
+            "-old2".to_string(),
+            "+new2".to_string(),
+        ];
+        let pairs = build_diff_pairs(&lines);
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs.contains(&(0, 1)));
+        assert!(pairs.contains(&(2, 3)));
+    }
+
+    #[test]
+    fn test_find_prev_removed() {
+        let lines = vec![
+            "-removed content".to_string(),
+            "+added content".to_string(),
+        ];
+        assert_eq!(
+            find_prev_removed_line(&lines, 1),
+            Some("removed content".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_next_added() {
+        let lines = vec![
+            "-removed content".to_string(),
+            "+added content".to_string(),
+        ];
+        assert_eq!(
+            find_next_added_line(&lines, 0),
+            Some("added content".to_string())
+        );
+    }
 }

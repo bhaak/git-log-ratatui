@@ -8,19 +8,21 @@ use ratatui::{
 
 use crate::models::*;
 
-/// Widths for the commit table columns.
-const COL_GRAPH: u16 = 12;
+const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
+const COL_SUBJECT_MIN: u16 = 20;
 const COL_AUTHOR: u16 = 15;
 const COL_DATE: u16 = 18;
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
+/// Column order matches Ruby: Graph | Hash | Subject | Author | Date
 pub fn render(
     frame: &mut Frame,
     area: Rect,
     commits: &[Commit],
-    selected_index: usize,
+    visible_index: usize,
     is_focused: bool,
+    visible_to_commit: &[usize],
 ) -> TableState {
     let border_style = if is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
@@ -35,9 +37,9 @@ pub fn render(
     let header = Row::new(vec![
         "Graph",
         "Hash",
+        "Subject",
         "Author",
         "Date",
-        "Subject",
     ])
     .style(header_style)
     .height(1);
@@ -50,41 +52,74 @@ pub fn render(
         })
         .add_modifier(Modifier::BOLD);
 
-    let available_width = area.width.saturating_sub(2); // borders
+    // Calculate dynamic graph width
+    let max_graph = commits
+        .iter()
+        .map(|c| c.graph.len())
+        .max()
+        .unwrap_or(4) as u16;
+
+    let col_graph = max_graph.min(COL_GRAPH_MAX).max(4);
+
+    let available_width = area.width.saturating_sub(2);
+    let fixed_width = col_graph + COL_HASH + COL_AUTHOR + COL_DATE + 4; // +4 separators
     let subject_width = available_width
-        .saturating_sub(COL_GRAPH + COL_HASH + COL_AUTHOR + COL_DATE + 4) // 4 for separators
-        .max(10);
+        .saturating_sub(fixed_width)
+        .max(COL_SUBJECT_MIN);
 
     let widths = [
-        Constraint::Length(COL_GRAPH),
+        Constraint::Length(col_graph),
         Constraint::Length(COL_HASH),
+        Constraint::Length(subject_width),
         Constraint::Length(COL_AUTHOR),
         Constraint::Length(COL_DATE),
-        Constraint::Length(subject_width),
     ];
 
-    let rows: Vec<Row> = commits.iter().map(|commit| {
-        let graph_span = build_graph_span(commit);
-        let hash_span = build_hash_span(commit);
-        let author_span = Span::styled(
-            truncate(&commit.author, COL_AUTHOR as usize),
-            Style::default().fg(Color::White),
-        );
-        let date_span = Span::styled(
-            &commit.date,
-            Style::default().fg(Color::DarkGray),
-        );
-        let subject_span = build_subject_span(commit);
+    // Build rows with mapped selection
+    let mapped_index = visible_to_commit.get(visible_index).copied().unwrap_or(0);
 
-        Row::new(vec![
-            graph_span,
-            Line::from(hash_span),
-            Line::from(author_span),
-            Line::from(date_span),
-            Line::from(subject_span),
-        ])
-        .height(1)
-    }).collect();
+    // Filter graph_only rows out and show them with minimal content
+    let rows: Vec<Row> = commits
+        .iter()
+        .map(|commit| {
+            let graph_span = build_graph_span(commit, col_graph as usize);
+            let hash_span = build_hash_span(commit);
+
+            let subject_span = if commit.graph_only {
+                Line::from(Span::styled(
+                    graph_only_decorations(commit),
+                    Style::default().fg(Color::DarkGray),
+                ))
+            } else {
+                Line::from(Span::styled(
+                    truncate(&commit.subject, subject_width as usize),
+                    if commit.merge {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::White)
+                    },
+                ))
+            };
+
+            let author_span = Line::from(Span::styled(
+                truncate(&commit.author, COL_AUTHOR as usize),
+                Style::default().fg(Color::White),
+            ));
+            let date_span = Line::from(Span::styled(
+                &commit.date,
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            Row::new(vec![
+                graph_span,
+                hash_span,
+                subject_span,
+                author_span,
+                date_span,
+            ])
+            .height(1)
+        })
+        .collect();
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -98,23 +133,22 @@ pub fn render(
         .column_spacing(1);
 
     let mut state = TableState::default();
-    if !commits.is_empty() {
-        state.select(Some(selected_index.min(commits.len() - 1)));
+    if !commits.is_empty() && mapped_index < commits.len() {
+        state.select(Some(mapped_index));
     }
 
     frame.render_stateful_widget(table, area, &mut state);
-
     state
 }
 
-/// Build the graph span with Unicode box-drawing characters and decorations.
-fn build_graph_span(commit: &Commit) -> Line<'static> {
+fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
     let graph_unicode = convert_graph_chars(&commit.graph);
+    // Pad to consistent width for alignment
+    let padded = format!("{:width$}", graph_unicode, width = graph_width);
     let mut spans = Vec::new();
 
-    // Add graph text
     spans.push(Span::styled(
-        graph_unicode,
+        padded,
         if commit.merge {
             Style::default().fg(Color::Yellow)
         } else {
@@ -122,7 +156,6 @@ fn build_graph_span(commit: &Commit) -> Line<'static> {
         },
     ));
 
-    // Add decorations inline
     for deco in &commit.decorations {
         let (bg, fg) = decoration_colors(&deco.kind);
         spans.push(Span::raw(" "));
@@ -135,47 +168,48 @@ fn build_graph_span(commit: &Commit) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Convert ASCII graph characters to Unicode box-drawing characters.
-fn convert_graph_chars(graph: &str) -> String {
-    graph
-        .replace('|', "\u{2502}") // │
-        .replace('/', "\u{2571}") // ╱
-        .replace('\\', "\u{2572}") // ╲
-        .replace('_', "\u{2500}") // ─
-        .replace('*', "\u{2502}") // │ (commit marker)
-}
-
-/// Build the hash span, with yellow color for merge commits.
-fn build_hash_span(commit: &Commit) -> Span<'static> {
+fn build_hash_span(commit: &Commit) -> Line<'static> {
     let short_hash = if commit.hash.len() > 7 {
         &commit.hash[..7]
     } else {
         &commit.hash
     };
 
-    Span::styled(
+    Line::from(Span::styled(
         short_hash.to_string(),
         if commit.merge {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Rgb(200, 150, 100))
         },
-    )
+    ))
 }
 
-/// Build the subject span with decoration-related styling.
-fn build_subject_span(commit: &Commit) -> Span<'static> {
-    Span::styled(
-        commit.subject.clone(),
-        if commit.merge {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::White)
-        },
-    )
+/// Build decorations-only text for graph_only rows.
+fn graph_only_decorations(commit: &Commit) -> String {
+    if commit.decorations.is_empty() {
+        String::new()
+    } else {
+        commit
+            .decorations
+            .iter()
+            .map(|d| d.label.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
-/// Get colors for a decoration kind.
+fn convert_graph_chars(graph: &str) -> String {
+    graph
+        .replace('|', "\u{2502}")
+        .replace('/', "\u{2571}")
+        .replace('\\', "\u{2572}")
+        .replace('_', "\u{2500}")
+        .replace('*', "\u{2502}")
+}
+
 fn decoration_colors(kind: &DecorationKind) -> (Color, Color) {
     match kind {
         DecorationKind::Head => (Color::Rgb(0, 85, 0), Color::Rgb(100, 255, 100)),
@@ -185,7 +219,6 @@ fn decoration_colors(kind: &DecorationKind) -> (Color, Color) {
     }
 }
 
-/// Truncate a string to the given max character count, adding "..." if needed.
 fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()

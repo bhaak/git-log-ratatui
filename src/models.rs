@@ -68,6 +68,8 @@ pub struct TreeItem {
     pub is_branch: bool,
     pub full_path: String,
     pub tree_prefix: String,
+    /// Unique key for this node in the expanded/collapsed map.
+    pub key: String,
 }
 
 /// The scope of branches to display.

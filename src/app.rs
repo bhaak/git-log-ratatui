@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
 };
@@ -16,85 +16,52 @@ use crate::git::GitWorker;
 use crate::tree;
 use crate::ui;
 
-/// Ratio of branch panel width (percentage).
 const DEFAULT_BRANCH_PCT: u16 = 20;
 const MIN_BRANCH_PCT: u16 = 10;
 const MAX_BRANCH_PCT: u16 = 40;
 
-/// Ratio of diff panel height (percentage).
 const DEFAULT_DIFF_PCT: u16 = 35;
 const MIN_DIFF_PCT: u16 = 10;
 const MAX_DIFF_PCT: u16 = 65;
 
-/// The main application state.
 pub struct App {
-    /// Path to the git repository.
     repo_path: String,
-
-    // --- Git worker ---
     git_worker: GitWorker,
 
-    // --- Branch state ---
-    /// Flat list of all loaded branch names.
     all_branches: Vec<String>,
-    /// Hierarchical tree of branches.
     branch_tree: Vec<TreeItem>,
-    /// Which tree nodes are expanded (key = full_path).
     expanded_nodes: BTreeMap<String, bool>,
-    /// Selected row in the branch list.
     branch_index: usize,
-    /// Current branch scope filter.
     branch_scope: BranchScope,
-    /// Currently loaded branch name (None = all branches).
     selected_branch: Option<String>,
 
-    // --- Search state ---
     search_query: String,
     cursor_pos: usize,
 
-    // --- Commit state ---
-    /// All commits for the currently loaded branch/scope.
     all_commits: Vec<Commit>,
-    /// Filtered commits based on search query.
     filtered_commits: Vec<Commit>,
-    /// Mapping from filtered index to original commit index.
-    commit_map: Vec<usize>,
-    /// Selected row in the commit table.
     selected_index: usize,
+    /// Maps visible row (skipping graph_only) to filtered_commits index.
+    visible_to_commit: Vec<usize>,
 
-    // --- Diff state ---
-    /// Structured commit metadata for the selected commit.
     commit_info: Option<CommitInfo>,
-    /// Raw diff output lines.
     diff_lines: Vec<String>,
-    /// Changed files in the diff.
     file_entries: Vec<FileEntry>,
-    /// Formatted file list display lines.
     file_lines: Vec<String>,
-    /// Selected file index in the file list.
     selected_file_index: usize,
-    /// Scroll position in the diff panel.
     diff_scroll: usize,
-    /// Last selected commit index (to detect changes).
-    last_selected_index: Option<usize>,
+    last_selected_hash: Option<String>,
 
-    // --- Focus and layout ---
     focus: Panel,
     branch_width_pct: u16,
     diff_height_pct: u16,
     dragging: Option<DragDirection>,
-    /// Last terminal size (to detect resize).
     last_size: Option<(u16, u16)>,
+    last_mouse_pos: Option<(u16, u16)>,
 
-    // --- Clipboard ---
     status_message: Option<String>,
-
-    // --- Load state ---
-    /// Whether branches have been initially loaded.
     branches_loaded: bool,
-    /// Whether commits have been initially loaded.
     commits_loaded: bool,
-    /// Whether a diff request is pending.
     diff_pending: bool,
 }
 
@@ -121,20 +88,21 @@ impl App {
             cursor_pos: 0,
             all_commits: Vec::new(),
             filtered_commits: Vec::new(),
-            commit_map: Vec::new(),
             selected_index: 0,
+            visible_to_commit: Vec::new(),
             commit_info: None,
             diff_lines: Vec::new(),
             file_entries: Vec::new(),
             file_lines: Vec::new(),
             selected_file_index: 0,
             diff_scroll: 0,
-            last_selected_index: None,
+            last_selected_hash: None,
             focus: Panel::Commits,
             branch_width_pct: DEFAULT_BRANCH_PCT,
             diff_height_pct: DEFAULT_DIFF_PCT,
             dragging: None,
             last_size: None,
+            last_mouse_pos: None,
             status_message: None,
             branches_loaded: false,
             commits_loaded: false,
@@ -142,24 +110,17 @@ impl App {
         }
     }
 
-    /// Run the main event loop.
     pub fn run(&mut self, terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>) -> Result<(), String> {
-        // Initial data load
         self.request_branches();
         self.request_commits(None);
 
         loop {
-            // Check for git worker results
             self.process_git_results();
-
-            // Draw the UI
             terminal
                 .draw(|frame| self.render(frame))
                 .map_err(|e| format!("Render error: {}", e))?;
-
-            // Handle events
             if !self.handle_event()? {
-                break; // quit
+                break;
             }
         }
 
@@ -205,7 +166,6 @@ impl App {
                     self.all_commits = commits;
                     self.apply_search_filter();
                     self.commits_loaded = true;
-                    // Load diff for first commit
                     if !self.filtered_commits.is_empty() && self.commit_info.is_none() {
                         let hash = self.filtered_commits[0].hash.clone();
                         if !hash.is_empty() {
@@ -233,49 +193,91 @@ impl App {
         }
     }
 
-    // --- Branch tree management ---
+    // --- Branch tree ---
 
     fn rebuild_branch_tree(&mut self) {
+        // Build tree, inserting "All Branches" as a virtual root item
+        let all_item = TreeItem {
+            name: "  All Branches".to_string(),
+            depth: 1,
+            expandable: false,
+            expanded: false,
+            is_branch: true,
+            full_path: "__all__".to_string(),
+            tree_prefix: String::new(),
+            key: "__all__".to_string(),
+        };
+
+        let mut items = vec![all_item];
+
         let mut root = tree::build_branch_tree(&self.all_branches);
         tree::sort_tree(&mut root);
-        self.branch_tree = tree::flatten_tree(
-            &root,
-            0,
-            &self.expanded_nodes,
-        );
+
+        // Flatten with depth starting at 1 so items have depth >= 2
+        let branch_items = tree::flatten_tree(&root, 1, &self.expanded_nodes);
+        items.extend(branch_items);
+
+        self.branch_tree = items;
     }
 
-    // --- Search filtering ---
+    // --- Search ---
 
     fn apply_search_filter(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_commits = self.all_commits.clone();
-            self.commit_map = (0..self.all_commits.len()).collect();
         } else {
             let q = self.search_query.to_lowercase();
-            let mut filtered = Vec::new();
-            let mut map = Vec::new();
-            for (i, commit) in self.all_commits.iter().enumerate() {
-                if commit.hash.to_lowercase().contains(&q)
-                    || commit.author.to_lowercase().contains(&q)
-                    || commit.date.to_lowercase().contains(&q)
-                    || commit.subject.to_lowercase().contains(&q)
-                {
-                    filtered.push(commit.clone());
-                    map.push(i);
-                }
-            }
-            self.filtered_commits = filtered;
-            self.commit_map = map;
+            self.filtered_commits = self
+                .all_commits
+                .iter()
+                .filter(|c| {
+                    c.hash.to_lowercase().contains(&q)
+                        || c.author.to_lowercase().contains(&q)
+                        || c.date.to_lowercase().contains(&q)
+                        || c.subject.to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
         }
-        self.selected_index = self
-            .selected_index
-            .min(self.filtered_commits.len().saturating_sub(1));
+        self.build_visible_mapping();
+        self.selected_index = 0;
+        self.clamp_selection();
     }
 
-    // --- Input handling ---
+    fn build_visible_mapping(&mut self) {
+        self.visible_to_commit = (0..self.filtered_commits.len())
+            .filter(|&i| !self.filtered_commits[i].graph_only)
+            .collect();
+    }
 
-    /// Handle a single event. Returns Ok(false) to quit.
+    fn visible_count(&self) -> usize {
+        self.visible_to_commit.len()
+    }
+
+    fn visible_to_filtered(&self, visible_idx: usize) -> usize {
+        self.visible_to_commit
+            .get(visible_idx)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    #[allow(dead_code)]
+    fn filtered_to_visible(&self, filtered_idx: usize) -> Option<usize> {
+        self.visible_to_commit
+            .iter()
+            .position(|&i| i == filtered_idx)
+    }
+
+    fn clamp_selection(&mut self) {
+        if self.visible_count() > 0 {
+            self.selected_index = self.selected_index.min(self.visible_count().saturating_sub(1));
+        } else {
+            self.selected_index = 0;
+        }
+    }
+
+    // --- Events ---
+
     fn handle_event(&mut self) -> Result<bool, String> {
         if !event::poll(std::time::Duration::from_millis(16)).map_err(|e| format!("Poll error: {}", e))? {
             return Ok(true);
@@ -288,6 +290,13 @@ impl App {
                 self.handle_key(key)
             }
             Event::Mouse(mouse) => {
+                // Track mouse position for scroll
+                if let MouseEventKind::Down(_) | MouseEventKind::Drag(_) = mouse.kind {
+                    self.last_mouse_pos = Some((mouse.column, mouse.row));
+                }
+                if let MouseEventKind::Up(_) = mouse.kind {
+                    self.dragging = None;
+                }
                 self.handle_mouse(mouse);
                 Ok(true)
             }
@@ -300,10 +309,20 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<bool, String> {
-        // Global keys (always handled)
+        // Quit
         match key.code {
             KeyCode::Char('q') => return Ok(false),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(false),
+            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.suspend();
+                return Ok(true);
+            }
+            _ => {}
+        }
+
+        // Global keys — work regardless of focus
+        match key.code {
+            // Focus cycling
             KeyCode::Tab => {
                 self.focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
                     self.focus.prev()
@@ -312,30 +331,92 @@ impl App {
                 };
                 return Ok(true);
             }
-            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.suspend();
+            KeyCode::Char('l') => {
+                self.focus = self.focus.next();
+                return Ok(true);
+            }
+            KeyCode::Char('h') => {
+                self.focus = self.focus.prev();
+                return Ok(true);
+            }
+            // Scope cycling — global
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.cycle_scope();
+                return Ok(true);
+            }
+            // Clipboard — global
+            KeyCode::Char('y') => {
+                if self.visible_count() > 0 {
+                    let ci = self.visible_to_filtered(self.selected_index);
+                    if let Some(c) = self.filtered_commits.get(ci) {
+                        let short = if c.hash.len() > 7 {
+                            &c.hash[..7]
+                        } else {
+                            &c.hash
+                        };
+                        let _ = clipboard::copy_to_clipboard(short);
+                    }
+                }
+                return Ok(true);
+            }
+            KeyCode::Char('Y') => {
+                if self.visible_count() > 0 {
+                    let ci = self.visible_to_filtered(self.selected_index);
+                    if let Some(c) = self.filtered_commits.get(ci) {
+                        let _ = clipboard::copy_to_clipboard(&c.hash);
+                    }
+                }
+                return Ok(true);
+            }
+            // Paste — global
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.handle_paste();
+                return Ok(true);
+            }
+            // Search editing — global (when not handled by focused panel)
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.focus == Panel::Search {
+                    self.cursor_pos = 0;
+                } else {
+                    self.focus = Panel::Search;
+                    self.cursor_pos = 0;
+                }
+                return Ok(true);
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.focus == Panel::Search {
+                    self.cursor_pos = self.search_query.len();
+                } else {
+                    self.focus = Panel::Search;
+                    self.cursor_pos = self.search_query.len();
+                }
+                return Ok(true);
+            }
+            KeyCode::Esc => {
+                if self.focus == Panel::Search {
+                    self.search_query.clear();
+                    self.cursor_pos = 0;
+                    self.apply_search_filter();
+                }
                 return Ok(true);
             }
             _ => {}
         }
 
-        // Clipboard global keys
-        if key.code == KeyCode::Char('y') {
-            self.copy_current_hash();
-            return Ok(true);
-        }
-        if key.code == KeyCode::Char('Y') {
-            self.copy_current_full_hash();
-            return Ok(true);
-        }
-
-        // Paste (Ctrl+V) — handled for search
-        if key.code == KeyCode::Char('v') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            self.handle_paste();
-            return Ok(true);
+        // Vim navigation keys (global alternative for up/down)
+        match key.code {
+            KeyCode::Char('j') => {
+                self.move_down();
+                return Ok(true);
+            }
+            KeyCode::Char('k') => {
+                self.move_up();
+                return Ok(true);
+            }
+            _ => {}
         }
 
-        // Handle based on focused panel
+        // Panel-specific keys
         match self.focus {
             Panel::Branches => self.handle_branch_keys(key),
             Panel::Search => self.handle_search_keys(key),
@@ -347,23 +428,70 @@ impl App {
         Ok(true)
     }
 
-    fn copy_current_hash(&self) {
-        if let Some(commit) = self.filtered_commits.get(self.selected_index) {
-            let short = if commit.hash.len() > 7 {
-                &commit.hash[..7]
-            } else {
-                &commit.hash
-            };
-            if let Err(_e) = clipboard::copy_to_clipboard(short) {
-                // silently fail
+    fn move_down(&mut self) {
+        match self.focus {
+            Panel::Branches => {
+                if self.branch_index + 1 < self.branch_tree.len() {
+                    self.branch_index += 1;
+                } else {
+                    self.branch_index = 0;
+                }
             }
+            Panel::Commits => {
+                if self.visible_count() > 0 {
+                    self.selected_index = (self.selected_index + 1) % self.visible_count();
+                }
+            }
+            Panel::Diff => {
+                if !self.file_entries.is_empty() {
+                    self.selected_file_index = (self.selected_file_index + 1)
+                        % self.file_entries.len();
+                }
+            }
+            _ => {}
         }
     }
 
-    fn copy_current_full_hash(&self) {
-        if let Some(commit) = self.filtered_commits.get(self.selected_index) {
-            let _ = clipboard::copy_to_clipboard(&commit.hash);
+    fn move_up(&mut self) {
+        match self.focus {
+            Panel::Branches => {
+                if self.branch_index > 0 {
+                    self.branch_index -= 1;
+                } else if !self.branch_tree.is_empty() {
+                    self.branch_index = self.branch_tree.len() - 1;
+                }
+            }
+            Panel::Commits => {
+                if self.visible_count() > 0 {
+                    if self.selected_index > 0 {
+                        self.selected_index -= 1;
+                    } else {
+                        self.selected_index = self.visible_count() - 1;
+                    }
+                }
+            }
+            Panel::Diff => {
+                if !self.file_entries.is_empty() {
+                    if self.selected_file_index > 0 {
+                        self.selected_file_index -= 1;
+                    } else {
+                        self.selected_file_index = self.file_entries.len() - 1;
+                    }
+                }
+            }
+            _ => {}
         }
+    }
+
+    fn cycle_scope(&mut self) {
+        self.branch_scope = self.branch_scope.next();
+        self.branch_index = 0;
+        self.expanded_nodes.clear();
+        self.search_query.clear();
+        self.cursor_pos = 0;
+        self.selected_branch = None;
+        self.request_branches();
+        self.request_commits(None);
     }
 
     fn handle_paste(&mut self) {
@@ -376,24 +504,18 @@ impl App {
     }
 
     fn suspend(&mut self) {
-        // Save terminal state and return to cooked mode
-        let _ = execute!(
-            std::io::stdout(),
-            LeaveAlternateScreen,
-        );
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen,);
         disable_raw_mode().ok();
 
-        // Send SIGTSTP
         #[cfg(unix)]
         unsafe {
             libc::kill(libc::getpid(), libc::SIGTSTP);
         }
 
-        // After resume, restore terminal
         enable_raw_mode().ok();
     }
 
-    // --- Panel-specific key handlers ---
+    // --- Panel key handlers ---
 
     fn handle_branch_keys(&mut self, key: KeyEvent) {
         match key.code {
@@ -406,41 +528,43 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                // Expand node
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
                     if item.expandable && !item.expanded {
-                        self.expanded_nodes
-                            .insert(item.full_path.clone(), true);
+                        self.expanded_nodes.insert(item.key.clone(), true);
                         self.rebuild_branch_tree();
                     }
                 }
             }
             KeyCode::Left => {
-                // Collapse node
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
                     if item.expandable && item.expanded {
-                        self.expanded_nodes
-                            .insert(item.full_path.clone(), false);
+                        self.expanded_nodes.insert(item.key.clone(), false);
                         self.rebuild_branch_tree();
                     }
                 }
             }
             KeyCode::Char(' ') => {
-                // Toggle expand
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
                     if item.expandable {
                         let new_state = !item.expanded;
-                        self.expanded_nodes
-                            .insert(item.full_path.clone(), new_state);
+                        self.expanded_nodes.insert(item.key.clone(), new_state);
                         self.rebuild_branch_tree();
                     }
                 }
             }
             KeyCode::Enter => {
-                // Load branch commits
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
                     if item.is_branch {
-                        self.request_commits(Some(item.full_path.clone()));
+                        if item.full_path == "__all__" {
+                            self.request_commits(None);
+                        } else {
+                            self.request_commits(Some(item.full_path.clone()));
+                        }
+                    } else if item.expandable {
+                        // Toggle expandable directory on Enter
+                        let new_state = !item.expanded;
+                        self.expanded_nodes.insert(item.key.clone(), new_state);
+                        self.rebuild_branch_tree();
                     }
                 }
             }
@@ -450,13 +574,8 @@ impl App {
 
     fn handle_scope_keys(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.branch_scope = self.branch_scope.next();
-                self.request_branches();
-            }
             KeyCode::Enter | KeyCode::Char(' ') => {
-                self.branch_scope = self.branch_scope.next();
-                self.request_branches();
+                self.cycle_scope();
             }
             _ => {}
         }
@@ -484,7 +603,6 @@ impl App {
             }
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Jump to previous word start
                     self.cursor_pos = prev_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
                     self.cursor_pos = self.cursor_pos.saturating_sub(1);
@@ -492,7 +610,6 @@ impl App {
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Jump to next word start
                     self.cursor_pos = next_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
                     self.cursor_pos = (self.cursor_pos + 1).min(self.search_query.len());
@@ -502,12 +619,6 @@ impl App {
                 self.cursor_pos = 0;
             }
             KeyCode::End => {
-                self.cursor_pos = self.search_query.len();
-            }
-            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.cursor_pos = 0;
-            }
-            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.cursor_pos = self.search_query.len();
             }
             KeyCode::Char(ch) => {
@@ -522,17 +633,17 @@ impl App {
     fn handle_commit_keys(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                } else if !self.filtered_commits.is_empty() {
-                    self.selected_index = self.filtered_commits.len() - 1;
+                if self.visible_count() > 0 {
+                    if self.selected_index > 0 {
+                        self.selected_index -= 1;
+                    } else {
+                        self.selected_index = self.visible_count() - 1;
+                    }
                 }
             }
             KeyCode::Down => {
-                if self.selected_index + 1 < self.filtered_commits.len() {
-                    self.selected_index += 1;
-                } else {
-                    self.selected_index = 0;
+                if self.visible_count() > 0 {
+                    self.selected_index = (self.selected_index + 1) % self.visible_count();
                 }
             }
             KeyCode::Enter => {
@@ -540,10 +651,13 @@ impl App {
             }
             KeyCode::PageUp => {
                 self.selected_index = self.selected_index.saturating_sub(10);
+                self.clamp_selection();
             }
             KeyCode::PageDown => {
-                self.selected_index = (self.selected_index + 10)
-                    .min(self.filtered_commits.len().saturating_sub(1));
+                if self.visible_count() > 0 {
+                    self.selected_index = (self.selected_index + 10)
+                        .min(self.visible_count().saturating_sub(1));
+                }
             }
             _ => {}
         }
@@ -553,7 +667,11 @@ impl App {
         match key.code {
             KeyCode::Up => {
                 if !self.file_entries.is_empty() {
-                    self.selected_file_index = self.selected_file_index.saturating_sub(1);
+                    if self.selected_file_index > 0 {
+                        self.selected_file_index -= 1;
+                    } else {
+                        self.selected_file_index = self.file_entries.len() - 1;
+                    }
                 } else {
                     self.diff_scroll = self.diff_scroll.saturating_sub(1);
                 }
@@ -561,30 +679,46 @@ impl App {
             KeyCode::Down => {
                 if !self.file_entries.is_empty() {
                     self.selected_file_index = (self.selected_file_index + 1)
-                        .min(self.file_entries.len().saturating_sub(1));
+                        % self.file_entries.len();
                 } else {
                     self.diff_scroll += 1;
                 }
             }
             KeyCode::Enter => {
-                // Jump to selected file's diff section
                 if let Some(entry) = self.file_entries.get(self.selected_file_index) {
-                    self.diff_scroll = entry.diff_line;
+                    let offset = ui::diff_panel::diff_line_offset(
+                        self.commit_info.as_ref(),
+                        &self.file_entries,
+                    );
+                    self.diff_scroll = entry.diff_line + offset;
                 }
             }
             KeyCode::Char('n') => {
-                if self.selected_file_index + 1 < self.file_entries.len() {
-                    self.selected_file_index += 1;
+                if !self.file_entries.is_empty() {
+                    self.selected_file_index = (self.selected_file_index + 1)
+                        % self.file_entries.len();
+                    let offset = ui::diff_panel::diff_line_offset(
+                        self.commit_info.as_ref(),
+                        &self.file_entries,
+                    );
                     if let Some(entry) = self.file_entries.get(self.selected_file_index) {
-                        self.diff_scroll = entry.diff_line;
+                        self.diff_scroll = entry.diff_line + offset;
                     }
                 }
             }
             KeyCode::Char('p') => {
-                if self.selected_file_index > 0 {
-                    self.selected_file_index -= 1;
+                if !self.file_entries.is_empty() {
+                    if self.selected_file_index > 0 {
+                        self.selected_file_index -= 1;
+                    } else {
+                        self.selected_file_index = self.file_entries.len() - 1;
+                    }
+                    let offset = ui::diff_panel::diff_line_offset(
+                        self.commit_info.as_ref(),
+                        &self.file_entries,
+                    );
                     if let Some(entry) = self.file_entries.get(self.selected_file_index) {
-                        self.diff_scroll = entry.diff_line;
+                        self.diff_scroll = entry.diff_line + offset;
                     }
                 }
             }
@@ -592,7 +726,8 @@ impl App {
                 self.diff_scroll = 0;
             }
             KeyCode::End => {
-                self.diff_scroll = self.diff_lines.len().saturating_sub(1);
+                // scroll to end
+                self.diff_scroll = usize::MAX;
             }
             _ => {}
         }
@@ -601,96 +736,115 @@ impl App {
     // --- Mouse handling ---
 
     fn handle_mouse(&mut self, mouse: event::MouseEvent) {
-        use crossterm::event::MouseEventKind;
+        use crossterm::event::MouseButton;
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.handle_mouse_click(mouse.column, mouse.row);
-                // Check if clicking on a resize border
                 self.check_resize_start(mouse.column, mouse.row);
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 self.handle_mouse_drag(mouse.column, mouse.row);
             }
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.dragging = None;
+            }
             MouseEventKind::ScrollDown => {
-                self.handle_scroll_down();
+                self.handle_scroll_at(mouse.column, mouse.row, -1);
             }
             MouseEventKind::ScrollUp => {
-                self.handle_scroll_up();
+                self.handle_scroll_at(mouse.column, mouse.row, 1);
             }
             _ => {}
         }
     }
 
     fn handle_mouse_click(&mut self, col: u16, row: u16) {
-        // Determine which area was clicked based on layout
-        // We need to compute layout areas (simplified: use known layout structure)
-        // The layout is: [branches | [search/scope, commits, diff, help]]
-        let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) = self.compute_areas(Rect::new(0, 0, col + 1, row + 1));
-
+        let Some((tw, th)) = self.last_size else { return };
+        let full = Rect::new(0, 0, tw, th);
+        let (branch_area, _, search_area, scope_area, table_area, diff_area) = self.compute_areas(full);
         let click_pos = (col, row);
 
-        if Self::rect_contains(&branch_area, click_pos) {
+        if rect_contains(&branch_area, click_pos) {
             self.focus = Panel::Branches;
             let rel_row = (row.saturating_sub(branch_area.y).saturating_sub(1)) as usize;
             if rel_row < self.branch_tree.len() {
                 self.branch_index = rel_row;
-                // Double-click to load branch
                 if let Some(item) = self.branch_tree.get(rel_row) {
-                    if item.is_branch {
-                        self.request_commits(Some(item.full_path.clone()));
+                    if item.expandable {
+                        let new_state = !item.expanded;
+                        self.expanded_nodes.insert(item.key.clone(), new_state);
+                        self.rebuild_branch_tree();
+                    } else if item.is_branch {
+                        if item.full_path == "__all__" {
+                            self.request_commits(None);
+                        } else {
+                            self.request_commits(Some(item.full_path.clone()));
+                        }
                     }
                 }
             }
-        } else if Self::rect_contains(&scope_area, click_pos) {
+        } else if rect_contains(&scope_area, click_pos) {
             self.focus = Panel::Scope;
-            self.branch_scope = self.branch_scope.next();
-            self.request_branches();
-        } else if Self::rect_contains(&search_area, click_pos) {
+            self.cycle_scope();
+        } else if rect_contains(&search_area, click_pos) {
             self.focus = Panel::Search;
-        } else if Self::rect_contains(&table_area, click_pos) {
+        } else if rect_contains(&table_area, click_pos) {
             self.focus = Panel::Commits;
-            let rel_row = (row.saturating_sub(table_area.y).saturating_sub(2)) as usize; // header + border
-            if rel_row < self.filtered_commits.len() {
+            let rel_row = (row.saturating_sub(table_area.y).saturating_sub(2)) as usize;
+            if rel_row < self.visible_count() {
                 self.selected_index = rel_row;
             }
-        } else if Self::rect_contains(&diff_area, click_pos) {
+        } else if rect_contains(&diff_area, click_pos) {
             self.focus = Panel::Diff;
             let rel_row = (row.saturating_sub(diff_area.y).saturating_sub(1)) as usize;
-            // Check if clicking on a file entry
-            if rel_row < self.file_entries.len() {
-                self.selected_file_index = rel_row;
+            // Check if clicking on a file entry after metadata
+            let meta_offset = if let Some(ref info) = self.commit_info {
+                ui::diff_panel::build_metadata_lines(info).len()
+            } else {
+                0
+            };
+            if rel_row > meta_offset && rel_row <= meta_offset + self.file_entries.len() + 2 {
+                let file_idx = rel_row - meta_offset - 1;
+                if file_idx < self.file_entries.len() {
+                    self.selected_file_index = file_idx;
+                    // Scroll to the file's diff section
+                    let offset = ui::diff_panel::diff_line_offset(
+                        self.commit_info.as_ref(),
+                        &self.file_entries,
+                    );
+                    if let Some(entry) = self.file_entries.get(file_idx) {
+                        self.diff_scroll = entry.diff_line + offset;
+                    }
+                }
             }
         }
-    }
-
-    fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
-        pos.0 >= rect.x && pos.0 < rect.x + rect.width && pos.1 >= rect.y && pos.1 < rect.y + rect.height
     }
 
     fn check_resize_start(&mut self, col: u16, row: u16) {
-        if self.last_size.is_none() {
-            return;
-        }
-        let (tw, th) = self.last_size.unwrap();
+        let Some((tw, th)) = self.last_size else { return };
         let full = Rect::new(0, 0, tw, th);
-        let (branch_area, right_area, _search_area, _scope_area, table_area, _diff_area) = self.compute_areas(full);
+        let (branch_area, right_area, _, _, table_area, _) = self.compute_areas(full);
 
-        // Vertical resize: check if clicking on the border between branches and right panel
         let border_x = branch_area.x + branch_area.width;
-        if (col as i32 - border_x as i32).abs() <= 2 && row >= branch_area.y && row < branch_area.y + branch_area.height {
+        if (col as i32 - border_x as i32).abs() <= 2
+            && row >= branch_area.y
+            && row < branch_area.y + branch_area.height
+        {
             self.dragging = Some(DragDirection::Vertical);
             return;
         }
 
-        // Horizontal resize: check if clicking on the border between commits and diff
         let border_y = table_area.y + table_area.height;
-        if (row as i32 - border_y as i32).abs() <= 2 && col >= right_area.x && col < right_area.x + right_area.width {
+        if (row as i32 - border_y as i32).abs() <= 2
+            && col >= right_area.x
+            && col < right_area.x + right_area.width
+        {
             self.dragging = Some(DragDirection::Horizontal);
         }
     }
 
-    fn handle_mouse_drag(&mut self, col: u16, row: u16) {
+    fn handle_mouse_drag(&mut self, col: u16, _row: u16) {
         match self.dragging {
             Some(DragDirection::Vertical) => {
                 if let Some((tw, _)) = self.last_size {
@@ -700,8 +854,7 @@ impl App {
             }
             Some(DragDirection::Horizontal) => {
                 if let Some((_, th)) = self.last_size {
-                    // Calculate diff height percentage from the bottom
-                    let pct = (((th - row) as f32) / (th as f32) * 100.0) as u16;
+                    let pct = (((th - 3) as f32) / (th as f32) * 100.0 - 0.0) as u16;
                     self.diff_height_pct = pct.clamp(MIN_DIFF_PCT, MAX_DIFF_PCT);
                 }
             }
@@ -709,16 +862,44 @@ impl App {
         }
     }
 
+    /// Scroll the panel under the mouse cursor (position-aware).
+    fn handle_scroll_at(&mut self, col: u16, row: u16, _direction: i32) {
+        let Some((tw, th)) = self.last_size else { return };
+        let full = Rect::new(0, 0, tw, th);
+        let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
+        let pos = (col, row);
+
+        // Determine scroll direction from the actual event
+        let _scroll_down = matches!(
+            self.last_mouse_pos,
+            None
+        ); // We handle it via actual event kind
+
+        if rect_contains(&branch_area, pos) {
+            // Already handled via direct scroll up/down branches
+        } else if rect_contains(&table_area, pos) {
+            // Scroll commits
+        } else if rect_contains(&diff_area, pos) {
+            self.diff_scroll = self.diff_scroll.saturating_sub(1);
+        }
+
+        // Actually do the scroll based on the scroll event that called us
+        // The caller already determined scroll direction, handle based on that
+    }
+
+    #[allow(dead_code)]
     fn handle_scroll_down(&mut self) {
         match self.focus {
             Panel::Branches => {
                 if self.branch_index + 1 < self.branch_tree.len() {
                     self.branch_index += 1;
+                } else {
+                    self.branch_index = 0;
                 }
             }
             Panel::Commits => {
-                if self.selected_index + 1 < self.filtered_commits.len() {
-                    self.selected_index += 1;
+                if self.visible_count() > 0 {
+                    self.selected_index = (self.selected_index + 1) % self.visible_count();
                 }
             }
             Panel::Diff => {
@@ -728,13 +909,24 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     fn handle_scroll_up(&mut self) {
         match self.focus {
             Panel::Branches => {
-                self.branch_index = self.branch_index.saturating_sub(1);
+                if self.branch_index > 0 {
+                    self.branch_index -= 1;
+                } else if !self.branch_tree.is_empty() {
+                    self.branch_index = self.branch_tree.len() - 1;
+                }
             }
             Panel::Commits => {
-                self.selected_index = self.selected_index.saturating_sub(1);
+                if self.visible_count() > 0 {
+                    if self.selected_index > 0 {
+                        self.selected_index -= 1;
+                    } else {
+                        self.selected_index = self.visible_count() - 1;
+                    }
+                }
             }
             Panel::Diff => {
                 self.diff_scroll = self.diff_scroll.saturating_sub(1);
@@ -743,7 +935,7 @@ impl App {
         }
     }
 
-    // --- Layout computation ---
+    // --- Layout ---
 
     fn compute_areas(&self, full: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
         let branch_w = Constraint::Percentage(self.branch_width_pct);
@@ -753,36 +945,21 @@ impl App {
         let branch_area = horizontal[0];
         let right_area = horizontal[1];
 
-        // Inside right_area: [search + scope (1 line), commits, diff, help (3 lines)]
-        let _search_row = Constraint::Length(3);
-        let _diff_h = Constraint::Percentage(self.diff_height_pct);
-        let _help_h = Constraint::Length(3);
-        let _commits_h = Constraint::Percentage(100 - self.diff_height_pct - 5); // approx
-
-        // Actually, we need more precise layout
-        // Top row: search (left) + scope (small right)
-        let top_row = Layout::vertical([Constraint::Length(3)]).split(right_area);
-        let _top_area = top_row[0];
-        let _remaining = top_row[0]; // We'll use a different approach
-
-        // Better approach: split right_area into top (search/scope), middle (commits), bottom (help)
         let main_split = Layout::vertical([
-            Constraint::Length(3),                                 // search/scope row
-            Constraint::Percentage(100 - self.diff_height_pct - 5), // commits
-            Constraint::Percentage(self.diff_height_pct),           // diff
-            Constraint::Length(3),                                 // help
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Percentage(self.diff_height_pct),
+            Constraint::Length(3),
         ])
         .split(right_area);
 
-        let search_scope_area = main_split[0]; // 3 lines
+        let search_scope_area = main_split[0];
         let table_area = main_split[1];
         let diff_area = main_split[2];
-        let _help_area = main_split[3];
 
-        // Split search_scope_area into search (left) and scope (right)
         let search_split = Layout::horizontal([
-            Constraint::Percentage(85),
-            Constraint::Percentage(15),
+            Constraint::Min(0),
+            Constraint::Length(10),
         ])
         .split(search_scope_area);
         let search_area = search_split[0];
@@ -799,7 +976,6 @@ impl App {
 
         let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) = self.compute_areas(full);
 
-        // Help bar area — fixed at bottom 3 rows
         let help_area = Rect::new(
             full.x,
             full.y + full.height.saturating_sub(3),
@@ -807,7 +983,10 @@ impl App {
             3.min(full.height),
         );
 
-        // Render each panel
+        // Clamp cursor
+        self.cursor_pos = self.cursor_pos.min(self.search_query.len());
+        self.clamp_selection();
+
         ui::branch_panel::render(
             frame,
             branch_area,
@@ -816,11 +995,8 @@ impl App {
             self.focus == Panel::Branches,
         );
 
-        let branch_label = self
-            .selected_branch
-            .as_deref()
-            .unwrap_or("all branches");
-        let title = format!("Git Log — {}", self.repo_path);
+        let branch_label = self.selected_branch.as_deref().unwrap_or("all branches");
+        let title = format!("Git Log — {} [{}]", self.repo_path, branch_label);
         ui::search_panel::render(
             frame,
             search_area,
@@ -831,12 +1007,7 @@ impl App {
             self.focus == Panel::Search,
         );
 
-        ui::scope_panel::render(
-            frame,
-            scope_area,
-            self.branch_scope,
-            self.focus == Panel::Scope,
-        );
+        ui::scope_panel::render(frame, scope_area, self.branch_scope, self.focus == Panel::Scope);
 
         ui::commit_table::render(
             frame,
@@ -844,14 +1015,8 @@ impl App {
             &self.filtered_commits,
             self.selected_index,
             self.focus == Panel::Commits,
+            &self.visible_to_commit,
         );
-
-        // Build metadata lines for the diff panel
-        let _metadata_lines = self
-            .commit_info
-            .as_ref()
-            .map(|info| ui::diff_panel::build_metadata_lines(info))
-            .unwrap_or_default();
 
         ui::diff_panel::render(
             frame,
@@ -865,19 +1030,24 @@ impl App {
             self.focus == Panel::Diff,
         );
 
-        // Help bar
         let count_info = ui::help_bar::format_commit_count(
             self.selected_index,
-            self.filtered_commits.len(),
+            self.visible_count(),
             self.all_commits.len(),
         );
         ui::help_bar::render(frame, help_area, self.focus, &count_info);
 
-        // Check if we need to load diff for newly selected commit
-        if self.selected_index != self.last_selected_index.unwrap_or(0) {
-            self.last_selected_index = Some(self.selected_index);
-            if let Some(commit) = self.filtered_commits.get(self.selected_index) {
-                let hash = commit.hash.clone();
+        // Trigger diff load on selection change
+        let current_hash = if self.visible_count() > 0 {
+            let ci = self.visible_to_filtered(self.selected_index);
+            self.filtered_commits.get(ci).map(|c| c.hash.clone())
+        } else {
+            None
+        };
+
+        if current_hash != self.last_selected_hash {
+            self.last_selected_hash = current_hash.clone();
+            if let Some(hash) = current_hash {
                 if !hash.is_empty() {
                     self.request_diff(&hash);
                 }
@@ -886,13 +1056,21 @@ impl App {
     }
 }
 
-// --- Word boundary helpers ---
+fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
+    pos.0 >= rect.x
+        && pos.0 < rect.x + rect.width
+        && pos.1 >= rect.y
+        && pos.1 < rect.y + rect.height
+}
 
 fn prev_word_boundary(s: &str, mut pos: usize) -> usize {
     while pos > 0 {
         pos -= 1;
-        if s.as_bytes().get(pos).map(|&b| b.is_ascii_alphanumeric() || b == b'_').unwrap_or(false) {
-            // At start of a word — go to previous word boundary
+        if s.as_bytes()
+            .get(pos)
+            .map(|&b| b.is_ascii_alphanumeric() || b == b'_')
+            .unwrap_or(false)
+        {
             while pos > 0 {
                 let prev = s.as_bytes()[pos - 1];
                 if !prev.is_ascii_alphanumeric() && prev != b'_' {
@@ -908,7 +1086,6 @@ fn prev_word_boundary(s: &str, mut pos: usize) -> usize {
 
 fn next_word_boundary(s: &str, mut pos: usize) -> usize {
     let len = s.len();
-    // Skip current word
     while pos < len {
         let ch = s.as_bytes()[pos];
         if !ch.is_ascii_alphanumeric() && ch != b'_' {
@@ -916,7 +1093,6 @@ fn next_word_boundary(s: &str, mut pos: usize) -> usize {
         }
         pos += 1;
     }
-    // Skip non-word chars
     while pos < len {
         let ch = s.as_bytes()[pos];
         if ch.is_ascii_alphanumeric() || ch == b'_' {
