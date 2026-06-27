@@ -5,7 +5,7 @@ A TUI for browsing git log with ratatui.
 ## Features
 
 - 5-panel layout: Branch Tree, Search, Scope, Commit Table, Diff
-- Multi-threaded: per-window git worker threads for parallel data streaming
+- Multi-threaded: per-window git worker threads using git2 for parallel data streaming
 - Hierarchical branch tree with expand/collapse (arrow keys, Space, Enter)
 - Incremental search with cursor-based text editing
 - Branch scope cycling (all/local/remote) via Ctrl+S
@@ -95,8 +95,9 @@ If no path is given, the current directory is used.
 └────────────────────────────────────────────────┘
 ```
 
-Each window has its own background git worker thread using mpsc channels.
-The main event loop polls all channels non-blocking and requests data on demand.
+Each panel has its own background worker thread (BranchWorker, CommitWorker, DiffWorker)
+using git2 (libgit2 bindings) and mpsc channels. The main event loop polls all channels
+non-blocking and requests data on demand.
 
 ## Testing
 
