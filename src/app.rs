@@ -1233,3 +1233,244 @@ fn next_word_boundary(s: &str, pos: usize) -> usize {
     }
     chars.get(idx).map(|&(i, _)| i).unwrap_or(s.len())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prev_char_boundary_ascii() {
+        assert_eq!(prev_char_boundary("hello", 3), 2);
+        assert_eq!(prev_char_boundary("hello", 0), 0);
+    }
+
+    #[test]
+    fn test_prev_char_boundary_utf8() {
+        // "Mäller": M(0-1)+ä(1-3)+l(3-4)+l(4-5)+e(5-6)+r(6-7)
+        assert_eq!(prev_char_boundary("Mäller", 3), 1); // from 'l', prev boundary is start of 'ä'
+        assert_eq!(prev_char_boundary("Mäller", 2), 1); // inside 'ä', prev boundary is start of 'ä'
+    }
+
+    #[test]
+    fn test_next_char_boundary_ascii() {
+        assert_eq!(next_char_boundary("hello", 2), 3);
+        assert_eq!(next_char_boundary("hello", 5), 5); // at end
+    }
+
+    #[test]
+    fn test_next_char_boundary_utf8() {
+        // "Mäller": M(0)+ä(1-2)+l(3)+l(4)+e(5)+r(6)
+        assert_eq!(next_char_boundary("Mäller", 1), 3); // from ä start to next 'l'
+        assert_eq!(next_char_boundary("Mäller", 3), 4); // from 'l' to next 'l'
+    }
+
+    #[test]
+    fn test_prev_word_boundary() {
+        // "hello world" at pos 6: snaps to pos 5 (space), then walks to start of "hello"
+        assert_eq!(prev_word_boundary("hello world", 6), 0);
+        // "foo bar": 'r' at pos 6 (char_indices: 0=f,1=o,2=o,3=' ',4=b,5=a,6=r)
+        assert_eq!(prev_word_boundary("foo bar", 6), 4);
+    }
+
+    #[test]
+    fn test_next_word_boundary() {
+        // Skips "hello", then space, then starts "world"
+        assert_eq!(next_word_boundary("hello world", 0), 6);
+        // From space at pos 5: skips space, lands at start of "world"
+        assert_eq!(next_word_boundary("hello world", 5), 6);
+        assert_eq!(next_word_boundary("hello", 0), 5); // end of string
+    }
+
+    /// Helper to build a minimal App for testing pure logic functions.
+    fn test_app() -> App {
+        App {
+            repo_path: ".".to_string(),
+            branch_worker: BranchWorker::new(".").unwrap(),
+            commit_worker: CommitWorker::new(".").unwrap(),
+            diff_worker: DiffWorker::new(".").unwrap(),
+            all_branches: Vec::new(),
+            branch_tree: Vec::new(),
+            expanded_nodes: BTreeMap::new(),
+            branch_index: 0,
+            branch_scope: BranchScope::All,
+            selected_branch: None,
+            search_query: String::new(),
+            cursor_pos: 0,
+            all_commits: Vec::new(),
+            filtered_commits: Vec::new(),
+            selected_index: 0,
+            visible_to_commit: Vec::new(),
+            commit_info: None,
+            diff_lines: Vec::new(),
+            file_entries: Vec::new(),
+            file_lines: Vec::new(),
+            selected_file_index: 0,
+            diff_scroll: 0,
+            last_selected_hash: None,
+            focus: Panel::Commits,
+            branch_width_pct: DEFAULT_BRANCH_PCT,
+            diff_height_pct: DEFAULT_DIFF_PCT,
+            dragging: None,
+            last_size: None,
+            last_mouse_pos: None,
+            status_message: None,
+            branches_loaded: false,
+            commits_loaded: false,
+            diff_pending: false,
+        }
+    }
+
+    #[test]
+    fn test_search_filter_empty_query() {
+        let mut app = test_app();
+        app.all_commits = vec![
+            Commit {
+                hash: "abc".into(),
+                author: "alice".into(),
+                date: "2024-01-01".into(),
+                subject: "fix bug".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+        ];
+        app.search_query.clear();
+        app.apply_search_filter();
+        assert_eq!(app.filtered_commits.len(), 1);
+    }
+
+    #[test]
+    fn test_search_filter_by_subject() {
+        let mut app = test_app();
+        app.all_commits = vec![
+            Commit {
+                hash: "abc".into(),
+                author: "alice".into(),
+                date: "2024-01-01".into(),
+                subject: "fix bug".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+            Commit {
+                hash: "def".into(),
+                author: "bob".into(),
+                date: "2024-01-02".into(),
+                subject: "add feature".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+        ];
+        app.search_query = "bug".into();
+        app.apply_search_filter();
+        assert_eq!(app.filtered_commits.len(), 1);
+        assert_eq!(app.filtered_commits[0].hash, "abc");
+    }
+
+    #[test]
+    fn test_search_filter_case_insensitive() {
+        let mut app = test_app();
+        app.all_commits = vec![
+            Commit {
+                hash: "abc".into(),
+                author: "ALICE".into(),
+                date: "2024-01-01".into(),
+                subject: "Fix Bug".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+        ];
+        app.search_query = "bug".into();
+        app.apply_search_filter();
+        assert_eq!(app.filtered_commits.len(), 1);
+    }
+
+    #[test]
+    fn test_visible_mapping_skips_graph_only() {
+        let mut app = test_app();
+        app.filtered_commits = vec![
+            Commit {
+                hash: "abc".into(),
+                author: "a".into(),
+                date: "d".into(),
+                subject: "s".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+            Commit {
+                hash: "".into(),
+                author: "".into(),
+                date: "".into(),
+                subject: "".into(),
+                graph: "|".into(),
+                merge: false,
+                graph_only: true,
+                decorations: vec![],
+                deco_line: 0,
+            },
+            Commit {
+                hash: "def".into(),
+                author: "b".into(),
+                date: "d".into(),
+                subject: "s".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+        ];
+        app.build_visible_mapping();
+        assert_eq!(app.visible_count(), 2);
+        assert_eq!(app.visible_to_filtered(0), 0); // first commit
+        assert_eq!(app.visible_to_filtered(1), 2); // third commit
+    }
+
+    #[test]
+    fn test_clamp_selection_empty() {
+        let mut app = test_app();
+        app.clamp_selection();
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_clamp_selection_in_range() {
+        let mut app = test_app();
+        app.filtered_commits = vec![
+            Commit {
+                hash: "abc".into(),
+                author: "a".into(),
+                date: "d".into(),
+                subject: "s".into(),
+                graph: "*".into(),
+                merge: false,
+                graph_only: false,
+                decorations: vec![],
+                deco_line: 0,
+            },
+        ];
+        app.build_visible_mapping();
+        app.selected_index = 0;
+        app.clamp_selection();
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_app_new_returns_ok() {
+        let result = App::new(".".to_string());
+        assert!(result.is_ok());
+    }
+}

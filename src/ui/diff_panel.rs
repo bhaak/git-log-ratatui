@@ -138,8 +138,7 @@ fn build_all_lines<'a>(
                 line.clone(),
                 Style::default().fg(Color::Yellow),
             )));
-        } else if line.starts_with('+') {
-            let content = &line[1..];
+        } else if let Some(content) = line.strip_prefix('+') {
             let prev_removed = find_prev_removed_line(diff_lines, line_idx);
             let tokens = lcs::diff_tokens_added(content, prev_removed.as_deref());
             let spans: Vec<Span> = tokens
@@ -165,8 +164,7 @@ fn build_all_lines<'a>(
                 combined.extend(spans);
                 lines.push(Line::from(combined));
             }
-        } else if line.starts_with('-') {
-            let content = &line[1..];
+        } else if let Some(content) = line.strip_prefix('-') {
             let next_added = find_next_added_line(diff_lines, line_idx);
             let tokens = lcs::diff_tokens_removed(content, next_added.as_deref());
             let spans: Vec<Span> = tokens

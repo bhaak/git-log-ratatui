@@ -95,7 +95,7 @@ pub fn render(
         .max()
         .unwrap_or(4) as u16;
 
-    let col_graph = max_graph.min(COL_GRAPH_MAX).max(4);
+    let col_graph = max_graph.clamp(4, COL_GRAPH_MAX);
 
     let available_width = area.width.saturating_sub(2);
     let fixed_width = col_graph + COL_HASH + COL_AUTHOR + COL_DATE + 4; // +4 separators

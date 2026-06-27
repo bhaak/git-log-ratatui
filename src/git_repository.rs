@@ -138,7 +138,7 @@ impl GitRepository {
         let mut diff_lines = Vec::new();
         let mut file_entries = Vec::new();
 
-        let _ = diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
             let origin = line.origin();
             let content = String::from_utf8_lossy(line.content());
             let display = match origin {
@@ -234,14 +234,11 @@ impl GitRepository {
 }
 
 fn time_to_string(time: git2::Time) -> String {
-    let total_seconds = time.seconds() as i64;
-    // Convert Unix timestamp to year/month/day/hour/minute
-    let mut ts = total_seconds;
-    // Days since epoch
+    let mut ts = time.seconds();
     let days = ts / 86400;
-    ts = ts % 86400;
+    ts %= 86400;
     let hour = ts / 3600;
-    ts = ts % 3600;
+    ts %= 3600;
     let minute = ts / 60;
 
     // Convert days since epoch to year/month/day
@@ -457,5 +454,46 @@ mod tests {
         assert_eq!(decos[2].kind, DecorationKind::Tag);
         assert_eq!(decos[3].label, "origin/main");
         assert_eq!(decos[3].kind, DecorationKind::RemoteBranch);
+    }
+
+    #[test]
+    fn test_days_to_ymd_epoch() {
+        let (year, month, day) = days_to_ymd(0);
+        assert_eq!(year, 1970);
+        assert_eq!(month, 1);
+        assert_eq!(day, 1);
+    }
+
+    #[test]
+    fn test_days_to_ymd_2024_01_01() {
+        // 2024-01-01 is 19724 days after 1970-01-01
+        let (year, month, day) = days_to_ymd(19723);
+        assert_eq!(year, 2024);
+        assert_eq!(month, 1);
+        assert_eq!(day, 1);
+    }
+
+    #[test]
+    fn test_days_to_ymd_2024_12_31() {
+        // End of leap year 2024
+        let (year, month, day) = days_to_ymd(19723 + 365);
+        assert_eq!(year, 2024);
+        assert_eq!(month, 12);
+        assert_eq!(day, 31);
+    }
+
+    #[test]
+    fn test_time_to_string_epoch() {
+        let time = git2::Time::new(0, 0);
+        let s = time_to_string(time);
+        assert_eq!(s, "1970-01-01 00:00");
+    }
+
+    #[test]
+    fn test_is_leap() {
+        assert!(is_leap(2024));
+        assert!(!is_leap(2023));
+        assert!(is_leap(2000)); // divisible by 400
+        assert!(!is_leap(1900)); // divisible by 100 but not 400
     }
 }

@@ -20,7 +20,7 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
     let desc_style = Style::default().fg(Color::White);
     let bracket_style = Style::default().fg(Color::DarkGray);
 
-    let common = vec![("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
+    let common = [("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
 
     let context: Vec<(&str, &str)> = match focus {
         Panel::Branches => vec![
@@ -81,5 +81,30 @@ pub fn format_commit_count(selected: usize, visible: usize, total: usize) -> Str
         format!(" {}/{} ", selected + 1, visible)
     } else {
         format!(" {}/{} (filtered from {}) ", selected + 1, visible, total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_commit_count_no_commits() {
+        assert_eq!(format_commit_count(0, 0, 0), " - ");
+    }
+
+    #[test]
+    fn test_format_commit_count_all_visible() {
+        assert_eq!(format_commit_count(2, 10, 10), " 3/10 ");
+    }
+
+    #[test]
+    fn test_format_commit_count_filtered() {
+        assert_eq!(format_commit_count(0, 5, 20), " 1/5 (filtered from 20) ");
+    }
+
+    #[test]
+    fn test_format_commit_count_first_item() {
+        assert_eq!(format_commit_count(0, 1, 1), " 1/1 ");
     }
 }

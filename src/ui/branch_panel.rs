@@ -27,12 +27,7 @@ pub fn render(
 
     let items: Vec<String> = tree_items
         .iter()
-        .map(|item| {
-            format!(
-                "{}",
-                item.name
-            )
-        })
+        .map(|item| item.name.to_string())
         .collect();
 
     let list = List::new(items)

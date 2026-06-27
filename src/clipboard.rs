@@ -1,5 +1,5 @@
-/// Clipboard operations using the arboard crate.
-/// Handles copying commit hashes and pasting text into the search field.
+//! Clipboard operations using the arboard crate.
+//! Handles copying commit hashes and pasting text into the search field.
 
 use arboard::Clipboard;
 
