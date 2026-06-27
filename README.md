@@ -110,5 +110,7 @@ cargo test
 - [crossterm](https://crates.io/crates/crossterm) — Terminal backend
 - [clap](https://crates.io/crates/clap) — CLI argument parsing
 - [arboard](https://crates.io/crates/arboard) — System clipboard
+- [git2](https://crates.io/crates/git2) — Git operations (libgit2 bindings)
+- [diffr](https://crates.io/crates/diffr) — Lightweight diff library
 - [unicode-width](https://crates.io/crates/unicode-width) — Unicode character width
 - [libc](https://crates.io/crates/libc) — POSIX syscalls (suspend)
