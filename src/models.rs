@@ -1,8 +1,7 @@
 use std::fmt;
 
-/// Represents a parsed commit from `git log`.
+/// A parsed commit from `git log --graph` output.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Commit {
     pub hash: String,
     pub author: String,
@@ -35,7 +34,7 @@ pub enum DecorationKind {
     RemoteBranch,
 }
 
-/// Structured metadata for a single commit (from `git show`).
+/// Structured metadata for a single commit (from git2).
 #[derive(Debug, Clone, Default)]
 pub struct CommitInfo {
     pub subject: String,
@@ -145,38 +144,6 @@ impl fmt::Display for Panel {
 pub struct FileEntry {
     pub name: String,
     pub diff_line: usize,
-}
-
-/// A message sent from the main thread to a git worker thread.
-#[derive(Debug, Clone)]
-pub enum GitCommand {
-    /// Fetch all branches for the given scope.
-    FetchBranches { repo_path: String, scope: BranchScope },
-    /// Fetch commits for the given branch (None = all branches).
-    FetchCommits {
-        repo_path: String,
-        branch: Option<String>,
-        /// Branch scope to use when branch is None.
-        scope: BranchScope,
-    },
-    /// Fetch diff and commit info for a specific commit hash.
-    FetchDiff {
-        repo_path: String,
-        hash: String,
-    },
-}
-
-/// A result returned from a git worker thread to the main thread.
-#[derive(Debug, Clone)]
-pub enum GitResult {
-    Branches(Vec<String>),
-    Commits(Vec<Commit>),
-    Diff {
-        commit_info: CommitInfo,
-        diff_lines: Vec<String>,
-        file_entries: Vec<FileEntry>,
-    },
-    Error(String),
 }
 
 #[cfg(test)]

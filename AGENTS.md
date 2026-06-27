@@ -8,12 +8,14 @@
 * Performance
   - Performance is top priority.
   - use data streams in parallel processes to process data quickly
+  - make colors customizable
 
 * UI
   - use ratatui
   - use standard ratatui widgets
   - consistent mouse support
   - app must be fully keyboard-controllable
+  - window sizes resizable via mouse click
 
 * Rust
   - use standard crates, avoid custom implementations

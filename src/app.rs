@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::clipboard;
 use crate::models::*;
-use crate::git::GitWorker;
+use crate::workers::{BranchWorker, BranchCommand, BranchResult, CommitWorker, CommitCommand, CommitResult, DiffWorker, DiffCommand, DiffResult};
 use crate::tree;
 use crate::ui;
 
@@ -26,7 +26,9 @@ const MAX_DIFF_PCT: u16 = 65;
 
 pub struct App {
     repo_path: String,
-    git_worker: GitWorker,
+    branch_worker: BranchWorker,
+    commit_worker: CommitWorker,
+    diff_worker: DiffWorker,
 
     all_branches: Vec<String>,
     branch_tree: Vec<TreeItem>,
@@ -72,12 +74,16 @@ enum DragDirection {
 }
 
 impl App {
-    pub fn new(repo_path: String) -> Self {
-        let git_worker = GitWorker::new();
+    pub fn new(repo_path: String) -> Result<Self, String> {
+        let branch_worker = BranchWorker::new(&repo_path)?;
+        let commit_worker = CommitWorker::new(&repo_path)?;
+        let diff_worker = DiffWorker::new(&repo_path)?;
 
-        App {
+        Ok(App {
             repo_path,
-            git_worker,
+            branch_worker,
+            commit_worker,
+            diff_worker,
             all_branches: Vec::new(),
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),
@@ -107,7 +113,7 @@ impl App {
             branches_loaded: false,
             commits_loaded: false,
             diff_pending: false,
-        }
+        })
     }
 
     pub fn run(&mut self, terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>) -> Result<(), String> {
@@ -128,12 +134,11 @@ impl App {
         Ok(())
     }
 
-    // --- Git worker communication ---
+    // --- Worker communication (per-window threads) ---
 
     fn request_branches(&mut self) {
         self.branches_loaded = false;
-        self.git_worker.send(GitCommand::FetchBranches {
-            repo_path: self.repo_path.clone(),
+        self.branch_worker.send(BranchCommand::FetchBranches {
             scope: self.branch_scope,
         });
     }
@@ -141,8 +146,7 @@ impl App {
     fn request_commits(&mut self, branch: Option<String>) {
         self.commits_loaded = false;
         self.selected_branch = branch.clone();
-        self.git_worker.send(GitCommand::FetchCommits {
-            repo_path: self.repo_path.clone(),
+        self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.branch_scope,
         });
@@ -150,21 +154,31 @@ impl App {
 
     fn request_diff(&mut self, hash: &str) {
         self.diff_pending = true;
-        self.git_worker.send(GitCommand::FetchDiff {
-            repo_path: self.repo_path.clone(),
+        self.diff_worker.send(DiffCommand::FetchDiff {
             hash: hash.to_string(),
         });
     }
 
+    /// Poll all three worker channels for results (non-blocking, parallel streams).
     fn process_git_results(&mut self) {
-        while let Some(result) = self.git_worker.try_recv() {
+        // Poll branch worker
+        while let Some(result) = self.branch_worker.try_recv() {
             match result {
-                GitResult::Branches(branches) => {
+                BranchResult::Branches(branches) => {
                     self.all_branches = branches;
                     self.rebuild_branch_tree();
                     self.branches_loaded = true;
                 }
-                GitResult::Commits(commits) => {
+                BranchResult::Error(err) => {
+                    self.status_message = Some(err);
+                }
+            }
+        }
+
+        // Poll commit worker
+        while let Some(result) = self.commit_worker.try_recv() {
+            match result {
+                CommitResult::Commits(commits) => {
                     self.all_commits = commits;
                     self.apply_search_filter();
                     self.commits_loaded = true;
@@ -175,7 +189,16 @@ impl App {
                         }
                     }
                 }
-                GitResult::Diff {
+                CommitResult::Error(err) => {
+                    self.status_message = Some(err);
+                }
+            }
+        }
+
+        // Poll diff worker
+        while let Some(result) = self.diff_worker.try_recv() {
+            match result {
+                DiffResult::Diff {
                     commit_info,
                     diff_lines,
                     file_entries,
@@ -188,7 +211,7 @@ impl App {
                     self.selected_file_index = 0;
                     self.diff_pending = false;
                 }
-                GitResult::Error(err) => {
+                DiffResult::Error(err) => {
                     self.status_message = Some(err);
                 }
             }

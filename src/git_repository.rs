@@ -75,12 +75,14 @@ impl GitRepository {
 
         let time = commit.time();
         let author_date = time_to_string(time);
+        let author_name = commit.author().name().unwrap_or("").to_string();
+        let author_email = commit.author().email().unwrap_or("").to_string();
 
         let committer = commit.committer();
-        let committer_time = commit.committer().when();
-        let committer_date = if commit.committer().name() == commit.author().name()
-            && commit.committer().email() == commit.author().email()
-        {
+        let committer_time = committer.when();
+        let committer_name = committer.name().unwrap_or("").to_string();
+        let committer_email = committer.email().unwrap_or("").to_string();
+        let committer_date = if committer_name == author_name && committer_email == author_email {
             String::new()
         } else {
             time_to_string(committer_time)
@@ -96,11 +98,11 @@ impl GitRepository {
                 .parent_ids()
                 .map(|id| id.to_string())
                 .collect(),
-            author_name: commit.author().name().unwrap_or("").to_string(),
-            author_email: commit.author().email().unwrap_or("").to_string(),
+            author_name,
+            author_email,
             author_date,
-            committer_name: committer.name().unwrap_or("").to_string(),
-            committer_email: committer.email().unwrap_or("").to_string(),
+            committer_name,
+            committer_email,
             committer_date,
         })
     }

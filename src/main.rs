@@ -1,10 +1,11 @@
 mod app;
 mod clipboard;
-mod git;
+mod git_repository;
 mod lcs;
 mod models;
 mod tree;
 mod ui;
+mod workers;
 
 use std::io;
 
@@ -64,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let result = {
-        let mut app = app::App::new(repo_path);
+        let mut app = app::App::new(repo_path)?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             app.run(&mut terminal)
         }))
