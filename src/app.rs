@@ -7,6 +7,7 @@ use crossterm::{
 };
 use ratatui::{
     layout::{Constraint, Layout, Rect},
+    widgets::TableState,
     Frame,
 };
 
@@ -59,6 +60,7 @@ pub struct App {
     dragging: Option<DragDirection>,
     last_size: Option<(u16, u16)>,
     last_mouse_pos: Option<(u16, u16)>,
+    table_state: TableState,
 
     status_message: Option<String>,
     branches_loaded: bool,
@@ -107,6 +109,7 @@ impl App {
             dragging: None,
             last_size: None,
             last_mouse_pos: None,
+            table_state: TableState::default(),
             status_message: None,
             branches_loaded: false,
             commits_loaded: false,
@@ -284,7 +287,6 @@ impl App {
             .unwrap_or(0)
     }
 
-    #[allow(dead_code)]
     fn filtered_to_visible(&self, filtered_idx: usize) -> Option<usize> {
         self.visible_to_commit
             .iter()
@@ -845,8 +847,9 @@ impl App {
         } else if rect_contains(&table_area, click_pos) {
             self.focus = Panel::Commits;
             let rel_row = (row.saturating_sub(table_area.y).saturating_sub(2)) as usize;
-            if rel_row < self.visible_count() {
-                self.selected_index = rel_row;
+            let filtered_idx = rel_row + self.table_state.offset() as usize;
+            if let Some(vis_idx) = self.filtered_to_visible(filtered_idx) {
+                self.selected_index = vis_idx;
             }
         } else if rect_contains(&diff_area, click_pos) {
             self.focus = Panel::Diff;
@@ -1091,7 +1094,7 @@ impl App {
 
         ui::scope_panel::render(frame, scope_area, self.branch_scope, self.focus == Panel::Scope);
 
-        ui::commit_table::render(
+        self.table_state = ui::commit_table::render(
             frame,
             table_area,
             &self.filtered_commits,
@@ -1313,6 +1316,7 @@ mod tests {
             dragging: None,
             last_size: None,
             last_mouse_pos: None,
+            table_state: TableState::default(),
             status_message: None,
             branches_loaded: false,
             commits_loaded: false,
