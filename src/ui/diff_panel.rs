@@ -16,7 +16,6 @@ pub fn render(
     commit_info: Option<&CommitInfo>,
     diff_lines: &[String],
     file_entries: &[FileEntry],
-    _file_lines: &[String],
     selected_file_index: usize,
     diff_scroll: usize,
     is_focused: bool,
@@ -339,14 +338,6 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
 
     lines.push(Line::from(""));
     lines
-}
-
-/// Build formatted file entry lines for the file list.
-pub fn build_file_lines(file_entries: &[FileEntry]) -> Vec<String> {
-    file_entries
-        .iter()
-        .map(|e| format!("  {}", e.name))
-        .collect()
 }
 
 /// Calculate the offset of the first diff line in the rendered output

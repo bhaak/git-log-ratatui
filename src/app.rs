@@ -49,7 +49,6 @@ pub struct App {
     commit_info: Option<CommitInfo>,
     diff_lines: Vec<String>,
     file_entries: Vec<FileEntry>,
-    file_lines: Vec<String>,
     selected_file_index: usize,
     diff_scroll: usize,
     last_selected_hash: Option<String>,
@@ -99,7 +98,6 @@ impl App {
             commit_info: None,
             diff_lines: Vec::new(),
             file_entries: Vec::new(),
-            file_lines: Vec::new(),
             selected_file_index: 0,
             diff_scroll: 0,
             last_selected_hash: None,
@@ -206,7 +204,6 @@ impl App {
                     self.commit_info = Some(commit_info);
                     self.diff_lines = diff_lines;
                     self.file_entries = file_entries;
-                    self.file_lines = ui::diff_panel::build_file_lines(&self.file_entries);
                     self.diff_scroll = 0;
                     self.selected_file_index = 0;
                     self.diff_pending = false;
@@ -1109,7 +1106,6 @@ impl App {
             self.commit_info.as_ref(),
             &self.diff_lines,
             &self.file_entries,
-            &self.file_lines,
             self.selected_file_index,
             self.diff_scroll,
             self.focus == Panel::Diff,
@@ -1303,7 +1299,6 @@ mod tests {
             commit_info: None,
             diff_lines: Vec::new(),
             file_entries: Vec::new(),
-            file_lines: Vec::new(),
             selected_file_index: 0,
             diff_scroll: 0,
             last_selected_hash: None,
