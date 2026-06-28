@@ -5,6 +5,7 @@
   - write unit tests for each step
   - commit after each step
   - changes to TODO.md always in their own commit
+  - never use —, always use -
 
 * Performance
   - Performance is top priority.
