@@ -75,7 +75,7 @@ impl GitRepository {
             .map_err(|e| format!("Commit not found: {}", e))?;
 
         let time = commit.time();
-        let author_date = time_to_string(time);
+        let author_date = time_to_string_with_seconds(time);
         let author_name = commit.author().name().unwrap_or("").to_string();
         let author_email = commit.author().email().unwrap_or("").to_string();
 
@@ -86,7 +86,7 @@ impl GitRepository {
         let committer_date = if committer_name == author_name && committer_email == author_email {
             String::new()
         } else {
-            time_to_string(committer_time)
+            time_to_string_with_seconds(committer_time)
         };
 
         Ok(CommitInfo {
@@ -353,6 +353,11 @@ fn time_to_string(time: git2::Time) -> String {
     format!("{:04}-{:02}-{:02} {:02}:{:02}", year, month, day, hour, minute)
 }
 
+fn time_to_string_with_seconds(time: git2::Time) -> String {
+    let second = time.seconds() % 60;
+    format!("{}:{:02}", time_to_string(time), second)
+}
+
 fn days_to_ymd(mut days: i64) -> (i64, u32, u32) {
     // Days since 1970-01-01
     let mut year = 1970i64;
@@ -496,8 +501,8 @@ mod tests {
     #[test]
     fn test_time_to_string_epoch() {
         let time = git2::Time::new(0, 0);
-        let s = time_to_string(time);
-        assert_eq!(s, "1970-01-01 00:00");
+        assert_eq!(time_to_string(time), "1970-01-01 00:00");
+        assert_eq!(time_to_string_with_seconds(time), "1970-01-01 00:00:00");
     }
 
     #[test]
