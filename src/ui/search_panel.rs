@@ -38,7 +38,9 @@ pub fn render(
     let prefix = " Search: ";
     let display: Vec<Span> = if is_focused && inner_area.width > 2 {
         let prefix_len = prefix.chars().count();
-        let max_visible = (inner_area.width as usize).saturating_sub(2).saturating_sub(prefix_len);
+        let max_visible = (inner_area.width as usize)
+            .saturating_sub(2)
+            .saturating_sub(prefix_len);
         let char_count = search_query.chars().count();
         let char_start = if char_count > max_visible && max_visible > 0 {
             char_count - max_visible
@@ -56,10 +58,7 @@ pub fn render(
             .count();
         let cursor_rel = cursor_char_pos.saturating_sub(char_start);
 
-        let mut spans = vec![Span::styled(
-            prefix,
-            Style::default().fg(Color::DarkGray),
-        )];
+        let mut spans = vec![Span::styled(prefix, Style::default().fg(Color::DarkGray))];
         for (i, ch) in visible.chars().enumerate() {
             if i == cursor_rel {
                 spans.push(Span::styled(

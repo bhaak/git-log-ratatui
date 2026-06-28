@@ -76,7 +76,11 @@ mod tests {
             .map(|t| t.text.as_str())
             .collect();
         // "foo" should be unchanged
-        assert!(unchanged_words.contains(&"foo"), "expected 'foo' unchanged, got unchanged: {:?}", unchanged_words);
+        assert!(
+            unchanged_words.contains(&"foo"),
+            "expected 'foo' unchanged, got unchanged: {:?}",
+            unchanged_words
+        );
         // "new" and "baz" should be changed
         assert!(changed_words.contains(&"new"));
         assert!(changed_words.contains(&"baz"));
@@ -111,12 +115,18 @@ mod tests {
     #[test]
     fn test_identical_lines() {
         let spans = diff_tokens_added("same text", Some("same text"));
-        assert!(spans.iter().all(|t| !t.changed), "all tokens should be unchanged");
+        assert!(
+            spans.iter().all(|t| !t.changed),
+            "all tokens should be unchanged"
+        );
     }
 
     #[test]
     fn test_completely_different() {
         let spans = diff_tokens_added("hello", Some("world"));
-        assert!(spans.iter().all(|t| t.changed), "all tokens should be changed");
+        assert!(
+            spans.iter().all(|t| t.changed),
+            "all tokens should be changed"
+        );
     }
 }

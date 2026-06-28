@@ -12,6 +12,7 @@ use crate::lcs;
 use crate::models::*;
 
 /// Render the diff panel with commit metadata, changed files, and colored diff.
+/// Returns the total number of display lines.
 pub fn render(
     frame: &mut Frame,
     area: Rect,
@@ -22,9 +23,9 @@ pub fn render(
     diff_scroll: usize,
     is_focused: bool,
     short_hash: Option<&str>,
-) {
+) -> usize {
     if area.width < 4 || area.height < 2 {
-        return;
+        return 0;
     }
 
     let border_style = if is_focused {
@@ -61,6 +62,7 @@ pub fn render(
         .scroll((diff_scroll as u16, 0));
 
     frame.render_widget(paragraph, area);
+    total
 }
 
 /// Build the complete display: metadata + file list header + file entries + a gap + diff content.
@@ -109,10 +111,7 @@ fn build_all_lines<'a>(
             } else {
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
-            lines.push(Line::from(Span::styled(
-                format!("{}", entry.name),
-                style,
-            )));
+            lines.push(Line::from(Span::styled(format!("{}", entry.name), style)));
         }
 
         lines.push(Line::from(""));
@@ -349,10 +348,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
 
 /// Calculate the offset of the first diff line in the rendered output
 /// (metadata lines + file header lines + separator).
-pub fn diff_line_offset(
-    commit_info: Option<&CommitInfo>,
-    file_entries: &[FileEntry],
-) -> usize {
+pub fn diff_line_offset(commit_info: Option<&CommitInfo>, file_entries: &[FileEntry]) -> usize {
     let mut offset = 0;
     if let Some(info) = commit_info {
         offset += build_metadata_lines(info).len();
@@ -371,10 +367,7 @@ mod tests {
 
     #[test]
     fn test_build_pair_maps_simple() {
-        let lines = vec![
-            "-old".to_string(),
-            "+new".to_string(),
-        ];
+        let lines = vec!["-old".to_string(), "+new".to_string()];
         let maps = build_pair_maps(&lines);
         assert_eq!(maps.removed_to_added.get(&0), Some(&1));
         assert_eq!(maps.added_to_removed.get(&1), Some(&0));
@@ -410,10 +403,7 @@ mod tests {
 
     #[test]
     fn test_find_prev_removed() {
-        let lines = vec![
-            "-removed content".to_string(),
-            "+added content".to_string(),
-        ];
+        let lines = vec!["-removed content".to_string(), "+added content".to_string()];
         let maps = build_pair_maps(&lines);
         assert_eq!(
             find_prev_removed_line(&lines, 1, &maps),
@@ -423,10 +413,7 @@ mod tests {
 
     #[test]
     fn test_find_next_added() {
-        let lines = vec![
-            "-removed content".to_string(),
-            "+added content".to_string(),
-        ];
+        let lines = vec!["-removed content".to_string(), "+added content".to_string()];
         let maps = build_pair_maps(&lines);
         assert_eq!(
             find_next_added_line(&lines, 0, &maps),

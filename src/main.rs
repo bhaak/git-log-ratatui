@@ -52,9 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = {
         let mut app = app::App::new(repo_path)?;
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            app.run(&mut terminal)
-        }))
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(&mut terminal)))
     };
 
     // Cleanup terminal

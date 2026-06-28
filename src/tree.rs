@@ -107,14 +107,22 @@ fn flatten_tree_inner(
         let is_expanded = expanded.get(&node_key).copied().unwrap_or(expandable);
 
         let marker = if expandable {
-            if is_expanded { "\u{25BC}" } else { "\u{25B6}" }
+            if is_expanded {
+                "\u{25BC}"
+            } else {
+                "\u{25B6}"
+            }
         } else {
             "  "
         };
 
         // Build connector prefix from ancestor chain
         let prefix = build_tree_prefix(ancestors_last);
-        let connector = if is_last { "\u{2514}\u{2500}" } else { "\u{251C}\u{2500}" };
+        let connector = if is_last {
+            "\u{2514}\u{2500}"
+        } else {
+            "\u{251C}\u{2500}"
+        };
 
         let display_name = if child.full_path.is_empty() {
             format!("{}{}{} {}/", prefix, connector, marker, child.name)
@@ -179,10 +187,7 @@ mod tests {
 
     #[test]
     fn test_flatten_collapsed() {
-        let branches = vec![
-            "main".to_string(),
-            "feature/login".to_string(),
-        ];
+        let branches = vec!["main".to_string(), "feature/login".to_string()];
         let mut root = build_branch_tree(&branches);
         sort_tree(&mut root);
 
@@ -201,10 +206,7 @@ mod tests {
 
     #[test]
     fn test_flatten_expanded() {
-        let branches = vec![
-            "main".to_string(),
-            "feature/login".to_string(),
-        ];
+        let branches = vec!["main".to_string(), "feature/login".to_string()];
         let mut root = build_branch_tree(&branches);
         sort_tree(&mut root);
 

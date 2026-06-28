@@ -96,14 +96,8 @@ impl GitRepository {
 
         Ok(CommitInfo {
             hash: hash.to_string(),
-            subject: commit
-                .summary()
-                .unwrap_or("")
-                .to_string(),
-            parents: commit
-                .parent_ids()
-                .map(|id| id.to_string())
-                .collect(),
+            subject: commit.summary().unwrap_or("").to_string(),
+            parents: commit.parent_ids().map(|id| id.to_string()).collect(),
             author_name,
             author_email,
             author_date,
@@ -134,11 +128,7 @@ impl GitRepository {
         let mut diff_opts = git2::DiffOptions::new();
         let diff = self
             .repo
-            .diff_tree_to_tree(
-                parent_tree.as_ref(),
-                Some(&tree),
-                Some(&mut diff_opts),
-            )
+            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))
             .map_err(|e| format!("Diff error: {}", e))?;
 
         let mut diff_lines = Vec::new();
@@ -188,9 +178,8 @@ impl GitRepository {
         let repo = git2::Repository::open(Path::new(&self.repo_path))
             .map_err(|e| format!("Failed to open repository for git-graph: {}", e))?;
 
-        let graph =
-            GitGraph::new(repo, &settings, start_point, None)
-                .map_err(|e| format!("git-graph error: {}", e))?;
+        let graph = GitGraph::new(repo, &settings, start_point, None)
+            .map_err(|e| format!("git-graph error: {}", e))?;
 
         let mut commits = build_commits_from_graph(&graph);
         self.enrich_commits(&mut commits, &decoration_map);
@@ -210,9 +199,10 @@ impl GitRepository {
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let target_oid = match r.target().or_else(|| {
-                r.resolve().ok().and_then(|resolved| resolved.target())
-            }) {
+            let target_oid = match r
+                .target()
+                .or_else(|| r.resolve().ok().and_then(|resolved| resolved.target()))
+            {
                 Some(oid) => oid,
                 None => continue,
             };
@@ -232,12 +222,10 @@ impl GitRepository {
                 DecorationKind::Head
             };
 
-            map.entry(target_oid)
-                .or_default()
-                .push(Decoration {
-                    label: shorthand,
-                    kind,
-                });
+            map.entry(target_oid).or_default().push(Decoration {
+                label: shorthand,
+                kind,
+            });
         }
 
         Ok(map)
@@ -350,7 +338,11 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             if active[col] {
                 if col == current_col {
                     // Current commit marker
-                    line.push(if info.is_merge { '\u{25CB}' } else { '\u{25CF}' });
+                    line.push(if info.is_merge {
+                        '\u{25CB}'
+                    } else {
+                        '\u{25CF}'
+                    });
                     // \u{25CF} = ●, \u{25CB} = ○
                 } else {
                     // Ongoing branch continuation line
@@ -518,7 +510,10 @@ fn time_to_string(time: git2::Time) -> String {
     // Algorithm: start from 1970-01-01
     let (year, month, day) = days_to_ymd(days);
 
-    format!("{:04}-{:02}-{:02} {:02}:{:02}", year, month, day, hour, minute)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        year, month, day, hour, minute
+    )
 }
 
 fn time_to_string_with_seconds(time: git2::Time) -> String {
@@ -636,7 +631,11 @@ mod tests {
     #[test]
     fn test_append_diff_line_file_header() {
         let mut lines = Vec::new();
-        append_diff_line(&mut lines, 'F', "diff --git a/foo.txt b/foo.txt\nindex abc..def\n--- a/foo.txt\n+++ b/foo.txt\n");
+        append_diff_line(
+            &mut lines,
+            'F',
+            "diff --git a/foo.txt b/foo.txt\nindex abc..def\n--- a/foo.txt\n+++ b/foo.txt\n",
+        );
         assert_eq!(
             lines,
             vec![
@@ -671,9 +670,15 @@ mod tests {
         assert!(!commits.is_empty(), "expected at least one commit");
 
         let has_graph = commits.iter().any(|c| !c.graph.trim().is_empty());
-        assert!(has_graph, "expected at least one commit with non-empty graph line");
+        assert!(
+            has_graph,
+            "expected at least one commit with non-empty graph line"
+        );
 
         let all_have_hashes = commits.iter().all(|c| !c.hash.is_empty());
-        assert!(all_have_hashes, "expected all commits to have hashes in linear history");
+        assert!(
+            all_have_hashes,
+            "expected all commits to have hashes in linear history"
+        );
     }
 }

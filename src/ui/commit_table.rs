@@ -71,15 +71,9 @@ pub fn render(
         .fg(Color::Yellow)
         .add_modifier(Modifier::BOLD);
 
-    let header = Row::new(vec![
-        "Graph",
-        "Hash",
-        "Subject",
-        "Author",
-        "Date",
-    ])
-    .style(header_style)
-    .height(1);
+    let header = Row::new(vec!["Graph", "Hash", "Subject", "Author", "Date"])
+        .style(header_style)
+        .height(1);
 
     let highlight_style = Style::default()
         .bg(if is_focused {
@@ -90,11 +84,7 @@ pub fn render(
         .add_modifier(Modifier::BOLD);
 
     // Calculate dynamic graph width
-    let max_graph = commits
-        .iter()
-        .map(|c| c.graph.len())
-        .max()
-        .unwrap_or(4) as u16;
+    let max_graph = commits.iter().map(|c| c.graph.len()).max().unwrap_or(4) as u16;
 
     let col_graph = max_graph.clamp(4, COL_GRAPH_MAX);
 
@@ -254,7 +244,10 @@ fn truncate(s: &str, max_len: usize) -> String {
     let end = if s.is_char_boundary(target) {
         target
     } else {
-        (0..target).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
+        (0..target)
+            .rev()
+            .find(|&i| s.is_char_boundary(i))
+            .unwrap_or(0)
     };
     if end == 0 {
         return s.to_string(); // can't meaningfully truncate with a char-safe prefix

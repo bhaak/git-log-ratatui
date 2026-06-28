@@ -1,21 +1,28 @@
 use std::collections::BTreeMap;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     layout::{Constraint, Layout, Rect},
+    style::{Color, Style},
     widgets::TableState,
     Frame,
 };
 
 use crate::clipboard;
 use crate::models::*;
-use crate::workers::{BranchWorker, BranchCommand, BranchResult, CommitWorker, CommitCommand, CommitResult, DiffWorker, DiffCommand, DiffResult};
 use crate::tree;
 use crate::ui;
+use crate::workers::{
+    BranchCommand, BranchResult, BranchWorker, CommitCommand, CommitResult, CommitWorker,
+    DiffCommand, DiffResult, DiffWorker,
+};
 
 const DEFAULT_BRANCH_PCT: u16 = 20;
 const MIN_BRANCH_PCT: u16 = 10;
@@ -58,9 +65,15 @@ pub struct App {
     branch_width_pct: u16,
     diff_height_pct: u16,
     dragging: Option<DragDirection>,
+    scrollbar_drag: Option<Panel>,
     last_size: Option<(u16, u16)>,
     last_mouse_pos: Option<(u16, u16)>,
     table_state: TableState,
+
+    /// Scrollbar widgets for each scrollable panel.
+    branch_scrollbar: ui::scrollbar_view::ScrollbarView,
+    table_scrollbar: ui::scrollbar_view::ScrollbarView,
+    diff_scrollbar: ui::scrollbar_view::ScrollbarView,
 
     status_message: Option<String>,
     branches_loaded: bool,
@@ -108,9 +121,13 @@ impl App {
             branch_width_pct: DEFAULT_BRANCH_PCT,
             diff_height_pct: DEFAULT_DIFF_PCT,
             dragging: None,
+            scrollbar_drag: None,
             last_size: None,
             last_mouse_pos: None,
             table_state: TableState::default(),
+            branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
+            table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
+            diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             status_message: None,
             branches_loaded: false,
             commits_loaded: false,
@@ -119,7 +136,10 @@ impl App {
         })
     }
 
-    pub fn run(&mut self, terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>) -> Result<(), String> {
+    pub fn run(
+        &mut self,
+        terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>,
+    ) -> Result<(), String> {
         self.request_branches();
         self.request_commits(None);
 
@@ -297,7 +317,9 @@ impl App {
 
     fn clamp_selection(&mut self) {
         if self.visible_count() > 0 {
-            self.selected_index = self.selected_index.min(self.visible_count().saturating_sub(1));
+            self.selected_index = self
+                .selected_index
+                .min(self.visible_count().saturating_sub(1));
         } else {
             self.selected_index = 0;
         }
@@ -318,9 +340,7 @@ impl App {
         let ev = event::read().map_err(|e| format!("Event error: {}", e))?;
 
         match ev {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                self.handle_key(key)
-            }
+            Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
             Event::Mouse(mouse) => {
                 // Ignore move events to avoid redrawing on every mouse movement.
                 if let MouseEventKind::Moved = mouse.kind {
@@ -348,7 +368,9 @@ impl App {
         // Quit
         match key.code {
             KeyCode::Char('q') => return Ok(false),
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(false),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Ok(false)
+            }
             KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.suspend();
                 return Ok(true);
@@ -485,8 +507,8 @@ impl App {
             }
             Panel::Diff => {
                 if !self.file_entries.is_empty() {
-                    self.selected_file_index = (self.selected_file_index + 1)
-                        % self.file_entries.len();
+                    self.selected_file_index =
+                        (self.selected_file_index + 1) % self.file_entries.len();
                 }
             }
             _ => {}
@@ -545,11 +567,7 @@ impl App {
     }
 
     fn suspend(&mut self) {
-        let _ = execute!(
-            std::io::stdout(),
-            DisableMouseCapture,
-            LeaveAlternateScreen,
-        );
+        let _ = execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen,);
         disable_raw_mode().ok();
 
         #[cfg(unix)]
@@ -558,11 +576,7 @@ impl App {
         }
 
         enable_raw_mode().ok();
-        let _ = execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            EnableMouseCapture,
-        );
+        let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture,);
     }
 
     // --- Panel key handlers ---
@@ -707,8 +721,8 @@ impl App {
             }
             KeyCode::PageDown => {
                 if self.visible_count() > 0 {
-                    self.selected_index = (self.selected_index + 10)
-                        .min(self.visible_count().saturating_sub(1));
+                    self.selected_index =
+                        (self.selected_index + 10).min(self.visible_count().saturating_sub(1));
                 }
             }
             _ => {}
@@ -717,10 +731,8 @@ impl App {
 
     fn handle_diff_keys(&mut self, key: KeyEvent) {
         // Determine if we're scrolled past the metadata+file section
-        let file_section_end = ui::diff_panel::diff_line_offset(
-            self.commit_info.as_ref(),
-            &self.file_entries,
-        );
+        let file_section_end =
+            ui::diff_panel::diff_line_offset(self.commit_info.as_ref(), &self.file_entries);
         let past_meta = self.diff_scroll >= file_section_end || self.file_entries.is_empty();
 
         match key.code {
@@ -739,8 +751,8 @@ impl App {
                 if past_meta {
                     self.diff_scroll += 1;
                 } else {
-                    self.selected_file_index = (self.selected_file_index + 1)
-                        % self.file_entries.len();
+                    self.selected_file_index =
+                        (self.selected_file_index + 1) % self.file_entries.len();
                 }
             }
             KeyCode::Enter => {
@@ -754,8 +766,8 @@ impl App {
             }
             KeyCode::Char('n') => {
                 if !self.file_entries.is_empty() {
-                    self.selected_file_index = (self.selected_file_index + 1)
-                        % self.file_entries.len();
+                    self.selected_file_index =
+                        (self.selected_file_index + 1) % self.file_entries.len();
                     let offset = ui::diff_panel::diff_line_offset(
                         self.commit_info.as_ref(),
                         &self.file_entries,
@@ -809,6 +821,7 @@ impl App {
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 self.dragging = None;
+                self.scrollbar_drag = None;
             }
             MouseEventKind::ScrollDown => {
                 self.handle_scroll_at(mouse.column, mouse.row, 1);
@@ -821,10 +834,81 @@ impl App {
     }
 
     fn handle_mouse_click(&mut self, col: u16, row: u16) {
-        let Some((tw, th)) = self.last_size else { return };
+        let Some((tw, th)) = self.last_size else {
+            return;
+        };
         let full = Rect::new(0, 0, tw, th);
-        let (branch_area, _, search_area, scope_area, table_area, diff_area) = self.compute_areas(full);
+        let (branch_area, _, search_area, scope_area, table_area, diff_area) =
+            self.compute_areas(full);
+        // Trim bottom rows occupied by the help bar (same as in render)
+        let help_h = 3.min(th);
+        let branch_visible_area = Rect::new(
+            branch_area.x,
+            branch_area.y,
+            branch_area.width,
+            branch_area.height.saturating_sub(help_h),
+        );
         let click_pos = (col, row);
+
+        // Scrollbar click handling — intercept before content click
+        let (_, branch_sb) = ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
+        if rect_contains(&branch_sb, click_pos) {
+            self.dragging = None;
+            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                branch_sb,
+                row,
+                self.branch_scrollbar.content_length(),
+                self.branch_scrollbar.viewport_length(),
+            ) {
+                self.focus = Panel::Branches;
+                self.scrollbar_drag = Some(Panel::Branches);
+                if new_pos < self.branch_tree.len() {
+                    self.branch_index = new_pos;
+                }
+            }
+            return;
+        }
+        let (_, table_sb) = ui::scrollbar_view::ScrollbarView::split(table_area);
+        if rect_contains(&table_sb, click_pos) {
+            self.dragging = None;
+            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                table_sb,
+                row,
+                self.table_scrollbar.content_length(),
+                self.table_scrollbar.viewport_length(),
+            ) {
+                self.focus = Panel::Commits;
+                self.scrollbar_drag = Some(Panel::Commits);
+                // new_pos is a filtered index; find the closest visible row
+                let mut fidx = new_pos;
+                loop {
+                    if let Some(vis_idx) = self.filtered_to_visible(fidx) {
+                        self.selected_index = vis_idx;
+                        break;
+                    }
+                    if fidx == 0 {
+                        break;
+                    }
+                    fidx -= 1;
+                }
+            }
+            return;
+        }
+        let (_, diff_sb) = ui::scrollbar_view::ScrollbarView::split(diff_area);
+        if rect_contains(&diff_sb, click_pos) {
+            self.dragging = None;
+            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                diff_sb,
+                row,
+                self.diff_scrollbar.content_length(),
+                self.diff_scrollbar.viewport_length(),
+            ) {
+                self.focus = Panel::Diff;
+                self.scrollbar_drag = Some(Panel::Diff);
+                self.diff_scroll = new_pos;
+            }
+            return;
+        }
 
         if rect_contains(&branch_area, click_pos) {
             self.focus = Panel::Branches;
@@ -885,7 +969,9 @@ impl App {
     }
 
     fn check_resize_start(&mut self, col: u16, row: u16) {
-        let Some((tw, th)) = self.last_size else { return };
+        let Some((tw, th)) = self.last_size else {
+            return;
+        };
         let full = Rect::new(0, 0, tw, th);
         let (branch_area, right_area, _, _, table_area, _) = self.compute_areas(full);
 
@@ -908,6 +994,71 @@ impl App {
     }
 
     fn handle_mouse_drag(&mut self, col: u16, row: u16) {
+        // Scrollbar dragging — update scroll position proportionally
+        if let Some(panel) = self.scrollbar_drag {
+            let Some((tw, th)) = self.last_size else {
+                return;
+            };
+            let full = Rect::new(0, 0, tw, th);
+            let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
+            let help_h = 3.min(th);
+            let branch_visible_area = Rect::new(
+                branch_area.x,
+                branch_area.y,
+                branch_area.width,
+                branch_area.height.saturating_sub(help_h),
+            );
+            match panel {
+                Panel::Branches => {
+                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
+                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                        sb,
+                        row,
+                        self.branch_scrollbar.content_length(),
+                        self.branch_scrollbar.viewport_length(),
+                    ) {
+                        if new_pos < self.branch_tree.len() {
+                            self.branch_index = new_pos;
+                        }
+                    }
+                }
+                Panel::Commits => {
+                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(table_area);
+                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                        sb,
+                        row,
+                        self.table_scrollbar.content_length(),
+                        self.table_scrollbar.viewport_length(),
+                    ) {
+                        let mut fidx = new_pos;
+                        loop {
+                            if let Some(vis_idx) = self.filtered_to_visible(fidx) {
+                                self.selected_index = vis_idx;
+                                break;
+                            }
+                            if fidx == 0 {
+                                break;
+                            }
+                            fidx -= 1;
+                        }
+                    }
+                }
+                Panel::Diff => {
+                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(diff_area);
+                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
+                        sb,
+                        row,
+                        self.diff_scrollbar.content_length(),
+                        self.diff_scrollbar.viewport_length(),
+                    ) {
+                        self.diff_scroll = new_pos;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match self.dragging {
             Some(DragDirection::Vertical) => {
                 if let Some((tw, _)) = self.last_size {
@@ -917,7 +1068,8 @@ impl App {
             }
             Some(DragDirection::Horizontal) => {
                 if let Some((_, th)) = self.last_size {
-                    let pct = (((th.saturating_sub(row).saturating_sub(3)) as f32) / (th as f32) * 100.0) as u16;
+                    let pct = (((th.saturating_sub(row).saturating_sub(3)) as f32) / (th as f32)
+                        * 100.0) as u16;
                     self.diff_height_pct = pct.clamp(MIN_DIFF_PCT, MAX_DIFF_PCT);
                 }
             }
@@ -927,7 +1079,9 @@ impl App {
 
     /// Scroll the panel under the mouse cursor (position-aware).
     fn handle_scroll_at(&mut self, col: u16, row: u16, direction: i32) {
-        let Some((tw, th)) = self.last_size else { return };
+        let Some((tw, th)) = self.last_size else {
+            return;
+        };
         let full = Rect::new(0, 0, tw, th);
         let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
         let pos = (col, row);
@@ -1032,13 +1186,8 @@ impl App {
         let diff_h = Constraint::Percentage(self.diff_height_pct.min(90));
         let help_h = Constraint::Length(3.min(right_area.height.saturating_sub(6) / 2));
 
-        let main_split = Layout::vertical([
-            search_h,
-            Constraint::Min(0),
-            diff_h,
-            help_h,
-        ])
-        .split(right_area);
+        let main_split =
+            Layout::vertical([search_h, Constraint::Min(0), diff_h, help_h]).split(right_area);
 
         let search_scope_area = main_split[0];
         let table_area = main_split[1];
@@ -1052,7 +1201,14 @@ impl App {
         let search_area = search_split[0];
         let scope_area = search_split[1];
 
-        (branch_area, right_area, search_area, scope_area, table_area, diff_area)
+        (
+            branch_area,
+            right_area,
+            search_area,
+            scope_area,
+            table_area,
+            diff_area,
+        )
     }
 
     // --- Rendering ---
@@ -1066,7 +1222,8 @@ impl App {
             return;
         }
 
-        let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) = self.compute_areas(full);
+        let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) =
+            self.compute_areas(full);
 
         let help_area = Rect::new(
             full.x,
@@ -1079,13 +1236,41 @@ impl App {
         self.cursor_pos = self.cursor_pos.min(self.search_query.len());
         self.clamp_selection();
 
-        ui::branch_panel::render(
+        // --- Branch panel (content + scrollbar) ---
+        // Trim bottom so the help bar does not overwrite the panel border
+        let branch_visible_area = Rect::new(
+            branch_area.x,
+            branch_area.y,
+            branch_area.width,
+            branch_area.height.saturating_sub(help_area.height),
+        );
+        let (branch_content_area, branch_scrollbar_area) =
+            ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
+
+        let branch_list_state = ui::branch_panel::render(
             frame,
-            branch_area,
+            branch_content_area,
             &self.branch_tree,
             self.branch_index,
             self.focus == Panel::Branches,
         );
+
+        let branch_focus_style = if self.focus == Panel::Branches {
+            Style::default().fg(Color::Rgb(180, 140, 255))
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        let branch_visible = (branch_content_area.height.saturating_sub(2)) as usize;
+        self.branch_scrollbar.render(
+            frame,
+            branch_scrollbar_area,
+            self.branch_tree.len(),
+            branch_visible,
+            branch_list_state.offset() as usize,
+            branch_focus_style,
+        );
+
+        // --- Search panel ---
 
         let branch_label = self.selected_branch.as_deref().unwrap_or("all branches");
         let title = format!("Git Log - {} [{}]", self.repo_path, branch_label);
@@ -1099,11 +1284,20 @@ impl App {
             self.focus == Panel::Search,
         );
 
-        ui::scope_panel::render(frame, scope_area, self.branch_scope, self.focus == Panel::Scope);
+        ui::scope_panel::render(
+            frame,
+            scope_area,
+            self.branch_scope,
+            self.focus == Panel::Scope,
+        );
+
+        // --- Commit table (content + scrollbar) ---
+        let (table_content_area, table_scrollbar_area) =
+            ui::scrollbar_view::ScrollbarView::split(table_area);
 
         ui::commit_table::render(
             frame,
-            table_area,
+            table_content_area,
             &self.filtered_commits,
             self.selected_index,
             self.focus == Panel::Commits,
@@ -1113,12 +1307,33 @@ impl App {
             &mut self.table_state,
         );
 
-        let short_hash = self.commit_info.as_ref().map(|info| {
-            &info.hash[..std::cmp::min(8, info.hash.len())]
-        });
-        ui::diff_panel::render(
+        let table_focus_style = if self.focus == Panel::Commits {
+            Style::default().fg(Color::Rgb(180, 140, 255))
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        let table_visible = (table_content_area.height.saturating_sub(3)) as usize;
+        self.table_scrollbar.render(
             frame,
-            diff_area,
+            table_scrollbar_area,
+            self.filtered_commits.len(),
+            table_visible,
+            self.table_state.offset() as usize,
+            table_focus_style,
+        );
+
+        let short_hash = self
+            .commit_info
+            .as_ref()
+            .map(|info| &info.hash[..std::cmp::min(8, info.hash.len())]);
+
+        // --- Diff panel (content + scrollbar) ---
+        let (diff_content_area, diff_scrollbar_area) =
+            ui::scrollbar_view::ScrollbarView::split(diff_area);
+
+        let diff_total_lines = ui::diff_panel::render(
+            frame,
+            diff_content_area,
             self.commit_info.as_ref(),
             &self.diff_lines,
             &self.file_entries,
@@ -1126,6 +1341,21 @@ impl App {
             self.diff_scroll,
             self.focus == Panel::Diff,
             short_hash,
+        );
+
+        let diff_focus_style = if self.focus == Panel::Diff {
+            Style::default().fg(Color::Rgb(180, 140, 255))
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        let diff_visible = (diff_content_area.height.saturating_sub(2)) as usize;
+        self.diff_scrollbar.render(
+            frame,
+            diff_scrollbar_area,
+            diff_total_lines,
+            diff_visible,
+            self.diff_scroll,
+            diff_focus_style,
         );
 
         let count_info = ui::help_bar::format_commit_count(
@@ -1203,7 +1433,10 @@ fn prev_word_boundary(s: &str, pos: usize) -> usize {
     }
     // Work with chars from the end backward
     let chars: Vec<(usize, char)> = s.char_indices().collect();
-    let char_pos = chars.iter().position(|&(i, _)| i == pos).unwrap_or(chars.len());
+    let char_pos = chars
+        .iter()
+        .position(|&(i, _)| i == pos)
+        .unwrap_or(chars.len());
     if char_pos == 0 {
         return 0;
     }
@@ -1212,7 +1445,9 @@ fn prev_word_boundary(s: &str, pos: usize) -> usize {
     loop {
         let (_bi, ch) = chars.get(idx).copied().unwrap_or((0, '\0'));
         if ch.is_alphanumeric() || ch == '_' {
-            if idx == 0 { return 0; }
+            if idx == 0 {
+                return 0;
+            }
             idx = idx.saturating_sub(1);
         } else {
             // Found non-word char; the boundary is right after it
@@ -1223,7 +1458,10 @@ fn prev_word_boundary(s: &str, pos: usize) -> usize {
 
 fn next_word_boundary(s: &str, pos: usize) -> usize {
     let chars: Vec<(usize, char)> = s.char_indices().collect();
-    let char_pos = chars.iter().position(|&(i, _)| i >= pos).unwrap_or(chars.len());
+    let char_pos = chars
+        .iter()
+        .position(|&(i, _)| i >= pos)
+        .unwrap_or(chars.len());
     let mut idx = char_pos;
     // Skip word characters
     while idx < chars.len() {
@@ -1322,9 +1560,13 @@ mod tests {
             branch_width_pct: DEFAULT_BRANCH_PCT,
             diff_height_pct: DEFAULT_DIFF_PCT,
             dragging: None,
+            scrollbar_drag: None,
             last_size: None,
             last_mouse_pos: None,
             table_state: TableState::default(),
+            branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
+            table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
+            diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             status_message: None,
             branches_loaded: false,
             commits_loaded: false,
@@ -1336,19 +1578,17 @@ mod tests {
     #[test]
     fn test_search_filter_empty_query() {
         let mut app = test_app();
-        app.all_commits = vec![
-            Commit {
-                hash: "abc".into(),
-                author: "alice".into(),
-                date: "2024-01-01".into(),
-                subject: "fix bug".into(),
-                graph: "*".into(),
-                merge: false,
-                graph_only: false,
-                decorations: vec![],
-                deco_line: 0,
-            },
-        ];
+        app.all_commits = vec![Commit {
+            hash: "abc".into(),
+            author: "alice".into(),
+            date: "2024-01-01".into(),
+            subject: "fix bug".into(),
+            graph: "*".into(),
+            merge: false,
+            graph_only: false,
+            decorations: vec![],
+            deco_line: 0,
+        }];
         app.search_query.clear();
         app.apply_search_filter();
         assert_eq!(app.filtered_commits.len(), 1);
@@ -1390,19 +1630,17 @@ mod tests {
     #[test]
     fn test_search_filter_case_insensitive() {
         let mut app = test_app();
-        app.all_commits = vec![
-            Commit {
-                hash: "abc".into(),
-                author: "ALICE".into(),
-                date: "2024-01-01".into(),
-                subject: "Fix Bug".into(),
-                graph: "*".into(),
-                merge: false,
-                graph_only: false,
-                decorations: vec![],
-                deco_line: 0,
-            },
-        ];
+        app.all_commits = vec![Commit {
+            hash: "abc".into(),
+            author: "ALICE".into(),
+            date: "2024-01-01".into(),
+            subject: "Fix Bug".into(),
+            graph: "*".into(),
+            merge: false,
+            graph_only: false,
+            decorations: vec![],
+            deco_line: 0,
+        }];
         app.search_query = "bug".into();
         app.apply_search_filter();
         assert_eq!(app.filtered_commits.len(), 1);
@@ -1462,19 +1700,17 @@ mod tests {
     #[test]
     fn test_clamp_selection_in_range() {
         let mut app = test_app();
-        app.filtered_commits = vec![
-            Commit {
-                hash: "abc".into(),
-                author: "a".into(),
-                date: "d".into(),
-                subject: "s".into(),
-                graph: "*".into(),
-                merge: false,
-                graph_only: false,
-                decorations: vec![],
-                deco_line: 0,
-            },
-        ];
+        app.filtered_commits = vec![Commit {
+            hash: "abc".into(),
+            author: "a".into(),
+            date: "d".into(),
+            subject: "s".into(),
+            graph: "*".into(),
+            merge: false,
+            graph_only: false,
+            decorations: vec![],
+            deco_line: 0,
+        }];
         app.build_visible_mapping();
         app.selected_index = 0;
         app.clamp_selection();

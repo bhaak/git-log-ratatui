@@ -14,6 +14,7 @@ A TUI for browsing git log with ratatui.
 - Context-sensitive help bar with keyboard shortcuts
 - Clipboard: copy short/full commit hash with y/Y
 - System clipboard paste into search with Ctrl+V
+- Scrollbars on branch, commit, and diff panels
 
 ## Installation
 
