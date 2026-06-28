@@ -1073,7 +1073,7 @@ impl App {
         );
 
         let branch_label = self.selected_branch.as_deref().unwrap_or("all branches");
-        let title = format!("Git Log — {} [{}]", self.repo_path, branch_label);
+        let title = format!("Git Log - {} [{}]", self.repo_path, branch_label);
         ui::search_panel::render(
             frame,
             search_area,
