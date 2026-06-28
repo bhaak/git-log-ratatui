@@ -7,6 +7,10 @@
   - changes to TODO.md always in their own commit
   - never use —, always use -
 
+* Code
+  - run cargo fmt after each step
+  - run clippy after each step
+
 * Performance
   - Performance is top priority.
   - use data streams in parallel processes to process data quickly
