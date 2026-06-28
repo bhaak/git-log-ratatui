@@ -358,6 +358,11 @@ impl App {
                 };
                 return Ok(true);
             }
+            // BackTab: terminals that send ESC [ Z for Shift+Tab
+            KeyCode::BackTab => {
+                self.focus = self.focus.prev();
+                return Ok(true);
+            }
             KeyCode::Char('l') => {
                 self.focus = self.focus.next();
                 return Ok(true);
