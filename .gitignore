@@ -1,17 +1,2 @@
-*.gem
-*.rbc
-/.bundle
-/.config
-/coverage/
-/InstalledFiles
-/pkg/
-/spec/reports/
-/spec/examples.txt
-/tmp/
-
-Gemfile.lock
-
-
-# Added by cargo
-
+# Rust
 /target

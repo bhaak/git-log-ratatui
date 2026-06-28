@@ -1,8 +1,0 @@
-#!/usr/bin/env ruby
-# frozen_string_literal: true
-
-require "bundler/setup"
-require_relative "../lib/git_log_ratatui"
-
-path = ARGV[0] || "."
-GitLogRatatui::App.new(path).run
