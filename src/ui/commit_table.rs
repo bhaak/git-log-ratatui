@@ -24,9 +24,10 @@ pub fn render(
     visible_index: usize,
     is_focused: bool,
     visible_to_commit: &[usize],
-    total_loaded: usize,   // total commits before filtering (for empty state)
-    search_active: bool,    // whether a search filter is active (for empty state)
-) -> TableState {
+    total_loaded: usize,
+    search_active: bool,
+    state: &mut TableState,
+) {
     let border_style = if is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {
@@ -35,7 +36,7 @@ pub fn render(
 
     // Guard against zero-size area
     if area.width < 10 || area.height < 3 {
-        return TableState::default();
+        return;
     }
 
     // Empty state messages
@@ -63,7 +64,7 @@ pub fn render(
             );
             frame.render_widget(p, centered);
         }
-        return TableState::default();
+        return;
     }
 
     let header_style = Style::default()
@@ -168,13 +169,11 @@ pub fn render(
         .row_highlight_style(highlight_style)
         .column_spacing(1);
 
-    let mut state = TableState::default();
     if !commits.is_empty() && mapped_index < commits.len() {
         state.select(Some(mapped_index));
     }
 
-    frame.render_stateful_widget(table, area, &mut state);
-    state
+    frame.render_stateful_widget(table, area, state);
 }
 
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {

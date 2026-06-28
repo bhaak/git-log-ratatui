@@ -1094,7 +1094,7 @@ impl App {
 
         ui::scope_panel::render(frame, scope_area, self.branch_scope, self.focus == Panel::Scope);
 
-        self.table_state = ui::commit_table::render(
+        ui::commit_table::render(
             frame,
             table_area,
             &self.filtered_commits,
@@ -1103,6 +1103,7 @@ impl App {
             &self.visible_to_commit,
             self.all_commits.len(),
             !self.search_query.is_empty(),
+            &mut self.table_state,
         );
 
         let short_hash = self.commit_info.as_ref().map(|info| {
