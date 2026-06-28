@@ -315,16 +315,18 @@ fn decoration_priority(kind: &DecorationKind) -> u8 {
 
 /// Append a single diff line from git2's `diff.print()` callback to `diff_lines`.
 /// Handles the origin encoding: '+'/'-'/' ' get their prefix prepended,
-/// 'F'/'H' (file/hunk headers) are pushed as-is, others trimmed.
+/// 'F'/'H' (file/hunk headers) are split on newlines and pushed each, others trimmed.
 fn append_diff_line(diff_lines: &mut Vec<String>, origin: char, content: &str) {
     match origin {
         '+' | '-' | ' ' => {
             diff_lines.push(format!("{}{}", origin, content.trim_end_matches('\n')));
         }
         'F' | 'H' => {
-            let trimmed = content.trim_end_matches('\n').to_string();
-            if !trimmed.is_empty() {
-                diff_lines.push(trimmed);
+            for s in content.split('\n') {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    diff_lines.push(trimmed.to_string());
+                }
             }
         }
         _ => {
@@ -532,8 +534,16 @@ mod tests {
     #[test]
     fn test_append_diff_line_file_header() {
         let mut lines = Vec::new();
-        append_diff_line(&mut lines, 'F', "diff --git a/foo.txt b/foo.txt\n");
-        assert_eq!(lines, vec!["diff --git a/foo.txt b/foo.txt"]);
+        append_diff_line(&mut lines, 'F', "diff --git a/foo.txt b/foo.txt\nindex abc..def\n--- a/foo.txt\n+++ b/foo.txt\n");
+        assert_eq!(
+            lines,
+            vec![
+                "diff --git a/foo.txt b/foo.txt",
+                "index abc..def",
+                "--- a/foo.txt",
+                "+++ b/foo.txt",
+            ]
+        );
     }
 
     #[test]

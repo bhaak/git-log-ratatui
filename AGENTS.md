@@ -4,6 +4,7 @@
   - give each window its own thread
   - write unit tests for each step
   - commit after each step
+  - changes to TODO.md always in their own commit
 
 * Performance
   - Performance is top priority.
