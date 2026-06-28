@@ -177,9 +177,8 @@ pub fn render(
 }
 
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
-    let graph_unicode = convert_graph_chars(&commit.graph);
-    // Pad to consistent width for alignment
-    let padded = format!("{:width$}", graph_unicode, width = graph_width);
+    // Graph lines from git-graph are already Unicode box-drawing characters; use them directly
+    let padded = format!("{:width$}", commit.graph, width = graph_width);
     let mut spans = Vec::new();
 
     spans.push(Span::styled(
@@ -234,15 +233,6 @@ fn graph_only_decorations(commit: &Commit) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     }
-}
-
-fn convert_graph_chars(graph: &str) -> String {
-    graph
-        .replace('|', "\u{2502}")
-        .replace('/', "\u{2571}")
-        .replace('\\', "\u{2572}")
-        .replace('_', "\u{2500}")
-        .replace('*', "\u{2502}")
 }
 
 fn decoration_colors(kind: &DecorationKind) -> (Color, Color) {

@@ -453,80 +453,9 @@ fn is_leap(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-/// Parse `git log --graph --format=%H` output into minimal Commit structs.
-/// Graph-only lines (no hash) get `graph_only = true`.
-/// Author, date, subject, merge, decorations are filled later by git2 enrichment.
-fn parse_git_log_graph(text: &str) -> Vec<Commit> {
-    let mut commits = Vec::new();
-
-    for line in text.lines() {
-        let graph = extract_graph(line);
-        let hash = line[graph.len()..].trim().to_string();
-        let graph_only = hash.is_empty();
-
-        commits.push(Commit {
-            hash,
-            graph,
-            graph_only,
-            author: String::new(),
-            date: String::new(),
-            subject: String::new(),
-            merge: false,
-            decorations: Vec::new(),
-            deco_line: 0,
-        });
-    }
-
-    commits
-}
-
-/// Extract the graph prefix from a git log line.
-fn extract_graph(line: &str) -> String {
-    let mut graph = String::new();
-    for ch in line.chars() {
-        if matches!(ch, ' ' | '*' | '|' | '/' | '\\' | '_') {
-            graph.push(ch);
-        } else {
-            break;
-        }
-    }
-    graph
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extract_graph_simple() {
-        let graph = extract_graph("| * some text");
-        assert_eq!(graph, "| * ");
-    }
-
-    #[test]
-    fn test_extract_graph_no_graph() {
-        let graph = extract_graph("commit text");
-        assert_eq!(graph, "");
-    }
-
-    #[test]
-    fn test_parse_git_log_graph() {
-        let text = "* abc123def\n| * \n| * 456789abc\n";
-        let commits = parse_git_log_graph(text);
-        assert_eq!(commits.len(), 3);
-        assert_eq!(commits[0].hash, "abc123def");
-        assert!(!commits[0].graph_only);
-        assert_eq!(commits[1].hash, "");
-        assert!(commits[1].graph_only);
-        assert_eq!(commits[2].hash, "456789abc");
-        assert!(!commits[2].graph_only);
-    }
-
-    #[test]
-    fn test_parse_git_log_graph_empty() {
-        let commits = parse_git_log_graph("");
-        assert!(commits.is_empty());
-    }
 
     #[test]
     fn test_decoration_priority() {
