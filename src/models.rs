@@ -1,19 +1,19 @@
 use std::fmt;
 
-/// A parsed commit from `git log --graph` output.
+/// A commit entry produced by the git-graph crate, enriched with git2 metadata.
 #[derive(Debug, Clone)]
 pub struct Commit {
     pub hash: String,
     pub author: String,
     pub date: String,
     pub subject: String,
-    /// Raw graph line from `git log --graph` (ASCII chars).
+    /// Unicode graph line from git-graph (already box-drawing characters).
     pub graph: String,
     /// True if this is a merge commit (has multiple parents).
     pub merge: bool,
-    /// True if this row is a graph-only continuation line (no actual commit).
+    /// True if this row is a graph-only continuation line (no commit).
     pub graph_only: bool,
-    /// Decorations parsed from the `%d` field (e.g. "HEAD -> main, tag: v1.0").
+    /// Branch/tag/HEAD decorations resolved via git2 references.
     pub decorations: Vec<Decoration>,
     /// Index of the first row in the expanded table for this decoration block.
     pub deco_line: usize,
