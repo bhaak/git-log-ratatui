@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use git_graph::graph::{CommitInfo as GgCommitInfo, GitGraph};
+use git_graph::graph::GitGraph;
 use git_graph::print::format::CommitFormat;
 use git_graph::settings::{
     BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
@@ -332,48 +332,56 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             }
         }
 
-        // Build graph line string
+        // Find parent columns that differ from current_col (merge connectors)
+        let parent_cols: Vec<usize> = if info.is_merge {
+            (0..2)
+                .filter_map(|p| {
+                    info.parents[p].and_then(|oid| {
+                        graph.indices.get(&oid).and_then(|&idx| {
+                            graph.commits[idx]
+                                .branch_trace
+                                .and_then(|t| graph.all_branches[t].visual.column)
+                        })
+                    })
+                })
+                .filter(|&c| c != current_col)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Ensure parent columns are included in the graph line
+        for &pc in &parent_cols {
+            if pc > max_active_col {
+                max_active_col = pc;
+            }
+        }
+
+        // Build graph line string — draw corners at parent columns for merges
         let mut line = String::with_capacity(max_active_col + 1);
         for col in 0..=max_active_col {
-            if active[col] {
+            if active[col] || parent_cols.contains(&col) {
                 if col == current_col {
-                    // Current commit marker
                     line.push(if info.is_merge {
                         '\u{25CB}'
                     } else {
                         '\u{25CF}'
                     });
-                    // \u{25CF} = ●, \u{25CB} = ○
+                    // ○ merge, ● normal
+                } else if parent_cols.contains(&col) {
+                    // Corner toward the parent: curve from horizontal to vertical
+                    if col < current_col {
+                        line.push('\u{256D}'); // ╭ parent to the left, curve from right
+                    } else {
+                        line.push('\u{256E}'); // ╮ parent to the right, curve from left
+                    }
                 } else {
-                    // Ongoing branch continuation line
-                    line.push('\u{2502}'); // │
+                    line.push('\u{2502}'); // │ branch continuation
                 }
             } else {
                 line.push(' ');
             }
         }
-
-        // Check for parent relationships that need connecting lines
-        // (handled via additional graph_only rows below)
-        let has_parent_connectors = (0..2).any(|p| {
-            let parent_oid = match info.parents[p] {
-                Some(oid) => oid,
-                None => return false,
-            };
-            let parent_idx = match graph.indices.get(&parent_oid) {
-                Some(&idx) => idx,
-                None => return false,
-            };
-            let parent_trace = match graph.commits[parent_idx].branch_trace {
-                Some(t) => t,
-                None => return true, // parent outside graph
-            };
-            let parent_col = match graph.all_branches[parent_trace].visual.column {
-                Some(c) => c,
-                None => return false,
-            };
-            parent_col != current_col
-        });
 
         commits.push(Commit {
             hash: info.oid.to_string(),
@@ -386,82 +394,9 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             decorations: Vec::new(),
             deco_line: 0,
         });
-
-        // Add graph-only rows for multi-column connecting lines
-        if has_parent_connectors {
-            add_parent_connectors(&mut commits, graph, info, current_col);
-        }
     }
 
     commits
-}
-
-/// Add graph-only rows that draw connecting lines between a commit and its
-/// parents when they are on different columns (merges and forks).
-fn add_parent_connectors(
-    commits: &mut Vec<Commit>,
-    graph: &GitGraph,
-    info: &GgCommitInfo,
-    current_col: usize,
-) {
-    for p in 0..2 {
-        let parent_oid = match info.parents[p] {
-            Some(oid) => oid,
-            None => continue,
-        };
-        let parent_idx = match graph.indices.get(&parent_oid) {
-            Some(&idx) => idx,
-            None => continue,
-        };
-        let parent_trace = match graph.commits[parent_idx].branch_trace {
-            Some(t) => t,
-            None => continue,
-        };
-        let parent_col = match graph.all_branches[parent_trace].visual.column {
-            Some(c) => c,
-            None => continue,
-        };
-
-        if parent_col == current_col {
-            continue;
-        }
-
-        // Draw horizontal connection: from current_col to parent_col
-        let (left, right) = if current_col < parent_col {
-            (current_col, parent_col)
-        } else {
-            (parent_col, current_col)
-        };
-
-        let mut line = String::with_capacity(right + 1);
-        for col in 0..=right {
-            if col < left || col > right {
-                line.push(' ');
-            } else if col == current_col {
-                line.push('\u{2514}'); // └ (from current)
-            } else if col == parent_col {
-                line.push(if p == 0 {
-                    '\u{2510}' // ┐ (to first parent)
-                } else {
-                    '\u{250C}' // ┌ (to second parent)
-                });
-            } else {
-                line.push('\u{2500}'); // ─ horizontal
-            }
-        }
-
-        commits.push(Commit {
-            hash: String::new(),
-            graph: line,
-            graph_only: true,
-            author: String::new(),
-            date: String::new(),
-            subject: String::new(),
-            merge: false,
-            decorations: Vec::new(),
-            deco_line: 0,
-        });
-    }
 }
 
 fn decoration_priority(kind: &DecorationKind) -> u8 {

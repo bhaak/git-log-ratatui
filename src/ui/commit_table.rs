@@ -83,8 +83,13 @@ pub fn render(
         })
         .add_modifier(Modifier::BOLD);
 
-    // Calculate dynamic graph width
-    let max_graph = commits.iter().map(|c| c.graph.len()).max().unwrap_or(4) as u16;
+    // Calculate dynamic graph width (use char count, not byte length — all Unicode
+    // box-drawing/graph characters are single-width but 3 bytes each in UTF-8)
+    let max_graph = commits
+        .iter()
+        .map(|c| c.graph.chars().count())
+        .max()
+        .unwrap_or(4) as u16;
 
     let col_graph = max_graph.clamp(4, COL_GRAPH_MAX);
 
