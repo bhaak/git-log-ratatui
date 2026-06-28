@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -119,8 +121,8 @@ fn build_all_lines<'a>(
     let _file_header_len = lines.len() - metadata_len;
 
     // Diff content with word-level highlighting
-    // Collect diff lines into indexed pairs for LCS matching
-    let _diff_pairs = build_diff_pairs(diff_lines);
+    // Build pair maps once — O(n) scan, then O(1) lookup per line
+    let pair_maps = build_pair_maps(diff_lines);
 
     for (line_idx, line) in diff_lines.iter().enumerate() {
         if line.starts_with("@@") {
@@ -138,8 +140,8 @@ fn build_all_lines<'a>(
                 Style::default().fg(Color::Yellow),
             )));
         } else if let Some(content) = line.strip_prefix('+') {
-            let prev_removed = find_prev_removed_line(diff_lines, line_idx);
-            let tokens = lcs::diff_tokens_added(content, prev_removed.as_deref());
+            let prev_removed = find_prev_removed_line(diff_lines, line_idx, &pair_maps);
+            let tokens = lcs::diff_tokens_added(content, prev_removed);
             let spans: Vec<Span> = tokens
                 .into_iter()
                 .map(|t| {
@@ -164,8 +166,8 @@ fn build_all_lines<'a>(
                 lines.push(Line::from(combined));
             }
         } else if let Some(content) = line.strip_prefix('-') {
-            let next_added = find_next_added_line(diff_lines, line_idx);
-            let tokens = lcs::diff_tokens_removed(content, next_added.as_deref());
+            let next_added = find_next_added_line(diff_lines, line_idx, &pair_maps);
+            let tokens = lcs::diff_tokens_removed(content, next_added);
             let spans: Vec<Span> = tokens
                 .into_iter()
                 .map(|t| {
@@ -200,25 +202,34 @@ fn build_all_lines<'a>(
     lines
 }
 
-/// Build diff line pairs for LCS matching: maps each `-` line to its corresponding `+` line
-/// and vice versa, using Ruby's bidirectional search algorithm.
-fn build_diff_pairs(diff_lines: &[String]) -> Vec<(usize, usize)> {
-    let mut pairs = Vec::new();
+/// Pre-computed O(1) lookup maps for diff line pairing.
+/// Maps each `+` line index to its paired `-` line index, and vice versa.
+#[derive(Debug, Default)]
+struct DiffPairMaps {
+    added_to_removed: HashMap<usize, usize>,
+    removed_to_added: HashMap<usize, usize>,
+}
+
+/// Build diff line pairing maps for LCS matching.
+/// Called once per diff render — O(n) scan over all lines.
+fn build_pair_maps(diff_lines: &[String]) -> DiffPairMaps {
+    let mut maps = DiffPairMaps::default();
     let mut removed_stack: Vec<usize> = Vec::new();
     let mut added_stack: Vec<usize> = Vec::new();
 
     for (i, line) in diff_lines.iter().enumerate() {
         if line.starts_with('-') {
             if let Some(&added_idx) = added_stack.first() {
-                // Pair the earliest added with this removed
-                pairs.push((i, added_idx));
+                maps.added_to_removed.insert(added_idx, i);
+                maps.removed_to_added.insert(i, added_idx);
                 added_stack.remove(0);
             } else {
                 removed_stack.push(i);
             }
         } else if line.starts_with('+') {
             if let Some(&removed_idx) = removed_stack.first() {
-                pairs.push((removed_idx, i));
+                maps.removed_to_added.insert(removed_idx, i);
+                maps.added_to_removed.insert(i, removed_idx);
                 removed_stack.remove(0);
             } else {
                 added_stack.push(i);
@@ -229,39 +240,36 @@ fn build_diff_pairs(diff_lines: &[String]) -> Vec<(usize, usize)> {
             && !line.starts_with("--- ")
             && !line.starts_with("+++ ")
         {
-            // Context line: flush remaining stacks
             removed_stack.clear();
             added_stack.clear();
         }
     }
 
-    pairs
+    maps
 }
 
-/// Find the previous removed line that pairs with the current added line.
-fn find_prev_removed_line(diff_lines: &[String], current: usize) -> Option<String> {
-    let pairs = build_diff_pairs(diff_lines);
-    for (removed_idx, added_idx) in &pairs {
-        if *added_idx == current {
-            if let Some(line) = diff_lines.get(*removed_idx) {
-                return Some(line[1..].to_string());
-            }
-        }
-    }
-    None
+/// Find the previous removed line content that pairs with an added line.
+fn find_prev_removed_line<'a>(
+    diff_lines: &'a [String],
+    added_idx: usize,
+    maps: &DiffPairMaps,
+) -> Option<&'a str> {
+    maps.added_to_removed
+        .get(&added_idx)
+        .and_then(|&removed_idx| diff_lines.get(removed_idx))
+        .map(|line| &line[1..])
 }
 
-/// Find the next added line that pairs with the current removed line.
-fn find_next_added_line(diff_lines: &[String], current: usize) -> Option<String> {
-    let pairs = build_diff_pairs(diff_lines);
-    for (removed_idx, added_idx) in &pairs {
-        if *removed_idx == current {
-            if let Some(line) = diff_lines.get(*added_idx) {
-                return Some(line[1..].to_string());
-            }
-        }
-    }
-    None
+/// Find the next added line content that pairs with a removed line.
+fn find_next_added_line<'a>(
+    diff_lines: &'a [String],
+    removed_idx: usize,
+    maps: &DiffPairMaps,
+) -> Option<&'a str> {
+    maps.removed_to_added
+        .get(&removed_idx)
+        .and_then(|&added_idx| diff_lines.get(added_idx))
+        .map(|line| &line[1..])
 }
 
 /// Build the metadata display lines for a commit.
@@ -363,39 +371,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_diff_pairs_simple() {
+    fn test_build_pair_maps_simple() {
         let lines = vec![
             "-old".to_string(),
             "+new".to_string(),
         ];
-        let pairs = build_diff_pairs(&lines);
-        assert_eq!(pairs, vec![(0, 1)]);
+        let maps = build_pair_maps(&lines);
+        assert_eq!(maps.removed_to_added.get(&0), Some(&1));
+        assert_eq!(maps.added_to_removed.get(&1), Some(&0));
     }
 
     #[test]
-    fn test_build_diff_pairs_with_context() {
+    fn test_build_pair_maps_with_context() {
         let lines = vec![
             "-old1".to_string(),
             " context".to_string(),
             "+new1".to_string(),
         ];
-        let pairs = build_diff_pairs(&lines);
-        // Context line clears stacks, so -old1 is unmatched and +new1 is unmatched
-        assert!(pairs.is_empty());
+        let maps = build_pair_maps(&lines);
+        // Context line clears stacks — no pairs formed
+        assert!(maps.removed_to_added.is_empty());
+        assert!(maps.added_to_removed.is_empty());
     }
 
     #[test]
-    fn test_build_diff_pairs_multiple() {
+    fn test_build_pair_maps_multiple() {
         let lines = vec![
             "-old1".to_string(),
             "+new1".to_string(),
             "-old2".to_string(),
             "+new2".to_string(),
         ];
-        let pairs = build_diff_pairs(&lines);
-        assert_eq!(pairs.len(), 2);
-        assert!(pairs.contains(&(0, 1)));
-        assert!(pairs.contains(&(2, 3)));
+        let maps = build_pair_maps(&lines);
+        assert_eq!(maps.removed_to_added.len(), 2);
+        assert_eq!(maps.added_to_removed.len(), 2);
+        assert_eq!(maps.removed_to_added.get(&0), Some(&1));
+        assert_eq!(maps.removed_to_added.get(&2), Some(&3));
     }
 
     #[test]
@@ -404,9 +415,10 @@ mod tests {
             "-removed content".to_string(),
             "+added content".to_string(),
         ];
+        let maps = build_pair_maps(&lines);
         assert_eq!(
-            find_prev_removed_line(&lines, 1),
-            Some("removed content".to_string())
+            find_prev_removed_line(&lines, 1, &maps),
+            Some("removed content")
         );
     }
 
@@ -416,9 +428,10 @@ mod tests {
             "-removed content".to_string(),
             "+added content".to_string(),
         ];
+        let maps = build_pair_maps(&lines);
         assert_eq!(
-            find_next_added_line(&lines, 0),
-            Some("added content".to_string())
+            find_next_added_line(&lines, 0, &maps),
+            Some("added content")
         );
     }
 }
