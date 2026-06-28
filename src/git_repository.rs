@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use git_graph::graph::GitGraph;
+use git_graph::graph::{CommitInfo as GgCommitInfo, GitGraph};
 use git_graph::print::format::CommitFormat;
-use git_graph::print::unicode::print_unicode;
 use git_graph::settings::{
     BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
 };
@@ -193,10 +192,7 @@ impl GitRepository {
             GitGraph::new(repo, &settings, start_point, None)
                 .map_err(|e| format!("git-graph error: {}", e))?;
 
-        let (graph_lines, _text_lines, start_row) = print_unicode(&graph, &settings)
-            .map_err(|e| format!("git-graph print error: {}", e))?;
-
-        let mut commits = build_commits_from_graph(&graph, &graph_lines, &start_row);
+        let mut commits = build_commits_from_graph(&graph);
         self.enrich_commits(&mut commits, &decoration_map);
         Ok(commits)
     }
@@ -312,60 +308,168 @@ fn create_graph_settings(scope: BranchScope) -> Settings {
     }
 }
 
-fn build_commits_from_graph(
-    graph: &GitGraph,
-    graph_lines: &[String],
-    start_row: &[usize],
-) -> Vec<Commit> {
+fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
     let mut commits = Vec::new();
 
-    for i in 0..graph.commits.len() {
-        let commit_info = &graph.commits[i];
-        let start = start_row[i];
-        let end = if i + 1 < start_row.len() {
-            start_row[i + 1]
-        } else {
-            graph_lines.len()
-        };
+    let num_cols = graph
+        .all_branches
+        .iter()
+        .filter_map(|b| b.visual.column)
+        .max()
+        .map(|c| c + 1)
+        .unwrap_or(1);
 
-        // First graph line gets the commit data
-        let first_line = if start < graph_lines.len() {
-            graph_lines[start].clone()
-        } else {
-            String::new()
-        };
+    for (i, info) in graph.commits.iter().enumerate() {
+        let current_col = info
+            .branch_trace
+            .and_then(|t| graph.all_branches[t].visual.column)
+            .unwrap_or(0);
 
-        let _merge_or_multi = commit_info.is_merge || (end - start) > 1;
+        // Determine which branches are active at this commit index
+        let mut active = vec![false; num_cols];
+        let mut max_active_col = current_col;
+        for branch in graph.all_branches.iter() {
+            let col = match branch.visual.column {
+                Some(c) => c,
+                None => continue,
+            };
+            let (Some(start), Some(end)) = branch.range else {
+                continue;
+            };
+            if start <= i && i <= end {
+                active[col] = true;
+                if col > max_active_col {
+                    max_active_col = col;
+                }
+            }
+        }
+
+        // Build graph line string
+        let mut line = String::with_capacity(max_active_col + 1);
+        for col in 0..=max_active_col {
+            if active[col] {
+                if col == current_col {
+                    // Current commit marker
+                    line.push(if info.is_merge { '\u{25CB}' } else { '\u{25CF}' });
+                    // \u{25CF} = ●, \u{25CB} = ○
+                } else {
+                    // Ongoing branch continuation line
+                    line.push('\u{2502}'); // │
+                }
+            } else {
+                line.push(' ');
+            }
+        }
+
+        // Check for parent relationships that need connecting lines
+        // (handled via additional graph_only rows below)
+        let has_parent_connectors = (0..2).any(|p| {
+            let parent_oid = match info.parents[p] {
+                Some(oid) => oid,
+                None => return false,
+            };
+            let parent_idx = match graph.indices.get(&parent_oid) {
+                Some(&idx) => idx,
+                None => return false,
+            };
+            let parent_trace = match graph.commits[parent_idx].branch_trace {
+                Some(t) => t,
+                None => return true, // parent outside graph
+            };
+            let parent_col = match graph.all_branches[parent_trace].visual.column {
+                Some(c) => c,
+                None => return false,
+            };
+            parent_col != current_col
+        });
 
         commits.push(Commit {
-            hash: commit_info.oid.to_string(),
-            graph: first_line,
+            hash: info.oid.to_string(),
+            graph: line,
             graph_only: false,
             author: String::new(),
             date: String::new(),
             subject: String::new(),
-            merge: commit_info.is_merge,
+            merge: info.is_merge,
             decorations: Vec::new(),
             deco_line: 0,
         });
 
-        // Additional graph lines are graph-only continuation rows
-        for line in &graph_lines[start + 1..end] {
-            commits.push(Commit {
-                hash: String::new(),
-                graph: line.clone(),
-                graph_only: true,
-                author: String::new(),
-                date: String::new(),
-                subject: String::new(),
-                merge: false,
-                decorations: Vec::new(),
-                deco_line: 0,
-            });
+        // Add graph-only rows for multi-column connecting lines
+        if has_parent_connectors {
+            add_parent_connectors(&mut commits, graph, info, current_col);
         }
     }
 
     commits
+}
+
+/// Add graph-only rows that draw connecting lines between a commit and its
+/// parents when they are on different columns (merges and forks).
+fn add_parent_connectors(
+    commits: &mut Vec<Commit>,
+    graph: &GitGraph,
+    info: &GgCommitInfo,
+    current_col: usize,
+) {
+    for p in 0..2 {
+        let parent_oid = match info.parents[p] {
+            Some(oid) => oid,
+            None => continue,
+        };
+        let parent_idx = match graph.indices.get(&parent_oid) {
+            Some(&idx) => idx,
+            None => continue,
+        };
+        let parent_trace = match graph.commits[parent_idx].branch_trace {
+            Some(t) => t,
+            None => continue,
+        };
+        let parent_col = match graph.all_branches[parent_trace].visual.column {
+            Some(c) => c,
+            None => continue,
+        };
+
+        if parent_col == current_col {
+            continue;
+        }
+
+        // Draw horizontal connection: from current_col to parent_col
+        let (left, right) = if current_col < parent_col {
+            (current_col, parent_col)
+        } else {
+            (parent_col, current_col)
+        };
+
+        let mut line = String::with_capacity(right + 1);
+        for col in 0..=right {
+            if col < left || col > right {
+                line.push(' ');
+            } else if col == current_col {
+                line.push('\u{2514}'); // └ (from current)
+            } else if col == parent_col {
+                line.push(if p == 0 {
+                    '\u{2510}' // ┐ (to first parent)
+                } else {
+                    '\u{250C}' // ┌ (to second parent)
+                });
+            } else {
+                line.push('\u{2500}'); // ─ horizontal
+            }
+        }
+
+        commits.push(Commit {
+            hash: String::new(),
+            graph: line,
+            graph_only: true,
+            author: String::new(),
+            date: String::new(),
+            subject: String::new(),
+            merge: false,
+            decorations: Vec::new(),
+            deco_line: 0,
+        });
+    }
 }
 
 fn decoration_priority(kind: &DecorationKind) -> u8 {
@@ -556,5 +660,20 @@ mod tests {
         let mut lines = Vec::new();
         append_diff_line(&mut lines, 'F', "\n");
         assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_fetch_commits_on_current_repo() {
+        let git = GitRepository::open(".").expect("failed to open repository");
+        let commits = git
+            .fetch_commits(None, BranchScope::All)
+            .expect("fetch_commits failed");
+        assert!(!commits.is_empty(), "expected at least one commit");
+
+        let has_graph = commits.iter().any(|c| !c.graph.trim().is_empty());
+        assert!(has_graph, "expected at least one commit with non-empty graph line");
+
+        let all_have_hashes = commits.iter().all(|c| !c.hash.is_empty());
+        assert!(all_have_hashes, "expected all commits to have hashes in linear history");
     }
 }
