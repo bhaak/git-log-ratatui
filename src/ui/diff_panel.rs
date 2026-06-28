@@ -278,17 +278,16 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
     let label_style = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::BOLD);
-    let value_style = Style::default().fg(Color::White);
-    let dim_style = Style::default().fg(Color::DarkGray);
+    let subject_style = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
+    let value_style = Style::default();
 
     // Subject
-    lines.push(Line::from(Span::styled(
-        commit_info.subject.clone(),
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Subject:       ", label_style),
+        Span::styled(commit_info.subject.clone(), subject_style),
+    ]));
 
     // Hash
     lines.push(Line::from(vec![
@@ -304,7 +303,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
     };
     lines.push(Line::from(vec![
         Span::styled("Parents:       ", label_style),
-        Span::styled(parents_text, dim_style),
+        Span::styled(parents_text, value_style),
     ]));
 
     // Author
