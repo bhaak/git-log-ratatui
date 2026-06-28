@@ -66,6 +66,7 @@ pub struct App {
     branches_loaded: bool,
     commits_loaded: bool,
     diff_pending: bool,
+    poll_interval_ms: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -114,6 +115,7 @@ impl App {
             branches_loaded: false,
             commits_loaded: false,
             diff_pending: false,
+            poll_interval_ms: 10,
         })
     }
 
@@ -304,10 +306,15 @@ impl App {
     // --- Events ---
 
     fn handle_event(&mut self) -> Result<bool, String> {
-        if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| format!("Poll error: {}", e))? {
+        let interval = std::time::Duration::from_millis(self.poll_interval_ms as u64);
+        if !event::poll(interval).map_err(|e| format!("Poll error: {}", e))? {
+            // No event received, back off slowly.
+            self.poll_interval_ms = (self.poll_interval_ms + 10).min(200);
             return Ok(true);
         }
 
+        // Event received, reset polling interval.
+        self.poll_interval_ms = 10;
         let ev = event::read().map_err(|e| format!("Event error: {}", e))?;
 
         match ev {
@@ -1322,6 +1329,7 @@ mod tests {
             branches_loaded: false,
             commits_loaded: false,
             diff_pending: false,
+            poll_interval_ms: 0,
         }
     }
 
