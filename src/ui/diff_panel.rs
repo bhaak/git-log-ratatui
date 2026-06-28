@@ -40,7 +40,7 @@ pub fn render(
     let end = (diff_scroll + visible).min(total);
 
     let diff_title = if let Some(hash) = short_hash {
-        format!(" Diff \u{2014} {}", hash)
+        format!(" Diff - {}", hash)
     } else {
         " Diff".to_string()
     };
