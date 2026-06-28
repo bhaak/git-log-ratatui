@@ -112,6 +112,7 @@ cargo test
 - [clap](https://crates.io/crates/clap) — CLI argument parsing
 - [arboard](https://crates.io/crates/arboard) — System clipboard
 - [git2](https://crates.io/crates/git2) — Git operations (libgit2 bindings)
+- [git-graph](https://crates.io/crates/git-graph) — Git commit graph data structure and rendering
 - [similar](https://crates.io/crates/similar) — Diff engine for word-level highlighting
 - [unicode-width](https://crates.io/crates/unicode-width) — Unicode character width
 - [libc](https://crates.io/crates/libc) — POSIX syscalls (suspend)
