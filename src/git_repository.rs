@@ -136,46 +136,19 @@ impl GitRepository {
             .map_err(|e| format!("Diff error: {}", e))?;
 
         let mut diff_lines = Vec::new();
-        let mut file_entries = Vec::new();
 
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-            let origin = line.origin();
-            let content = String::from_utf8_lossy(line.content());
-            let display = match origin {
-                '+' | '-' | ' ' => format!("{}{}", origin, content.trim_end_matches('\n')),
-                'F' | 'H' => {
-                    // git2 produces full header lines: diff --git, index, ---, +++, @@
-                    let trimmed = content.trim_end_matches('\n').to_string();
-                    if !trimmed.is_empty() {
-                        diff_lines.push(trimmed);
-                    }
-                    return true;
-                }
-                _ => {
-                    let trimmed = content.trim_end_matches('\n');
-                    if !trimmed.is_empty() {
-                        trimmed.to_string()
-                    } else {
-                        return true;
-                    }
-                }
-            };
-            diff_lines.push(display);
+            append_diff_line(
+                &mut diff_lines,
+                line.origin(),
+                &String::from_utf8_lossy(line.content()),
+            );
             true
         })
         .map_err(|e| format!("Diff print error: {}", e))?;
 
         // Extract file entries from the diff lines
-        for (i, line) in diff_lines.iter().enumerate() {
-            if line.starts_with("diff --git") {
-                if let Some(name) = line.split(" b/").nth(1).map(|s| s.to_string()) {
-                    file_entries.push(FileEntry {
-                        name,
-                        diff_line: i,
-                    });
-                }
-            }
-        }
+        let file_entries = extract_file_entries(&diff_lines);
 
         Ok((diff_lines, file_entries))
     }
@@ -225,6 +198,50 @@ impl GitRepository {
         let commits = parse_git_log(&text);
         Ok(commits)
     }
+}
+
+/// Append a single diff line from git2's `diff.print()` callback to `diff_lines`.
+/// Handles the origin encoding: '+'/'-'/' ' get their prefix prepended,
+/// 'F'/'H' (file/hunk headers) are pushed as-is, others trimmed.
+fn append_diff_line(diff_lines: &mut Vec<String>, origin: char, content: &str) {
+    match origin {
+        '+' | '-' | ' ' => {
+            diff_lines.push(format!("{}{}", origin, content.trim_end_matches('\n')));
+        }
+        'F' | 'H' => {
+            let trimmed = content.trim_end_matches('\n').to_string();
+            if !trimmed.is_empty() {
+                diff_lines.push(trimmed);
+            }
+        }
+        _ => {
+            let trimmed = content.trim_end_matches('\n');
+            if !trimmed.is_empty() {
+                diff_lines.push(trimmed.to_string());
+            }
+        }
+    }
+}
+
+/// Extract file entries from the already-built diff_lines.
+/// Finds lines starting with "diff --git" and extracts the filename after " b/".
+fn extract_file_entries(diff_lines: &[String]) -> Vec<FileEntry> {
+    diff_lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            if line.starts_with("diff --git") {
+                line.split(" b/")
+                    .nth(1)
+                    .map(|name| FileEntry {
+                        name: name.to_string(),
+                        diff_line: i,
+                    })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn time_to_string(time: git2::Time) -> String {
@@ -489,5 +506,86 @@ mod tests {
         assert!(!is_leap(2023));
         assert!(is_leap(2000)); // divisible by 400
         assert!(!is_leap(1900)); // divisible by 100 but not 400
+    }
+
+    // --- Diff line parsing tests ---
+
+    #[test]
+    fn test_append_diff_line_addition() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, '+', "new line\n");
+        assert_eq!(lines, vec!["+new line"]);
+    }
+
+    #[test]
+    fn test_append_diff_line_deletion() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, '-', "old line\n");
+        assert_eq!(lines, vec!["-old line"]);
+    }
+
+    #[test]
+    fn test_append_diff_line_context() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, ' ', "unchanged\n");
+        assert_eq!(lines, vec![" unchanged"]);
+    }
+
+    #[test]
+    fn test_append_diff_line_file_header() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, 'F', "diff --git a/foo.txt b/foo.txt\n");
+        assert_eq!(lines, vec!["diff --git a/foo.txt b/foo.txt"]);
+    }
+
+    #[test]
+    fn test_append_diff_line_hunk_header() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, 'H', "@@ -1,3 +1,4 @@\n");
+        assert_eq!(lines, vec!["@@ -1,3 +1,4 @@"]);
+    }
+
+    #[test]
+    fn test_append_diff_line_empty_skipped() {
+        let mut lines = Vec::new();
+        append_diff_line(&mut lines, 'F', "\n");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_extract_file_entries() {
+        let diff_lines = vec![
+            "diff --git a/foo.txt b/foo.txt".to_string(),
+            "index abc..def".to_string(),
+            "--- a/foo.txt".to_string(),
+            "+++ b/foo.txt".to_string(),
+            "@@ -1 +1 @@".to_string(),
+            " unchanged".to_string(),
+            "diff --git a/bar.rs b/bar.rs".to_string(),
+            "--- a/bar.rs".to_string(),
+            "+++ b/bar.rs".to_string(),
+        ];
+        let entries = extract_file_entries(&diff_lines);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "foo.txt");
+        assert_eq!(entries[0].diff_line, 0);
+        assert_eq!(entries[1].name, "bar.rs");
+        assert_eq!(entries[1].diff_line, 6);
+    }
+
+    #[test]
+    fn test_extract_file_entries_empty() {
+        let entries = extract_file_entries(&[]);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_extract_file_entries_no_diff_lines() {
+        let diff_lines = vec![
+            "+added".to_string(),
+            "-removed".to_string(),
+        ];
+        let entries = extract_file_entries(&diff_lines);
+        assert!(entries.is_empty());
     }
 }
