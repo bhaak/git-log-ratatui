@@ -35,24 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| std::path::PathBuf::from(&path));
     let repo_path = abs_path.to_string_lossy().to_string();
 
-    // Check that the path is a git repository
-    let git_dir = std::path::Path::new(&repo_path).join(".git");
-    let is_repo = git_dir.exists() || std::path::Path::new(&repo_path).join("HEAD").exists();
-    if !is_repo {
-        // Check if we're inside a worktree
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&repo_path)
-            .arg("rev-parse")
-            .arg("--git-dir")
-            .output();
-        match output {
-            Ok(o) if o.status.success() => {}
-            _ => {
-                eprintln!("Error: '{}' is not a git repository.", repo_path);
-                std::process::exit(1);
-            }
-        }
+    // Check that the path is a git repository (handles worktrees via git2).
+    if git2::Repository::discover(&repo_path).is_err() {
+        eprintln!("Error: '{}' is not a git repository.", repo_path);
+        std::process::exit(1);
     }
 
     // Setup terminal
