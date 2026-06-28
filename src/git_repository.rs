@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -165,19 +166,21 @@ impl GitRepository {
         Ok((diff_lines, file_entries))
     }
 
-    /// Fetch commits with `git log --graph` (shells out, git2 cannot render graphs).
+    /// Fetch commits: shells `git log --graph --format=%H` for graph visualization,
+    /// then enriches each commit with author/date/subject/merge/decorations from git2.
     pub fn fetch_commits(
         &self,
         branch: Option<&str>,
         scope: BranchScope,
     ) -> Result<Vec<Commit>, String> {
+        let decoration_map = self.build_decoration_map()?;
+
         let mut cmd = Command::new("git");
         cmd.arg("-C")
             .arg(&self.repo_path)
             .arg("log")
             .arg("--graph")
-            .arg("--date=format:%Y-%m-%d %H:%M")
-            .arg("--format=%H%x00%an%x00%ad%x00%s%x00%d%x00%P");
+            .arg("--format=%H");
 
         if let Some(branch) = branch {
             cmd.arg(branch);
@@ -207,8 +210,106 @@ impl GitRepository {
         }
 
         let text = String::from_utf8_lossy(&output.stdout);
-        let commits = parse_git_log(&text);
+        let mut commits = parse_git_log_graph(&text);
+        self.enrich_commits(&mut commits, &decoration_map);
         Ok(commits)
+    }
+
+    /// Build a map from commit Oid to decorations by iterating all references.
+    fn build_decoration_map(&self) -> Result<HashMap<git2::Oid, Vec<Decoration>>, String> {
+        let mut map: HashMap<git2::Oid, Vec<Decoration>> = HashMap::new();
+        let refs = self
+            .repo
+            .references()
+            .map_err(|e| format!("Failed to list references: {}", e))?;
+
+        for r in refs {
+            let r = match r {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let target_oid = match r.target().or_else(|| {
+                r.resolve().ok().and_then(|resolved| resolved.target())
+            }) {
+                Some(oid) => oid,
+                None => continue,
+            };
+            let shorthand = r.shorthand().unwrap_or("").to_string();
+            if shorthand.is_empty() {
+                continue;
+            }
+
+            let kind = if r.is_tag() {
+                DecorationKind::Tag
+            } else if r.is_remote() {
+                DecorationKind::RemoteBranch
+            } else if r.is_branch() {
+                DecorationKind::LocalBranch
+            } else {
+                // HEAD reference or other symbolic ref
+                DecorationKind::Head
+            };
+
+            map.entry(target_oid)
+                .or_default()
+                .push(Decoration {
+                    label: shorthand,
+                    kind,
+                });
+        }
+
+        Ok(map)
+    }
+
+    /// Fill in author, date, subject, merge status, and decorations from git2.
+    fn enrich_commits(
+        &self,
+        commits: &mut [Commit],
+        decoration_map: &HashMap<git2::Oid, Vec<Decoration>>,
+    ) {
+        for commit in commits.iter_mut() {
+            if commit.graph_only || commit.hash.is_empty() {
+                continue;
+            }
+
+            let oid = match git2::Oid::from_str(&commit.hash) {
+                Ok(oid) => oid,
+                Err(_) => continue,
+            };
+            let git_commit = match self.repo.find_commit(oid) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            commit.author = git_commit.author().name().unwrap_or("").to_string();
+            commit.date = time_to_string(git_commit.time());
+            commit.subject = git_commit.summary().unwrap_or("").to_string();
+            commit.merge = git_commit.parent_count() > 1;
+
+            if let Some(decos) = decoration_map.get(&oid) {
+                let mut sorted: Vec<Decoration> = decos.clone();
+                sorted.sort_by_key(|d| decoration_priority(&d.kind));
+                commit.decorations = sorted;
+            }
+        }
+
+        let mut expanded_idx = 0;
+        for commit in commits.iter_mut() {
+            if !commit.decorations.is_empty() {
+                expanded_idx += 1;
+            }
+            commit.deco_line = expanded_idx;
+            expanded_idx += 1;
+        }
+    }
+}
+
+fn decoration_priority(kind: &DecorationKind) -> u8 {
+    match kind {
+        DecorationKind::Head => 0,
+        DecorationKind::LocalBranch => 1,
+        DecorationKind::Tag => 2,
+        DecorationKind::RemoteBranch => 3,
     }
 }
 
@@ -281,50 +382,28 @@ fn is_leap(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-/// Parse the null-byte-delimited git log output into Commit structs.
-fn parse_git_log(text: &str) -> Vec<Commit> {
+/// Parse `git log --graph --format=%H` output into minimal Commit structs.
+/// Graph-only lines (no hash) get `graph_only = true`.
+/// Author, date, subject, merge, decorations are filled later by git2 enrichment.
+fn parse_git_log_graph(text: &str) -> Vec<Commit> {
     let mut commits = Vec::new();
 
     for line in text.lines() {
         let graph = extract_graph(line);
-        let content = &line[graph.len()..];
-
-        let parts: Vec<&str> = content.split('\0').collect();
-        if parts.len() < 6 {
-            continue;
-        }
-
-        let hash = parts[0].to_string();
-        let author = parts[1].to_string();
-        let date = parts[2].to_string();
-        let subject = parts[3].to_string();
-        let decorations_raw = parts[4].trim().trim_matches(|c| c == '(' || c == ')');
-        let parents_raw = parts[5].trim();
-
-        let decorations = parse_decorations(decorations_raw);
-        let merge = parents_raw.split(' ').filter(|p| !p.is_empty()).count() > 1;
-        let graph_only = hash.is_empty() || hash == " ";
+        let hash = line[graph.len()..].trim().to_string();
+        let graph_only = hash.is_empty();
 
         commits.push(Commit {
             hash,
-            author,
-            date,
-            subject,
             graph,
-            merge,
             graph_only,
-            decorations,
+            author: String::new(),
+            date: String::new(),
+            subject: String::new(),
+            merge: false,
+            decorations: Vec::new(),
             deco_line: 0,
         });
-    }
-
-    let mut expanded_idx = 0;
-    for commit in commits.iter_mut() {
-        if !commit.decorations.is_empty() {
-            expanded_idx += 1;
-        }
-        commit.deco_line = expanded_idx;
-        expanded_idx += 1;
     }
 
     commits
@@ -341,59 +420,6 @@ fn extract_graph(line: &str) -> String {
         }
     }
     graph
-}
-
-/// Parse the decorations field (ref names) into a list of decorations.
-fn parse_decorations(raw: &str) -> Vec<Decoration> {
-    if raw.is_empty() {
-        return Vec::new();
-    }
-
-    let mut decos = Vec::new();
-    let mut is_head = false;
-
-    for part in raw.split(", ") {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with("HEAD") {
-            is_head = true;
-            if let Some(branch) = trimmed.strip_prefix("HEAD -> ") {
-                decos.push(Decoration {
-                    label: branch.to_string(),
-                    kind: DecorationKind::LocalBranch,
-                });
-            }
-        } else if let Some(name) = trimmed.strip_prefix("tag: ") {
-            decos.push(Decoration {
-                label: name.to_string(),
-                kind: DecorationKind::Tag,
-            });
-        } else if trimmed.starts_with("origin/") {
-            decos.push(Decoration {
-                label: trimmed.to_string(),
-                kind: DecorationKind::RemoteBranch,
-            });
-        } else {
-            decos.push(Decoration {
-                label: trimmed.to_string(),
-                kind: DecorationKind::LocalBranch,
-            });
-        }
-    }
-
-    if is_head {
-        decos.insert(
-            0,
-            Decoration {
-                label: "HEAD".to_string(),
-                kind: DecorationKind::Head,
-            },
-        );
-    }
-
-    decos
 }
 
 #[cfg(test)]
@@ -413,49 +439,30 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_decorations_head_to_main() {
-        let decos = parse_decorations("HEAD -> main");
-        assert_eq!(decos.len(), 2);
-        assert_eq!(decos[0].label, "HEAD");
-        assert_eq!(decos[0].kind, DecorationKind::Head);
-        assert_eq!(decos[1].label, "main");
-        assert_eq!(decos[1].kind, DecorationKind::LocalBranch);
+    fn test_parse_git_log_graph() {
+        let text = "* abc123def\n| * \n| * 456789abc\n";
+        let commits = parse_git_log_graph(text);
+        assert_eq!(commits.len(), 3);
+        assert_eq!(commits[0].hash, "abc123def");
+        assert!(!commits[0].graph_only);
+        assert_eq!(commits[1].hash, "");
+        assert!(commits[1].graph_only);
+        assert_eq!(commits[2].hash, "456789abc");
+        assert!(!commits[2].graph_only);
     }
 
     #[test]
-    fn test_parse_decorations_tag() {
-        let decos = parse_decorations("tag: v1.0");
-        assert_eq!(decos.len(), 1);
-        assert_eq!(decos[0].label, "v1.0");
-        assert_eq!(decos[0].kind, DecorationKind::Tag);
+    fn test_parse_git_log_graph_empty() {
+        let commits = parse_git_log_graph("");
+        assert!(commits.is_empty());
     }
 
     #[test]
-    fn test_parse_decorations_remote() {
-        let decos = parse_decorations("origin/main");
-        assert_eq!(decos.len(), 1);
-        assert_eq!(decos[0].label, "origin/main");
-        assert_eq!(decos[0].kind, DecorationKind::RemoteBranch);
-    }
-
-    #[test]
-    fn test_parse_decorations_empty() {
-        let decos = parse_decorations("");
-        assert!(decos.is_empty());
-    }
-
-    #[test]
-    fn test_parse_decorations_multiple() {
-        let decos = parse_decorations("HEAD -> main, tag: v1.0, origin/main");
-        assert_eq!(decos.len(), 4);
-        assert_eq!(decos[0].label, "HEAD");
-        assert_eq!(decos[0].kind, DecorationKind::Head);
-        assert_eq!(decos[1].label, "main");
-        assert_eq!(decos[1].kind, DecorationKind::LocalBranch);
-        assert_eq!(decos[2].label, "v1.0");
-        assert_eq!(decos[2].kind, DecorationKind::Tag);
-        assert_eq!(decos[3].label, "origin/main");
-        assert_eq!(decos[3].kind, DecorationKind::RemoteBranch);
+    fn test_decoration_priority() {
+        assert_eq!(decoration_priority(&DecorationKind::Head), 0);
+        assert_eq!(decoration_priority(&DecorationKind::LocalBranch), 1);
+        assert_eq!(decoration_priority(&DecorationKind::Tag), 2);
+        assert_eq!(decoration_priority(&DecorationKind::RemoteBranch), 3);
     }
 
     #[test]
