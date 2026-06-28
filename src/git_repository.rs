@@ -142,23 +142,17 @@ impl GitRepository {
             let origin = line.origin();
             let content = String::from_utf8_lossy(line.content());
             let display = match origin {
-                '+' | '-' | ' ' => format!("{}{}", origin, content),
-                'F' => {
-                    // File header
-                    let header = content.trim_end_matches('\n');
-                    diff_lines.push(format!("diff --git a/{} b/{}", header, header));
-                    return true;
-                }
-                'H' => {
-                    // Header
-                    let h = content.trim();
-                    if !h.is_empty() {
-                        diff_lines.push(h.to_string());
+                '+' | '-' | ' ' => format!("{}{}", origin, content.trim_end_matches('\n')),
+                'F' | 'H' => {
+                    // git2 produces full header lines: diff --git, index, ---, +++, @@
+                    let trimmed = content.trim_end_matches('\n').to_string();
+                    if !trimmed.is_empty() {
+                        diff_lines.push(trimmed);
                     }
                     return true;
                 }
                 _ => {
-                    let trimmed = content.trim();
+                    let trimmed = content.trim_end_matches('\n');
                     if !trimmed.is_empty() {
                         trimmed.to_string()
                     } else {
