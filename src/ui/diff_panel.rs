@@ -110,7 +110,7 @@ fn build_all_lines<'a>(
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
             lines.push(Line::from(Span::styled(
-                format!("  {}", entry.name),
+                format!("{}", entry.name),
                 style,
             )));
         }
