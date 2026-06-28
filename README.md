@@ -9,7 +9,7 @@ A TUI for browsing git log with ratatui.
 - Hierarchical branch tree with expand/collapse (arrow keys, Space, Enter)
 - Incremental search with cursor-based text editing
 - Branch scope cycling (all/local/remote) via Ctrl+S
-- Commit table with git graph column, decorations (branches/tags/HEAD), merge highlighting
+- Commit table with Unicode git graph via git-graph crate, decorations (branches/tags/HEAD), merge highlighting
 - Diff panel with commit metadata, changed files list, word-level diff highlighting
 - Context-sensitive help bar with keyboard shortcuts
 - Clipboard: copy short/full commit hash with y/Y

@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
+
+use git_graph::graph::GitGraph;
+use git_graph::print::format::CommitFormat;
+use git_graph::print::unicode::print_unicode;
+use git_graph::settings::{
+    BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
+};
 
 use crate::models::*;
 
-/// Wrapper around git2 for core git operations plus `git log --graph` shelling.
+/// Wrapper around git2 for core git operations with git-graph integration.
 pub struct GitRepository {
     repo: git2::Repository,
     repo_path: String,
@@ -166,7 +172,7 @@ impl GitRepository {
         Ok((diff_lines, file_entries))
     }
 
-    /// Fetch commits: shells `git log --graph --format=%H` for graph visualization,
+    /// Fetch commits using git-graph to generate the graph visualization,
     /// then enriches each commit with author/date/subject/merge/decorations from git2.
     pub fn fetch_commits(
         &self,
@@ -175,42 +181,22 @@ impl GitRepository {
     ) -> Result<Vec<Commit>, String> {
         let decoration_map = self.build_decoration_map()?;
 
-        let mut cmd = Command::new("git");
-        cmd.arg("-C")
-            .arg(&self.repo_path)
-            .arg("log")
-            .arg("--graph")
-            .arg("--format=%H");
+        let settings = create_graph_settings(scope);
 
-        if let Some(branch) = branch {
-            cmd.arg(branch);
-        } else {
-            match scope {
-                BranchScope::All => {
-                    cmd.arg("--all");
-                }
-                BranchScope::Local => {
-                    cmd.arg("--branches");
-                }
-                BranchScope::Remote => {
-                    cmd.arg("--remotes");
-                }
-            }
-        }
+        let start_point = branch.map(|b| b.to_string());
 
-        let output = cmd
-            .output()
-            .map_err(|e| format!("git log error: {}", e))?;
+        // GitGraph::new() takes ownership of Repository, so open a fresh handle
+        let repo = git2::Repository::open(Path::new(&self.repo_path))
+            .map_err(|e| format!("Failed to open repository for git-graph: {}", e))?;
 
-        if !output.status.success() {
-            return Err(format!(
-                "git log failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
+        let graph =
+            GitGraph::new(repo, &settings, start_point, None)
+                .map_err(|e| format!("git-graph error: {}", e))?;
 
-        let text = String::from_utf8_lossy(&output.stdout);
-        let mut commits = parse_git_log_graph(&text);
+        let (graph_lines, _text_lines, start_row) = print_unicode(&graph, &settings)
+            .map_err(|e| format!("git-graph print error: {}", e))?;
+
+        let mut commits = build_commits_from_graph(&graph, &graph_lines, &start_row);
         self.enrich_commits(&mut commits, &decoration_map);
         Ok(commits)
     }
@@ -302,6 +288,84 @@ impl GitRepository {
             expanded_idx += 1;
         }
     }
+}
+
+fn create_graph_settings(scope: BranchScope) -> Settings {
+    let include_remote = match scope {
+        BranchScope::All | BranchScope::Remote => true,
+        BranchScope::Local => false,
+    };
+
+    Settings {
+        reverse_commit_order: false,
+        debug: false,
+        compact: false,
+        colored: false,
+        include_remote,
+        format: CommitFormat::OneLine,
+        wrapping: None,
+        characters: Characters::thin(),
+        branch_order: BranchOrder::ShortestFirst(true),
+        branches: BranchSettings::from(BranchSettingsDef::simple())
+            .expect("simple branching model is valid"),
+        merge_patterns: MergePatterns::default(),
+    }
+}
+
+fn build_commits_from_graph(
+    graph: &GitGraph,
+    graph_lines: &[String],
+    start_row: &[usize],
+) -> Vec<Commit> {
+    let mut commits = Vec::new();
+
+    for i in 0..graph.commits.len() {
+        let commit_info = &graph.commits[i];
+        let start = start_row[i];
+        let end = if i + 1 < start_row.len() {
+            start_row[i + 1]
+        } else {
+            graph_lines.len()
+        };
+
+        // First graph line gets the commit data
+        let first_line = if start < graph_lines.len() {
+            graph_lines[start].clone()
+        } else {
+            String::new()
+        };
+
+        let _merge_or_multi = commit_info.is_merge || (end - start) > 1;
+
+        commits.push(Commit {
+            hash: commit_info.oid.to_string(),
+            graph: first_line,
+            graph_only: false,
+            author: String::new(),
+            date: String::new(),
+            subject: String::new(),
+            merge: commit_info.is_merge,
+            decorations: Vec::new(),
+            deco_line: 0,
+        });
+
+        // Additional graph lines are graph-only continuation rows
+        for line in &graph_lines[start + 1..end] {
+            commits.push(Commit {
+                hash: String::new(),
+                graph: line.clone(),
+                graph_only: true,
+                author: String::new(),
+                date: String::new(),
+                subject: String::new(),
+                merge: false,
+                decorations: Vec::new(),
+                deco_line: 0,
+            });
+        }
+    }
+
+    commits
 }
 
 fn decoration_priority(kind: &DecorationKind) -> u8 {
