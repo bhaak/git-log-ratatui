@@ -314,6 +314,21 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
         .map(|c| c + 1)
         .unwrap_or(1);
 
+    // Build a map from parent OID to the set of child columns.
+    // Used to detect fork points: if any child is in a different column,
+    // the parent commit is a fork point.
+    use std::collections::HashSet;
+    let mut child_cols: HashMap<git2::Oid, HashSet<usize>> = HashMap::new();
+    for info in graph.commits.iter() {
+        let current_col = info
+            .branch_trace
+            .and_then(|t| graph.all_branches[t].visual.column)
+            .unwrap_or(0);
+        for parent in info.parents.iter().flatten() {
+            child_cols.entry(*parent).or_default().insert(current_col);
+        }
+    }
+
     for (i, info) in graph.commits.iter().enumerate() {
         let current_col = info
             .branch_trace
@@ -339,20 +354,17 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             }
         }
 
-        // Find branches that start at this commit index (fork points) in different columns
+        // Find fork points: commits with children in at least two different columns
         let mut fork_start_cols = Vec::new();
-        for branch in graph.all_branches.iter() {
-            let col = match branch.visual.column {
-                Some(c) => c,
-                None => continue,
-            };
-            let (Some(start), Some(_end)) = branch.range else {
-                continue;
-            };
-            if start == i && col != current_col {
-                fork_start_cols.push(col);
-                if col > max_active_col {
-                    max_active_col = col;
+        if let Some(cols) = child_cols.get(&info.oid) {
+            if cols.len() >= 2 {
+                for &child_col in cols {
+                    if child_col != current_col {
+                        fork_start_cols.push(child_col);
+                        if child_col > max_active_col {
+                            max_active_col = child_col;
+                        }
+                    }
                 }
             }
         }
