@@ -643,7 +643,8 @@ impl App {
                 self.apply_search_filter();
             }
             KeyCode::Backspace if self.cursor_pos > 0 => {
-                let prev = prev_char_boundary(&self.search_query, self.cursor_pos);
+                let prev =
+                    ui::search_panel::prev_char_boundary(&self.search_query, self.cursor_pos);
                 self.search_query.remove(prev);
                 self.cursor_pos = prev;
                 self.apply_search_filter();
@@ -654,16 +655,20 @@ impl App {
             }
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.cursor_pos = prev_word_boundary(&self.search_query, self.cursor_pos);
+                    self.cursor_pos =
+                        ui::search_panel::prev_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
-                    self.cursor_pos = prev_char_boundary(&self.search_query, self.cursor_pos);
+                    self.cursor_pos =
+                        ui::search_panel::prev_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.cursor_pos = next_word_boundary(&self.search_query, self.cursor_pos);
+                    self.cursor_pos =
+                        ui::search_panel::next_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
-                    self.cursor_pos = next_char_boundary(&self.search_query, self.cursor_pos);
+                    self.cursor_pos =
+                        ui::search_panel::next_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Home => {
@@ -1356,145 +1361,9 @@ fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
         && pos.1 < rect.y + rect.height
 }
 
-/// Move to the previous char boundary (for single-step left).
-fn prev_char_boundary(s: &str, pos: usize) -> usize {
-    if pos == 0 {
-        return 0;
-    }
-    for (i, _) in s.char_indices() {
-        if i >= pos {
-            // i is at or past pos; previous boundary is the one before
-            break;
-        }
-    }
-    // Walk backwards from pos-1 to find a char boundary
-    for i in (0..pos).rev() {
-        if s.is_char_boundary(i) {
-            return i;
-        }
-    }
-    0
-}
-
-/// Move to the next char boundary (for single-step right).
-fn next_char_boundary(s: &str, pos: usize) -> usize {
-    if pos >= s.len() {
-        return s.len();
-    }
-    // Find next char boundary after pos
-    for (i, _) in s.char_indices().skip(1) {
-        if i > pos {
-            return i;
-        }
-    }
-    s.len()
-}
-
-fn prev_word_boundary(s: &str, pos: usize) -> usize {
-    // Ensure pos is at a char boundary
-    let pos = prev_char_boundary(s, pos);
-    if pos == 0 {
-        return 0;
-    }
-    // Work with chars from the end backward
-    let chars: Vec<(usize, char)> = s.char_indices().collect();
-    let char_pos = chars
-        .iter()
-        .position(|&(i, _)| i == pos)
-        .unwrap_or(chars.len());
-    if char_pos == 0 {
-        return 0;
-    }
-    let mut idx = char_pos - 1;
-    // If at a word char, skip to start of word
-    loop {
-        let (_bi, ch) = chars.get(idx).copied().unwrap_or((0, '\0'));
-        if ch.is_alphanumeric() || ch == '_' {
-            if idx == 0 {
-                return 0;
-            }
-            idx = idx.saturating_sub(1);
-        } else {
-            // Found non-word char; the boundary is right after it
-            return chars.get(idx + 1).map(|&(i, _)| i).unwrap_or(0);
-        }
-    }
-}
-
-fn next_word_boundary(s: &str, pos: usize) -> usize {
-    let chars: Vec<(usize, char)> = s.char_indices().collect();
-    let char_pos = chars
-        .iter()
-        .position(|&(i, _)| i >= pos)
-        .unwrap_or(chars.len());
-    let mut idx = char_pos;
-    // Skip word characters
-    while idx < chars.len() {
-        let (_, ch) = chars[idx];
-        if ch.is_alphanumeric() || ch == '_' {
-            idx += 1;
-        } else {
-            break;
-        }
-    }
-    // Skip non-word characters
-    while idx < chars.len() {
-        let (_, ch) = chars[idx];
-        if !ch.is_alphanumeric() && ch != '_' {
-            idx += 1;
-        } else {
-            break;
-        }
-    }
-    chars.get(idx).map(|&(i, _)| i).unwrap_or(s.len())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_prev_char_boundary_ascii() {
-        assert_eq!(prev_char_boundary("hello", 3), 2);
-        assert_eq!(prev_char_boundary("hello", 0), 0);
-    }
-
-    #[test]
-    fn test_prev_char_boundary_utf8() {
-        // "Mäller": M(0-1)+ä(1-3)+l(3-4)+l(4-5)+e(5-6)+r(6-7)
-        assert_eq!(prev_char_boundary("Mäller", 3), 1); // from 'l', prev boundary is start of 'ä'
-        assert_eq!(prev_char_boundary("Mäller", 2), 1); // inside 'ä', prev boundary is start of 'ä'
-    }
-
-    #[test]
-    fn test_next_char_boundary_ascii() {
-        assert_eq!(next_char_boundary("hello", 2), 3);
-        assert_eq!(next_char_boundary("hello", 5), 5); // at end
-    }
-
-    #[test]
-    fn test_next_char_boundary_utf8() {
-        // "Mäller": M(0)+ä(1-2)+l(3)+l(4)+e(5)+r(6)
-        assert_eq!(next_char_boundary("Mäller", 1), 3); // from ä start to next 'l'
-        assert_eq!(next_char_boundary("Mäller", 3), 4); // from 'l' to next 'l'
-    }
-
-    #[test]
-    fn test_prev_word_boundary() {
-        // "hello world" at pos 6: snaps to pos 5 (space), then walks to start of "hello"
-        assert_eq!(prev_word_boundary("hello world", 6), 0);
-        // "foo bar": 'r' at pos 6 (char_indices: 0=f,1=o,2=o,3=' ',4=b,5=a,6=r)
-        assert_eq!(prev_word_boundary("foo bar", 6), 4);
-    }
-
-    #[test]
-    fn test_next_word_boundary() {
-        // Skips "hello", then space, then starts "world"
-        assert_eq!(next_word_boundary("hello world", 0), 6);
-        // From space at pos 5: skips space, lands at start of "world"
-        assert_eq!(next_word_boundary("hello world", 5), 6);
-        assert_eq!(next_word_boundary("hello", 0), 5); // end of string
-    }
 
     /// Helper to build a minimal App for testing pure logic functions.
     fn test_app() -> App {
