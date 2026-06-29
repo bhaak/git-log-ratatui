@@ -24,6 +24,8 @@ use crate::workers::{
     DiffCommand, DiffResult, DiffWorker,
 };
 
+const PAGE_SIZE: usize = 10;
+
 pub struct App {
     repo_path: String,
     branch_worker: BranchWorker,
@@ -609,11 +611,11 @@ impl App {
                 }
             }
             KeyCode::PageUp => {
-                self.branch_index = self.branch_index.saturating_sub(10);
+                self.branch_index = self.branch_index.saturating_sub(PAGE_SIZE);
             }
             KeyCode::PageDown => {
                 self.branch_index =
-                    (self.branch_index + 10).min(self.branch_tree.len().saturating_sub(1));
+                    (self.branch_index + PAGE_SIZE).min(self.branch_tree.len().saturating_sub(1));
             }
             _ => {}
         }
@@ -695,12 +697,12 @@ impl App {
                 self.focus = Panel::Diff;
             }
             KeyCode::PageUp => {
-                self.selected_index = self.selected_index.saturating_sub(10);
+                self.selected_index = self.selected_index.saturating_sub(PAGE_SIZE);
                 self.clamp_selection();
             }
             KeyCode::PageDown if self.visible_count() > 0 => {
                 self.selected_index =
-                    (self.selected_index + 10).min(self.visible_count().saturating_sub(1));
+                    (self.selected_index + PAGE_SIZE).min(self.visible_count().saturating_sub(1));
             }
             _ => {}
         }
