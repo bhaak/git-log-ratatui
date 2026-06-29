@@ -124,9 +124,7 @@ fn flatten_tree_inner(
             "\u{251C}\u{2500}"
         };
 
-        let display_name = if child.full_path.is_empty() {
-            format!("{}{}{} {}/", prefix, connector, marker, child.name)
-        } else if expandable {
+        let display_name = if child.full_path.is_empty() || expandable {
             format!("{}{}{} {}", prefix, connector, marker, child.name)
         } else {
             format!("{}{}{}{}", prefix, connector, marker, child.name)
@@ -199,7 +197,9 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert!(items[0].name.contains("main"));
         assert!(!items[0].expandable);
-        assert!(items[1].name.contains("feature/"));
+        // "feature" directory node (no trailing slash in display)
+        assert!(!items[1].name.contains("feature/"));
+        assert!(items[1].name.contains("feature"));
         assert!(items[1].expandable);
         assert!(!items[1].expanded);
     }
