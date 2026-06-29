@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::lcs;
 use crate::models::*;
+use crate::ui::layout::PANEL_BORDER_H;
 
 /// Render context for the diff panel.
 pub struct DiffPanelCtx<'a> {
@@ -42,7 +43,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
         ctx.selected_file_index,
     );
     let total = all_lines.len();
-    let visible = area.height.saturating_sub(2) as usize;
+    let visible = area.height.saturating_sub(PANEL_BORDER_H) as usize;
     let start = (ctx.diff_scroll + 1).min(total);
     let end = (ctx.diff_scroll + visible).min(total);
 

@@ -25,6 +25,9 @@ use crate::workers::{
 };
 
 const PAGE_SIZE: usize = 10;
+const POLL_INTERVAL_DEFAULT: u8 = 10;
+const POLL_INTERVAL_MAX: u8 = 200;
+const POLL_BACKOFF_STEP: u8 = 10;
 
 pub struct App {
     repo_path: String,
@@ -120,7 +123,7 @@ impl App {
             branches_loaded: false,
             commits_loaded: false,
             diff_pending: false,
-            poll_interval_ms: 10,
+            poll_interval_ms: POLL_INTERVAL_DEFAULT,
         })
     }
 
@@ -319,12 +322,13 @@ impl App {
         let interval = std::time::Duration::from_millis(self.poll_interval_ms as u64);
         if !event::poll(interval).map_err(|e| format!("Poll error: {}", e))? {
             // No event received, back off slowly.
-            self.poll_interval_ms = (self.poll_interval_ms + 10).min(200);
+            self.poll_interval_ms =
+                (self.poll_interval_ms + POLL_BACKOFF_STEP).min(POLL_INTERVAL_MAX);
             return Ok(true);
         }
 
         // Event received, reset polling interval.
-        self.poll_interval_ms = 10;
+        self.poll_interval_ms = POLL_INTERVAL_DEFAULT;
         let ev = event::read().map_err(|e| format!("Event error: {}", e))?;
 
         match ev {
@@ -400,8 +404,8 @@ impl App {
                 if self.visible_count() > 0 {
                     let ci = self.visible_to_filtered(self.selected_index);
                     if let Some(c) = self.filtered_commits.get(ci) {
-                        let short = if c.hash.len() > 7 {
-                            &c.hash[..7]
+                        let short = if c.hash.len() > ui::commit_table::SHORT_HASH_LEN {
+                            &c.hash[..ui::commit_table::SHORT_HASH_LEN]
                         } else {
                             &c.hash
                         };
@@ -820,7 +824,7 @@ impl App {
         let full = Rect::new(0, 0, tw, th);
         let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
         // Trim bottom rows occupied by the help bar (same as in render)
-        let help_h = 3.min(th);
+        let help_h = ui::layout::HELP_BAR_HEIGHT.min(th);
         let branch_visible_area = Rect::new(
             areas.branch.x,
             areas.branch.y,
@@ -869,7 +873,9 @@ impl App {
 
         if rect_contains(&areas.branch, click_pos) {
             self.focus = Panel::Branches;
-            let rel_row = (row.saturating_sub(areas.branch.y).saturating_sub(1)) as usize;
+            let rel_row = (row
+                .saturating_sub(areas.branch.y)
+                .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
             if rel_row < self.branch_tree.len() {
                 self.branch_index = rel_row;
                 if let Some(item) = self.branch_tree.get(rel_row) {
@@ -894,14 +900,18 @@ impl App {
             self.focus = Panel::Search;
         } else if rect_contains(&areas.table, click_pos) {
             self.focus = Panel::Commits;
-            let rel_row = (row.saturating_sub(areas.table.y).saturating_sub(2)) as usize;
+            let rel_row = (row.saturating_sub(areas.table.y).saturating_sub(
+                ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD),
+            )) as usize;
             let filtered_idx = rel_row + self.table_state.offset();
             if let Some(vis_idx) = self.filtered_to_visible(filtered_idx) {
                 self.selected_index = vis_idx;
             }
         } else if rect_contains(&areas.diff, click_pos) {
             self.focus = Panel::Diff;
-            let rel_row = (row.saturating_sub(areas.diff.y).saturating_sub(1)) as usize;
+            let rel_row = (row
+                .saturating_sub(areas.diff.y)
+                .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
             // Check if clicking on a file entry after metadata
             let meta_offset = if let Some(ref info) = self.commit_info {
                 ui::diff_panel::build_metadata_lines(info).len()
@@ -951,7 +961,7 @@ impl App {
             let full = Rect::new(0, 0, tw, th);
             let areas =
                 ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
-            let help_h = 3.min(th);
+            let help_h = ui::layout::HELP_BAR_HEIGHT.min(th);
             let branch_visible_area = Rect::new(
                 areas.branch.x,
                 areas.branch.y,
@@ -1006,7 +1016,7 @@ impl App {
             }
             Some(ui::layout::DragDirection::Horizontal) => {
                 if let Some((_, th)) = self.last_size {
-                    self.diff_height_pct = ui::layout::horizontal_resize_pct(row, th, 3);
+                    self.diff_height_pct = ui::layout::horizontal_resize_pct(row, th);
                 }
             }
             None => {}
@@ -1110,7 +1120,7 @@ impl App {
         self.last_size = Some((full.width, full.height));
 
         // Guard against zero-size terminal (can happen during resize)
-        if full.width < 20 || full.height < 8 {
+        if full.width < ui::layout::MIN_TERM_WIDTH || full.height < ui::layout::MIN_TERM_HEIGHT {
             return;
         }
 
@@ -1118,9 +1128,9 @@ impl App {
 
         let help_area = Rect::new(
             full.x,
-            full.y + full.height.saturating_sub(3),
+            full.y + full.height.saturating_sub(ui::layout::HELP_BAR_HEIGHT),
             full.width,
-            3.min(full.height),
+            ui::layout::HELP_BAR_HEIGHT.min(full.height),
         );
 
         // Clamp cursor
@@ -1151,7 +1161,9 @@ impl App {
         } else {
             Style::default().fg(Color::Gray)
         };
-        let branch_visible = (branch_content_area.height.saturating_sub(2)) as usize;
+        let branch_visible = (branch_content_area
+            .height
+            .saturating_sub(ui::layout::PANEL_BORDER_H)) as usize;
         self.branch_scrollbar.render(
             frame,
             branch_scrollbar_area,
@@ -1201,7 +1213,9 @@ impl App {
         } else {
             Style::default().fg(Color::Gray)
         };
-        let table_visible = (table_content_area.height.saturating_sub(3)) as usize;
+        let table_visible = (table_content_area
+            .height
+            .saturating_sub(ui::layout::TABLE_OVERHEAD)) as usize;
         self.table_scrollbar.render(
             frame,
             table_scrollbar_area,
@@ -1211,10 +1225,9 @@ impl App {
             table_focus_style,
         );
 
-        let short_hash = self
-            .commit_info
-            .as_ref()
-            .map(|info| &info.hash[..std::cmp::min(8, info.hash.len())]);
+        let short_hash = self.commit_info.as_ref().map(|info| {
+            &info.hash[..std::cmp::min(ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
+        });
 
         // --- Diff panel (content + scrollbar) ---
         let (diff_content_area, diff_scrollbar_area) =
@@ -1236,7 +1249,9 @@ impl App {
         } else {
             Style::default().fg(Color::Gray)
         };
-        let diff_visible = (diff_content_area.height.saturating_sub(2)) as usize;
+        let diff_visible = (diff_content_area
+            .height
+            .saturating_sub(ui::layout::PANEL_BORDER_H)) as usize;
         self.diff_scrollbar.render(
             frame,
             diff_scrollbar_area,

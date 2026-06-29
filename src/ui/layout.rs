@@ -7,6 +7,21 @@ pub const MAX_BRANCH_PCT: u16 = 40;
 pub const DEFAULT_DIFF_PCT: u16 = 35;
 pub const MIN_DIFF_PCT: u16 = 10;
 pub const MAX_DIFF_PCT: u16 = 65;
+pub const DIFF_MAX_PCT: u16 = 90;
+
+pub const HELP_BAR_HEIGHT: u16 = 3;
+pub const MIN_SEARCH_HEIGHT: u16 = 3;
+pub const MIN_SCOPE_WIDTH: u16 = 10;
+pub const SCROLLBAR_WIDTH: u16 = 1;
+
+pub const BORDER_OVERHEAD: u16 = 1;
+pub const PANEL_BORDER_H: u16 = 2;
+pub const TABLE_OVERHEAD: u16 = 3;
+
+pub const MIN_TERM_WIDTH: u16 = 20;
+pub const MIN_TERM_HEIGHT: u16 = 8;
+
+pub const RESIZE_GRAB_RANGE: i32 = 2;
 
 /// Direction of a resize drag operation.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -24,11 +39,10 @@ pub fn vertical_resize_pct(col: u16, total_width: u16) -> u16 {
 }
 
 /// Compute new diff panel height percentage from a horizontal drag at row `row`.
-/// `total_height` is terminal height, `help_bar_height` accounts for the help bar at bottom.
-pub fn horizontal_resize_pct(row: u16, total_height: u16, help_bar_height: u16) -> u16 {
+pub fn horizontal_resize_pct(row: u16, total_height: u16) -> u16 {
     let pct = (((total_height
         .saturating_sub(row)
-        .saturating_sub(help_bar_height)) as f32)
+        .saturating_sub(HELP_BAR_HEIGHT)) as f32)
         / (total_height as f32)
         * 100.0) as u16;
     pct.clamp(MIN_DIFF_PCT, MAX_DIFF_PCT)
@@ -37,7 +51,7 @@ pub fn horizontal_resize_pct(row: u16, total_height: u16, help_bar_height: u16) 
 /// Check if a position is near a vertical resize border (branch panel right edge).
 pub fn is_on_vertical_border(col: u16, row: u16, branch_area: Rect) -> bool {
     let border_x = branch_area.x + branch_area.width;
-    (col as i32 - border_x as i32).abs() <= 2
+    (col as i32 - border_x as i32).abs() <= RESIZE_GRAB_RANGE
         && row >= branch_area.y
         && row < branch_area.y + branch_area.height
 }
@@ -45,7 +59,7 @@ pub fn is_on_vertical_border(col: u16, row: u16, branch_area: Rect) -> bool {
 /// Check if a position is near a horizontal resize border (below commit table).
 pub fn is_on_horizontal_border(col: u16, row: u16, right_area: Rect, table_area: Rect) -> bool {
     let border_y = table_area.y + table_area.height;
-    (row as i32 - border_y as i32).abs() <= 2
+    (row as i32 - border_y as i32).abs() <= RESIZE_GRAB_RANGE
         && col >= right_area.x
         && col < right_area.x + right_area.width
 }
@@ -69,9 +83,9 @@ pub fn compute_areas(full: Rect, branch_width_pct: u16, diff_height_pct: u16) ->
     let branch_area = horizontal[0];
     let right_area = horizontal[1];
 
-    let search_h = Constraint::Length(3.min(right_area.height / 3));
-    let diff_h = Constraint::Percentage(diff_height_pct.min(90));
-    let help_h = Constraint::Length(3.min(right_area.height.saturating_sub(6) / 2));
+    let search_h = Constraint::Length(MIN_SEARCH_HEIGHT.min(right_area.height / 3));
+    let diff_h = Constraint::Percentage(diff_height_pct.min(DIFF_MAX_PCT));
+    let help_h = Constraint::Length(HELP_BAR_HEIGHT.min(right_area.height.saturating_sub(6) / 2));
 
     let main_split =
         Layout::vertical([search_h, Constraint::Min(0), diff_h, help_h]).split(right_area);
@@ -82,7 +96,9 @@ pub fn compute_areas(full: Rect, branch_width_pct: u16, diff_height_pct: u16) ->
 
     let search_split = Layout::horizontal([
         Constraint::Min(0),
-        Constraint::Length(10.min(search_scope_area.width.saturating_sub(2))),
+        Constraint::Length(
+            MIN_SCOPE_WIDTH.min(search_scope_area.width.saturating_sub(PANEL_BORDER_H)),
+        ),
     ])
     .split(search_scope_area);
     let search_area = search_split[0];

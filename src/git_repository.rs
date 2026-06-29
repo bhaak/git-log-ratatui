@@ -9,6 +9,13 @@ use git_graph::settings::{
 
 use crate::models::*;
 
+const SECS_PER_DAY: i64 = 86400;
+const SECS_PER_HOUR: i64 = 3600;
+const SECS_PER_MIN: i64 = 60;
+const DAYS_PER_YEAR: i64 = 365;
+const DAYS_PER_LEAP_YEAR: i64 = 366;
+const EPOCH_YEAR: i64 = 1970;
+
 /// Wrapper around git2 for core git operations with git-graph integration.
 pub struct GitRepository {
     repo: git2::Repository,
@@ -435,11 +442,11 @@ fn append_diff_line(diff_lines: &mut Vec<String>, origin: char, content: &str) {
 
 fn time_to_string(time: git2::Time) -> String {
     let mut ts = time.seconds();
-    let days = ts / 86400;
-    ts %= 86400;
-    let hour = ts / 3600;
-    ts %= 3600;
-    let minute = ts / 60;
+    let days = ts / SECS_PER_DAY;
+    ts %= SECS_PER_DAY;
+    let hour = ts / SECS_PER_HOUR;
+    ts %= SECS_PER_HOUR;
+    let minute = ts / SECS_PER_MIN;
 
     // Convert days since epoch to year/month/day
     // Algorithm: start from 1970-01-01
@@ -452,15 +459,19 @@ fn time_to_string(time: git2::Time) -> String {
 }
 
 fn time_to_string_with_seconds(time: git2::Time) -> String {
-    let second = time.seconds() % 60;
+    let second = time.seconds() % SECS_PER_MIN;
     format!("{}:{:02}", time_to_string(time), second)
 }
 
 fn days_to_ymd(mut days: i64) -> (i64, u32, u32) {
     // Days since 1970-01-01
-    let mut year = 1970i64;
+    let mut year = EPOCH_YEAR;
     loop {
-        let days_in_year = if is_leap(year) { 366 } else { 365 };
+        let days_in_year = if is_leap(year) {
+            DAYS_PER_LEAP_YEAR
+        } else {
+            DAYS_PER_YEAR
+        };
         if days < days_in_year {
             break;
         }

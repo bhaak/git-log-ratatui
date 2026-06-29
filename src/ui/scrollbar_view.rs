@@ -5,6 +5,8 @@ use ratatui::{
     Frame,
 };
 
+use super::layout::SCROLLBAR_WIDTH;
+
 /// Encapsulates a scrollbar widget with rendering, state tracking, and mouse click handling.
 pub struct ScrollbarView {
     /// Ratatui scrollbar state for rendering.
@@ -38,7 +40,8 @@ impl ScrollbarView {
     /// The scrollbar gets exactly 1 column on the right.
     pub fn split(panel_area: Rect) -> (Rect, Rect) {
         let [content_area, scrollbar_area] =
-            Layout::horizontal([Constraint::Min(0), Constraint::Length(1)]).areas(panel_area);
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(SCROLLBAR_WIDTH)])
+                .areas(panel_area);
         (content_area, scrollbar_area)
     }
 

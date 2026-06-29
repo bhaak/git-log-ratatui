@@ -7,12 +7,16 @@ use ratatui::{
 };
 
 use crate::models::*;
+use crate::ui::layout::TABLE_OVERHEAD;
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
 const COL_SUBJECT_MIN: u16 = 20;
 const COL_AUTHOR: u16 = 15;
 const COL_DATE: u16 = 18;
+const COL_SEPARATORS: u16 = 4;
+const MIN_GRAPH_WIDTH: u16 = 4;
+pub(crate) const SHORT_HASH_LEN: usize = 7;
 
 /// Render context for the commit table panel.
 pub struct CommitTableCtx<'a> {
@@ -34,7 +38,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     };
 
     // Guard against zero-size area
-    if area.width < 10 || area.height < 3 {
+    if area.width < 10 || area.height < TABLE_OVERHEAD {
         return;
     }
 
@@ -89,12 +93,12 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .iter()
         .map(|c| c.graph.chars().count())
         .max()
-        .unwrap_or(4) as u16;
+        .unwrap_or(MIN_GRAPH_WIDTH as usize) as u16;
 
-    let col_graph = max_graph.clamp(4, COL_GRAPH_MAX);
+    let col_graph = max_graph.clamp(MIN_GRAPH_WIDTH, COL_GRAPH_MAX);
 
-    let available_width = area.width.saturating_sub(2);
-    let fixed_width = col_graph + COL_HASH + COL_AUTHOR + COL_DATE + 4; // +4 separators
+    let available_width = area.width.saturating_sub(crate::ui::layout::PANEL_BORDER_H);
+    let fixed_width = col_graph + COL_HASH + COL_AUTHOR + COL_DATE + COL_SEPARATORS;
     let subject_width = available_width
         .saturating_sub(fixed_width)
         .max(COL_SUBJECT_MIN);
@@ -206,8 +210,8 @@ fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
 }
 
 fn build_hash_span(commit: &Commit) -> Line<'static> {
-    let short_hash = if commit.hash.len() > 7 {
-        &commit.hash[..7]
+    let short_hash = if commit.hash.len() > SHORT_HASH_LEN {
+        &commit.hash[..SHORT_HASH_LEN]
     } else {
         &commit.hash
     };
