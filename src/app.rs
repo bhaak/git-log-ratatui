@@ -608,6 +608,13 @@ impl App {
                     }
                 }
             }
+            KeyCode::PageUp => {
+                self.branch_index = self.branch_index.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                self.branch_index =
+                    (self.branch_index + 10).min(self.branch_tree.len().saturating_sub(1));
+            }
             _ => {}
         }
     }
@@ -764,6 +771,14 @@ impl App {
             KeyCode::End => {
                 // scroll to end
                 self.diff_scroll = usize::MAX;
+            }
+            KeyCode::PageUp => {
+                let page = self.diff_scrollbar.viewport_length().max(1);
+                self.diff_scroll = self.diff_scroll.saturating_sub(page);
+            }
+            KeyCode::PageDown => {
+                let page = self.diff_scrollbar.viewport_length().max(1);
+                self.diff_scroll = self.diff_scroll.saturating_add(page);
             }
             _ => {}
         }
