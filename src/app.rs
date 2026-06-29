@@ -9,7 +9,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Color, Style},
     widgets::TableState,
     Frame,
@@ -801,15 +801,14 @@ impl App {
             return;
         };
         let full = Rect::new(0, 0, tw, th);
-        let (branch_area, _, search_area, scope_area, table_area, diff_area) =
-            self.compute_areas(full);
+        let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
         // Trim bottom rows occupied by the help bar (same as in render)
         let help_h = 3.min(th);
         let branch_visible_area = Rect::new(
-            branch_area.x,
-            branch_area.y,
-            branch_area.width,
-            branch_area.height.saturating_sub(help_h),
+            areas.branch.x,
+            areas.branch.y,
+            areas.branch.width,
+            areas.branch.height.saturating_sub(help_h),
         );
         let click_pos = (col, row);
 
@@ -831,7 +830,7 @@ impl App {
             }
             return;
         }
-        let (_, table_sb) = ui::scrollbar_view::ScrollbarView::split(table_area);
+        let (_, table_sb) = ui::scrollbar_view::ScrollbarView::split(areas.table);
         if rect_contains(&table_sb, click_pos) {
             self.dragging = None;
             if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
@@ -857,7 +856,7 @@ impl App {
             }
             return;
         }
-        let (_, diff_sb) = ui::scrollbar_view::ScrollbarView::split(diff_area);
+        let (_, diff_sb) = ui::scrollbar_view::ScrollbarView::split(areas.diff);
         if rect_contains(&diff_sb, click_pos) {
             self.dragging = None;
             if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
@@ -873,9 +872,9 @@ impl App {
             return;
         }
 
-        if rect_contains(&branch_area, click_pos) {
+        if rect_contains(&areas.branch, click_pos) {
             self.focus = Panel::Branches;
-            let rel_row = (row.saturating_sub(branch_area.y).saturating_sub(1)) as usize;
+            let rel_row = (row.saturating_sub(areas.branch.y).saturating_sub(1)) as usize;
             if rel_row < self.branch_tree.len() {
                 self.branch_index = rel_row;
                 if let Some(item) = self.branch_tree.get(rel_row) {
@@ -893,21 +892,21 @@ impl App {
                     }
                 }
             }
-        } else if rect_contains(&scope_area, click_pos) {
+        } else if rect_contains(&areas.scope, click_pos) {
             self.focus = Panel::Scope;
             self.cycle_scope();
-        } else if rect_contains(&search_area, click_pos) {
+        } else if rect_contains(&areas.search, click_pos) {
             self.focus = Panel::Search;
-        } else if rect_contains(&table_area, click_pos) {
+        } else if rect_contains(&areas.table, click_pos) {
             self.focus = Panel::Commits;
-            let rel_row = (row.saturating_sub(table_area.y).saturating_sub(2)) as usize;
+            let rel_row = (row.saturating_sub(areas.table.y).saturating_sub(2)) as usize;
             let filtered_idx = rel_row + self.table_state.offset();
             if let Some(vis_idx) = self.filtered_to_visible(filtered_idx) {
                 self.selected_index = vis_idx;
             }
-        } else if rect_contains(&diff_area, click_pos) {
+        } else if rect_contains(&areas.diff, click_pos) {
             self.focus = Panel::Diff;
-            let rel_row = (row.saturating_sub(diff_area.y).saturating_sub(1)) as usize;
+            let rel_row = (row.saturating_sub(areas.diff.y).saturating_sub(1)) as usize;
             // Check if clicking on a file entry after metadata
             let meta_offset = if let Some(ref info) = self.commit_info {
                 ui::diff_panel::build_metadata_lines(info).len()
@@ -936,14 +935,14 @@ impl App {
             return;
         };
         let full = Rect::new(0, 0, tw, th);
-        let (branch_area, right_area, _, _, table_area, _) = self.compute_areas(full);
+        let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
 
-        if ui::layout::is_on_vertical_border(col, row, branch_area) {
+        if ui::layout::is_on_vertical_border(col, row, areas.branch) {
             self.dragging = Some(ui::layout::DragDirection::Vertical);
             return;
         }
 
-        if ui::layout::is_on_horizontal_border(col, row, right_area, table_area) {
+        if ui::layout::is_on_horizontal_border(col, row, areas.right, areas.table) {
             self.dragging = Some(ui::layout::DragDirection::Horizontal);
         }
     }
@@ -955,13 +954,14 @@ impl App {
                 return;
             };
             let full = Rect::new(0, 0, tw, th);
-            let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
+            let areas =
+                ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
             let help_h = 3.min(th);
             let branch_visible_area = Rect::new(
-                branch_area.x,
-                branch_area.y,
-                branch_area.width,
-                branch_area.height.saturating_sub(help_h),
+                areas.branch.x,
+                areas.branch.y,
+                areas.branch.width,
+                areas.branch.height.saturating_sub(help_h),
             );
             match panel {
                 Panel::Branches => {
@@ -978,7 +978,7 @@ impl App {
                     }
                 }
                 Panel::Commits => {
-                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(table_area);
+                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(areas.table);
                     if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
                         sb,
                         row,
@@ -999,7 +999,7 @@ impl App {
                     }
                 }
                 Panel::Diff => {
-                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(diff_area);
+                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(areas.diff);
                     if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
                         sb,
                         row,
@@ -1035,10 +1035,10 @@ impl App {
             return;
         };
         let full = Rect::new(0, 0, tw, th);
-        let (branch_area, _, _, _, table_area, diff_area) = self.compute_areas(full);
+        let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
         let pos = (col, row);
 
-        if rect_contains(&branch_area, pos) {
+        if rect_contains(&areas.branch, pos) {
             if direction > 0 {
                 // Scroll down
                 if self.branch_index + 1 < self.branch_tree.len() {
@@ -1054,7 +1054,7 @@ impl App {
                     self.branch_index = self.branch_tree.len() - 1;
                 }
             }
-        } else if rect_contains(&table_area, pos) {
+        } else if rect_contains(&areas.table, pos) {
             if self.visible_count() > 0 {
                 if direction > 0 {
                     self.selected_index = (self.selected_index + 1) % self.visible_count();
@@ -1066,7 +1066,7 @@ impl App {
                     }
                 }
             }
-        } else if rect_contains(&diff_area, pos) {
+        } else if rect_contains(&areas.diff, pos) {
             if direction > 0 {
                 self.diff_scroll += 1;
             } else {
@@ -1119,46 +1119,6 @@ impl App {
         }
     }
 
-    // --- Layout ---
-
-    fn compute_areas(&self, full: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
-        let branch_w = Constraint::Percentage(self.branch_width_pct);
-        let right_w = Constraint::Percentage(100 - self.branch_width_pct);
-
-        let horizontal = Layout::horizontal([branch_w, right_w]).split(full);
-        let branch_area = horizontal[0];
-        let right_area = horizontal[1];
-
-        // Use flexible constraints that won't overflow small terminals
-        let search_h = Constraint::Length(3.min(right_area.height / 3));
-        let diff_h = Constraint::Percentage(self.diff_height_pct.min(90));
-        let help_h = Constraint::Length(3.min(right_area.height.saturating_sub(6) / 2));
-
-        let main_split =
-            Layout::vertical([search_h, Constraint::Min(0), diff_h, help_h]).split(right_area);
-
-        let search_scope_area = main_split[0];
-        let table_area = main_split[1];
-        let diff_area = main_split[2];
-
-        let search_split = Layout::horizontal([
-            Constraint::Min(0),
-            Constraint::Length(10.min(search_scope_area.width.saturating_sub(2))),
-        ])
-        .split(search_scope_area);
-        let search_area = search_split[0];
-        let scope_area = search_split[1];
-
-        (
-            branch_area,
-            right_area,
-            search_area,
-            scope_area,
-            table_area,
-            diff_area,
-        )
-    }
-
     // --- Rendering ---
 
     fn render(&mut self, frame: &mut Frame) {
@@ -1170,8 +1130,7 @@ impl App {
             return;
         }
 
-        let (branch_area, _right_area, search_area, scope_area, table_area, diff_area) =
-            self.compute_areas(full);
+        let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
 
         let help_area = Rect::new(
             full.x,
@@ -1187,10 +1146,10 @@ impl App {
         // --- Branch panel (content + scrollbar) ---
         // Trim bottom so the help bar does not overwrite the panel border
         let branch_visible_area = Rect::new(
-            branch_area.x,
-            branch_area.y,
-            branch_area.width,
-            branch_area.height.saturating_sub(help_area.height),
+            areas.branch.x,
+            areas.branch.y,
+            areas.branch.width,
+            areas.branch.height.saturating_sub(help_area.height),
         );
         let (branch_content_area, branch_scrollbar_area) =
             ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
@@ -1224,7 +1183,7 @@ impl App {
         let title = format!("Git Log - {} [{}]", self.repo_path, branch_label);
         ui::search_panel::render(
             frame,
-            search_area,
+            areas.search,
             &self.search_query,
             self.cursor_pos,
             branch_label,
@@ -1234,14 +1193,14 @@ impl App {
 
         ui::scope_panel::render(
             frame,
-            scope_area,
+            areas.scope,
             self.branch_scope,
             self.focus == Panel::Scope,
         );
 
         // --- Commit table (content + scrollbar) ---
         let (table_content_area, table_scrollbar_area) =
-            ui::scrollbar_view::ScrollbarView::split(table_area);
+            ui::scrollbar_view::ScrollbarView::split(areas.table);
 
         let table_ctx = ui::commit_table::CommitTableCtx {
             commits: &self.filtered_commits,
@@ -1275,7 +1234,7 @@ impl App {
 
         // --- Diff panel (content + scrollbar) ---
         let (diff_content_area, diff_scrollbar_area) =
-            ui::scrollbar_view::ScrollbarView::split(diff_area);
+            ui::scrollbar_view::ScrollbarView::split(areas.diff);
 
         let diff_ctx = ui::diff_panel::DiffPanelCtx {
             commit_info: self.commit_info.as_ref(),
