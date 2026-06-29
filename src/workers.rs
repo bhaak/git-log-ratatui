@@ -132,7 +132,7 @@ pub enum DiffCommand {
 /// Results returned from the diff worker thread.
 pub enum DiffResult {
     Diff {
-        commit_info: CommitInfo,
+        commit_info: Box<CommitInfo>,
         diff_lines: Vec<String>,
         file_entries: Vec<FileEntry>,
     },
@@ -166,7 +166,7 @@ impl DiffWorker {
                         };
                         match repo.fetch_diff(&hash) {
                             Ok((diff_lines, file_entries)) => DiffResult::Diff {
-                                commit_info,
+                                commit_info: Box::new(commit_info),
                                 diff_lines,
                                 file_entries,
                             },

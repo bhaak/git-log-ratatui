@@ -359,8 +359,8 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
 
         // Build graph line string — draw corners at parent columns for merges
         let mut line = String::with_capacity(max_active_col + 1);
-        for col in 0..=max_active_col {
-            if active[col] || parent_cols.contains(&col) {
+        for (col, &is_active) in active.iter().enumerate().take(max_active_col + 1) {
+            if is_active || parent_cols.contains(&col) {
                 if col == current_col {
                     line.push(if info.is_merge {
                         '\u{25CB}'

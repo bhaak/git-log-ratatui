@@ -14,21 +14,20 @@ const COL_SUBJECT_MIN: u16 = 20;
 const COL_AUTHOR: u16 = 15;
 const COL_DATE: u16 = 18;
 
-/// Render the commit table with git graph, decorations, and merge highlighting.
+/// Render context for the commit table panel.
+pub struct CommitTableCtx<'a> {
+    pub commits: &'a [Commit],
+    pub visible_index: usize,
+    pub is_focused: bool,
+    pub visible_to_commit: &'a [usize],
+    pub total_loaded: usize,
+    pub search_active: bool,
+}
+
 /// Render the commit table with git graph, decorations, and merge highlighting.
 /// Column order matches Ruby: Graph | Hash | Subject | Author | Date
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    commits: &[Commit],
-    visible_index: usize,
-    is_focused: bool,
-    visible_to_commit: &[usize],
-    total_loaded: usize,
-    search_active: bool,
-    state: &mut TableState,
-) {
-    let border_style = if is_focused {
+pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut TableState) {
+    let border_style = if ctx.is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {
         Style::default().fg(Color::Gray)
@@ -40,8 +39,8 @@ pub fn render(
     }
 
     // Empty state messages
-    if commits.is_empty() && total_loaded > 0 {
-        let msg = if search_active {
+    if ctx.commits.is_empty() && ctx.total_loaded > 0 {
+        let msg = if ctx.search_active {
             "No commits match your search."
         } else {
             "No commits found in this repository."
@@ -76,7 +75,7 @@ pub fn render(
         .height(1);
 
     let highlight_style = Style::default()
-        .bg(if is_focused {
+        .bg(if ctx.is_focused {
             Color::Rgb(80, 60, 120)
         } else {
             Color::DarkGray
@@ -85,7 +84,8 @@ pub fn render(
 
     // Calculate dynamic graph width (use char count, not byte length — all Unicode
     // box-drawing/graph characters are single-width but 3 bytes each in UTF-8)
-    let max_graph = commits
+    let max_graph = ctx
+        .commits
         .iter()
         .map(|c| c.graph.chars().count())
         .max()
@@ -108,10 +108,15 @@ pub fn render(
     ];
 
     // Build rows with mapped selection
-    let mapped_index = visible_to_commit.get(visible_index).copied().unwrap_or(0);
+    let mapped_index = ctx
+        .visible_to_commit
+        .get(ctx.visible_index)
+        .copied()
+        .unwrap_or(0);
 
     // Filter graph_only rows out and show them with minimal content
-    let rows: Vec<Row> = commits
+    let rows: Vec<Row> = ctx
+        .commits
         .iter()
         .map(|commit| {
             let graph_span = build_graph_span(commit, col_graph as usize);
@@ -179,7 +184,7 @@ pub fn render(
         .row_highlight_style(highlight_style)
         .column_spacing(1);
 
-    if !commits.is_empty() && mapped_index < commits.len() {
+    if !ctx.commits.is_empty() && mapped_index < ctx.commits.len() {
         state.select(Some(mapped_index));
     }
 

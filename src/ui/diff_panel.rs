@@ -11,36 +11,42 @@ use ratatui::{
 use crate::lcs;
 use crate::models::*;
 
+/// Render context for the diff panel.
+pub struct DiffPanelCtx<'a> {
+    pub commit_info: Option<&'a CommitInfo>,
+    pub diff_lines: &'a [String],
+    pub file_entries: &'a [FileEntry],
+    pub selected_file_index: usize,
+    pub diff_scroll: usize,
+    pub is_focused: bool,
+    pub short_hash: Option<&'a str>,
+}
+
 /// Render the diff panel with commit metadata, changed files, and colored diff.
 /// Returns the total number of display lines.
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    commit_info: Option<&CommitInfo>,
-    diff_lines: &[String],
-    file_entries: &[FileEntry],
-    selected_file_index: usize,
-    diff_scroll: usize,
-    is_focused: bool,
-    short_hash: Option<&str>,
-) -> usize {
+pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     if area.width < 4 || area.height < 2 {
         return 0;
     }
 
-    let border_style = if is_focused {
+    let border_style = if ctx.is_focused {
         Style::default().fg(Color::Rgb(180, 140, 255))
     } else {
         Style::default().fg(Color::Gray)
     };
 
-    let all_lines = build_all_lines(commit_info, diff_lines, file_entries, selected_file_index);
+    let all_lines = build_all_lines(
+        ctx.commit_info,
+        ctx.diff_lines,
+        ctx.file_entries,
+        ctx.selected_file_index,
+    );
     let total = all_lines.len();
     let visible = area.height.saturating_sub(2) as usize;
-    let start = (diff_scroll + 1).min(total);
-    let end = (diff_scroll + visible).min(total);
+    let start = (ctx.diff_scroll + 1).min(total);
+    let end = (ctx.diff_scroll + visible).min(total);
 
-    let diff_title = if let Some(hash) = short_hash {
+    let diff_title = if let Some(hash) = ctx.short_hash {
         format!(" Diff - {}", hash)
     } else {
         " Diff".to_string()
@@ -59,7 +65,7 @@ pub fn render(
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )
-        .scroll((diff_scroll as u16, 0));
+        .scroll((ctx.diff_scroll as u16, 0));
 
     frame.render_widget(paragraph, area);
     total
@@ -111,7 +117,7 @@ fn build_all_lines<'a>(
             } else {
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
-            lines.push(Line::from(Span::styled(format!("{}", entry.name), style)));
+            lines.push(Line::from(Span::styled(entry.name.to_string(), style)));
         }
 
         lines.push(Line::from(""));

@@ -226,7 +226,7 @@ impl App {
                     diff_lines,
                     file_entries,
                 } => {
-                    self.commit_info = Some(commit_info);
+                    self.commit_info = Some(*commit_info);
                     self.diff_lines = diff_lines;
                     self.file_entries = file_entries;
                     self.diff_scroll = 0;
@@ -500,16 +500,11 @@ impl App {
                     self.branch_index = 0;
                 }
             }
-            Panel::Commits => {
-                if self.visible_count() > 0 {
-                    self.selected_index = (self.selected_index + 1) % self.visible_count();
-                }
+            Panel::Commits if self.visible_count() > 0 => {
+                self.selected_index = (self.selected_index + 1) % self.visible_count();
             }
-            Panel::Diff => {
-                if !self.file_entries.is_empty() {
-                    self.selected_file_index =
-                        (self.selected_file_index + 1) % self.file_entries.len();
-                }
+            Panel::Diff if !self.file_entries.is_empty() => {
+                self.selected_file_index = (self.selected_file_index + 1) % self.file_entries.len();
             }
             _ => {}
         }
@@ -524,22 +519,18 @@ impl App {
                     self.branch_index = self.branch_tree.len() - 1;
                 }
             }
-            Panel::Commits => {
-                if self.visible_count() > 0 {
-                    if self.selected_index > 0 {
-                        self.selected_index -= 1;
-                    } else {
-                        self.selected_index = self.visible_count() - 1;
-                    }
+            Panel::Commits if self.visible_count() > 0 => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                } else {
+                    self.selected_index = self.visible_count() - 1;
                 }
             }
-            Panel::Diff => {
-                if !self.file_entries.is_empty() {
-                    if self.selected_file_index > 0 {
-                        self.selected_file_index -= 1;
-                    } else {
-                        self.selected_file_index = self.file_entries.len() - 1;
-                    }
+            Panel::Diff if !self.file_entries.is_empty() => {
+                if self.selected_file_index > 0 {
+                    self.selected_file_index -= 1;
+                } else {
+                    self.selected_file_index = self.file_entries.len() - 1;
                 }
             }
             _ => {}
@@ -586,10 +577,8 @@ impl App {
             KeyCode::Up => {
                 self.branch_index = self.branch_index.saturating_sub(1);
             }
-            KeyCode::Down => {
-                if self.branch_index + 1 < self.branch_tree.len() {
-                    self.branch_index += 1;
-                }
+            KeyCode::Down if self.branch_index + 1 < self.branch_tree.len() => {
+                self.branch_index += 1;
             }
             KeyCode::Right => {
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
@@ -653,19 +642,15 @@ impl App {
                 self.cursor_pos = 0;
                 self.apply_search_filter();
             }
-            KeyCode::Backspace => {
-                if self.cursor_pos > 0 {
-                    let prev = prev_char_boundary(&self.search_query, self.cursor_pos);
-                    self.search_query.remove(prev);
-                    self.cursor_pos = prev;
-                    self.apply_search_filter();
-                }
+            KeyCode::Backspace if self.cursor_pos > 0 => {
+                let prev = prev_char_boundary(&self.search_query, self.cursor_pos);
+                self.search_query.remove(prev);
+                self.cursor_pos = prev;
+                self.apply_search_filter();
             }
-            KeyCode::Delete => {
-                if self.cursor_pos < self.search_query.len() {
-                    self.search_query.remove(self.cursor_pos);
-                    self.apply_search_filter();
-                }
+            KeyCode::Delete if self.cursor_pos < self.search_query.len() => {
+                self.search_query.remove(self.cursor_pos);
+                self.apply_search_filter();
             }
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -698,19 +683,15 @@ impl App {
 
     fn handle_commit_keys(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Up => {
-                if self.visible_count() > 0 {
-                    if self.selected_index > 0 {
-                        self.selected_index -= 1;
-                    } else {
-                        self.selected_index = self.visible_count() - 1;
-                    }
+            KeyCode::Up if self.visible_count() > 0 => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                } else {
+                    self.selected_index = self.visible_count() - 1;
                 }
             }
-            KeyCode::Down => {
-                if self.visible_count() > 0 {
-                    self.selected_index = (self.selected_index + 1) % self.visible_count();
-                }
+            KeyCode::Down if self.visible_count() > 0 => {
+                self.selected_index = (self.selected_index + 1) % self.visible_count();
             }
             KeyCode::Enter => {
                 self.focus = Panel::Diff;
@@ -719,11 +700,9 @@ impl App {
                 self.selected_index = self.selected_index.saturating_sub(10);
                 self.clamp_selection();
             }
-            KeyCode::PageDown => {
-                if self.visible_count() > 0 {
-                    self.selected_index =
-                        (self.selected_index + 10).min(self.visible_count().saturating_sub(1));
-                }
+            KeyCode::PageDown if self.visible_count() > 0 => {
+                self.selected_index =
+                    (self.selected_index + 10).min(self.visible_count().saturating_sub(1));
             }
             _ => {}
         }
@@ -764,10 +743,17 @@ impl App {
                     self.diff_scroll = entry.diff_line + offset;
                 }
             }
-            KeyCode::Char('n') => {
-                if !self.file_entries.is_empty() {
-                    self.selected_file_index =
-                        (self.selected_file_index + 1) % self.file_entries.len();
+            KeyCode::Char('n') if !self.file_entries.is_empty() => {
+                self.selected_file_index = (self.selected_file_index + 1) % self.file_entries.len();
+                let offset =
+                    ui::diff_panel::diff_line_offset(self.commit_info.as_ref(), &self.file_entries);
+                if let Some(entry) = self.file_entries.get(self.selected_file_index) {
+                    self.diff_scroll = entry.diff_line + offset;
+                }
+            }
+            KeyCode::Char('p') if !self.file_entries.is_empty() => {
+                if self.selected_file_index > 0 {
+                    self.selected_file_index -= 1;
                     let offset = ui::diff_panel::diff_line_offset(
                         self.commit_info.as_ref(),
                         &self.file_entries,
@@ -775,24 +761,10 @@ impl App {
                     if let Some(entry) = self.file_entries.get(self.selected_file_index) {
                         self.diff_scroll = entry.diff_line + offset;
                     }
-                }
-            }
-            KeyCode::Char('p') => {
-                if !self.file_entries.is_empty() {
-                    if self.selected_file_index > 0 {
-                        self.selected_file_index -= 1;
-                        let offset = ui::diff_panel::diff_line_offset(
-                            self.commit_info.as_ref(),
-                            &self.file_entries,
-                        );
-                        if let Some(entry) = self.file_entries.get(self.selected_file_index) {
-                            self.diff_scroll = entry.diff_line + offset;
-                        }
-                    } else {
-                        // Wrap from first: reset to top
-                        self.diff_scroll = 0;
-                        self.selected_file_index = 0;
-                    }
+                } else {
+                    // Wrap from first: reset to top
+                    self.diff_scroll = 0;
+                    self.selected_file_index = 0;
                 }
             }
             KeyCode::Home => {
@@ -938,7 +910,7 @@ impl App {
         } else if rect_contains(&table_area, click_pos) {
             self.focus = Panel::Commits;
             let rel_row = (row.saturating_sub(table_area.y).saturating_sub(2)) as usize;
-            let filtered_idx = rel_row + self.table_state.offset() as usize;
+            let filtered_idx = rel_row + self.table_state.offset();
             if let Some(vis_idx) = self.filtered_to_visible(filtered_idx) {
                 self.selected_index = vis_idx;
             }
@@ -1133,10 +1105,8 @@ impl App {
                     self.branch_index = 0;
                 }
             }
-            Panel::Commits => {
-                if self.visible_count() > 0 {
-                    self.selected_index = (self.selected_index + 1) % self.visible_count();
-                }
+            Panel::Commits if self.visible_count() > 0 => {
+                self.selected_index = (self.selected_index + 1) % self.visible_count();
             }
             Panel::Diff => {
                 self.diff_scroll += 1;
@@ -1155,13 +1125,11 @@ impl App {
                     self.branch_index = self.branch_tree.len() - 1;
                 }
             }
-            Panel::Commits => {
-                if self.visible_count() > 0 {
-                    if self.selected_index > 0 {
-                        self.selected_index -= 1;
-                    } else {
-                        self.selected_index = self.visible_count() - 1;
-                    }
+            Panel::Commits if self.visible_count() > 0 => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                } else {
+                    self.selected_index = self.visible_count() - 1;
                 }
             }
             Panel::Diff => {
@@ -1266,7 +1234,7 @@ impl App {
             branch_scrollbar_area,
             self.branch_tree.len(),
             branch_visible,
-            branch_list_state.offset() as usize,
+            branch_list_state.offset(),
             branch_focus_style,
         );
 
@@ -1295,17 +1263,15 @@ impl App {
         let (table_content_area, table_scrollbar_area) =
             ui::scrollbar_view::ScrollbarView::split(table_area);
 
-        ui::commit_table::render(
-            frame,
-            table_content_area,
-            &self.filtered_commits,
-            self.selected_index,
-            self.focus == Panel::Commits,
-            &self.visible_to_commit,
-            self.all_commits.len(),
-            !self.search_query.is_empty(),
-            &mut self.table_state,
-        );
+        let table_ctx = ui::commit_table::CommitTableCtx {
+            commits: &self.filtered_commits,
+            visible_index: self.selected_index,
+            is_focused: self.focus == Panel::Commits,
+            visible_to_commit: &self.visible_to_commit,
+            total_loaded: self.all_commits.len(),
+            search_active: !self.search_query.is_empty(),
+        };
+        ui::commit_table::render(frame, table_content_area, &table_ctx, &mut self.table_state);
 
         let table_focus_style = if self.focus == Panel::Commits {
             Style::default().fg(Color::Rgb(180, 140, 255))
@@ -1318,7 +1284,7 @@ impl App {
             table_scrollbar_area,
             self.filtered_commits.len(),
             table_visible,
-            self.table_state.offset() as usize,
+            self.table_state.offset(),
             table_focus_style,
         );
 
@@ -1331,17 +1297,16 @@ impl App {
         let (diff_content_area, diff_scrollbar_area) =
             ui::scrollbar_view::ScrollbarView::split(diff_area);
 
-        let diff_total_lines = ui::diff_panel::render(
-            frame,
-            diff_content_area,
-            self.commit_info.as_ref(),
-            &self.diff_lines,
-            &self.file_entries,
-            self.selected_file_index,
-            self.diff_scroll,
-            self.focus == Panel::Diff,
+        let diff_ctx = ui::diff_panel::DiffPanelCtx {
+            commit_info: self.commit_info.as_ref(),
+            diff_lines: &self.diff_lines,
+            file_entries: &self.file_entries,
+            selected_file_index: self.selected_file_index,
+            diff_scroll: self.diff_scroll,
+            is_focused: self.focus == Panel::Diff,
             short_hash,
-        );
+        };
+        let diff_total_lines = ui::diff_panel::render(frame, diff_content_area, &diff_ctx);
 
         let diff_focus_style = if self.focus == Panel::Diff {
             Style::default().fg(Color::Rgb(180, 140, 255))
