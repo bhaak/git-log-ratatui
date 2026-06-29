@@ -339,9 +339,30 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             }
         }
 
-        // Find parent columns that differ from current_col (merge connectors)
-        let parent_cols: Vec<usize> = if info.is_merge {
-            (0..2)
+        // Find branches that start at this commit index (fork points) in different columns
+        let mut fork_start_cols = Vec::new();
+        for branch in graph.all_branches.iter() {
+            let col = match branch.visual.column {
+                Some(c) => c,
+                None => continue,
+            };
+            let (Some(start), Some(_end)) = branch.range else {
+                continue;
+            };
+            if start == i && col != current_col {
+                fork_start_cols.push(col);
+                if col > max_active_col {
+                    max_active_col = col;
+                }
+            }
+        }
+
+        // Find parent columns that differ from current_col
+        // For merges: draw top corners (╭ ╮) — horizontal lines merging down
+        let mut merge_parent_cols = Vec::new();
+
+        if info.is_merge {
+            merge_parent_cols = (0..2)
                 .filter_map(|p| {
                     info.parents[p].and_then(|oid| {
                         graph.indices.get(&oid).and_then(|&idx| {
@@ -352,22 +373,23 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
                     })
                 })
                 .filter(|&c| c != current_col)
-                .collect()
-        } else {
-            Vec::new()
-        };
+                .collect();
+        }
 
         // Ensure parent columns are included in the graph line
-        for &pc in &parent_cols {
+        for &pc in &merge_parent_cols {
             if pc > max_active_col {
                 max_active_col = pc;
             }
         }
 
-        // Build graph line string — draw corners at parent columns for merges
+        // Build graph line string — draw corners at parent columns
         let mut line = String::with_capacity(max_active_col + 1);
         for (col, &is_active) in active.iter().enumerate().take(max_active_col + 1) {
-            if is_active || parent_cols.contains(&col) {
+            let is_merge_parent = merge_parent_cols.contains(&col);
+            let is_fork_start = fork_start_cols.contains(&col);
+
+            if is_active || is_merge_parent || is_fork_start {
                 if col == current_col {
                     line.push(if info.is_merge {
                         '\u{25CB}'
@@ -375,12 +397,19 @@ fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
                         '\u{25CF}'
                     });
                     // ○ merge, ● normal
-                } else if parent_cols.contains(&col) {
-                    // Corner toward the parent: curve from horizontal to vertical
+                } else if is_merge_parent {
+                    // Merge connector: horizontal lines curving down
                     if col < current_col {
                         line.push('\u{256D}'); // ╭ parent to the left, curve from right
                     } else {
                         line.push('\u{256E}'); // ╮ parent to the right, curve from left
+                    }
+                } else if is_fork_start {
+                    // New branch starting here: vertical line curving toward child branch
+                    if col < current_col {
+                        line.push('\u{2570}'); // ╰ new branch left, curve from right
+                    } else {
+                        line.push('\u{256F}'); // ╯ new branch right, curve from left
                     }
                 } else {
                     line.push('\u{2502}'); // │ branch continuation
