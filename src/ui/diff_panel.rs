@@ -113,12 +113,33 @@ fn build_all_lines<'a>(
         )));
 
         for (i, entry) in file_entries.iter().enumerate() {
-            let style = if i == selected_file_index {
+            let selected = i == selected_file_index;
+            let status_color = match entry.status {
+                '+' => Color::Green,
+                '-' => Color::Red,
+                '~' => Color::Yellow,
+                '→' => Color::Blue,
+                _ => Color::Gray,
+            };
+            let name_style = if selected {
                 Style::default().bg(Color::White).fg(Color::Black)
             } else {
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
-            lines.push(Line::from(Span::styled(entry.name.to_string(), style)));
+            let status_style = if selected {
+                Style::default().bg(Color::White).fg(status_color)
+            } else {
+                Style::default().fg(status_color)
+            };
+            let display_name = if let Some(ref old) = entry.old_name {
+                diff_paths(old, &entry.name)
+            } else {
+                entry.name.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", entry.status), status_style),
+                Span::styled(display_name, name_style),
+            ]));
         }
 
         lines.push(Line::from(""));
@@ -368,6 +389,35 @@ pub fn diff_line_offset(commit_info: Option<&CommitInfo>, file_entries: &[FileEn
     offset
 }
 
+/// Format a renamed path diff like `app/commands/{belege → kreditor}/test_command.rb`
+fn diff_paths(old: &str, new: &str) -> String {
+    let old_chars: Vec<char> = old.chars().collect();
+    let new_chars: Vec<char> = new.chars().collect();
+
+    let prefix_len = old_chars
+        .iter()
+        .zip(new_chars.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let old_rest = &old_chars[prefix_len..];
+    let new_rest = &new_chars[prefix_len..];
+
+    let suffix_len = old_rest
+        .iter()
+        .rev()
+        .zip(new_rest.iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let old_mid: String = old_rest[..old_rest.len() - suffix_len].iter().collect();
+    let new_mid: String = new_rest[..new_rest.len() - suffix_len].iter().collect();
+    let suffix: String = old_rest[old_rest.len() - suffix_len..].iter().collect();
+    let prefix: String = old_chars[..prefix_len].iter().collect();
+
+    format!("{}{{{} → {}}}{}", prefix, old_mid, new_mid, suffix)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +476,14 @@ mod tests {
             find_next_added_line(&lines, 0, &maps),
             Some("added content")
         );
+    }
+
+    #[test]
+    fn test_diff_paths() {
+        assert_eq!(
+            diff_paths("src/old/module.rs", "src/new/module.rs"),
+            "src/{old → new}/module.rs"
+        );
+        assert_eq!(diff_paths("old.rs", "new.rs"), "{old → new}.rs");
     }
 }

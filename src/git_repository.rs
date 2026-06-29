@@ -149,9 +149,24 @@ impl GitRepository {
             if last_file_id != Some(delta_id) {
                 last_file_id = Some(delta_id);
                 if let Some(path) = delta.new_file().path() {
+                    let status = match delta.status() {
+                        git2::Delta::Added => '+',
+                        git2::Delta::Deleted => '-',
+                        git2::Delta::Modified | git2::Delta::Typechange => '~',
+                        git2::Delta::Renamed | git2::Delta::Copied => '→',
+                        _ => '?',
+                    };
+                    let old_path = delta
+                        .old_file()
+                        .path()
+                        .map(|p| p.to_string_lossy().to_string());
+                    let new_path = path.to_string_lossy().to_string();
+                    let old_name = old_path.filter(|o| o != &new_path);
                     file_entries.push(FileEntry {
                         name: path.to_string_lossy().to_string(),
                         diff_line: diff_lines.len(),
+                        status,
+                        old_name,
                     });
                 }
             }
