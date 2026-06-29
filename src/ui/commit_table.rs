@@ -123,14 +123,29 @@ pub fn render(
                     Style::default().fg(Color::DarkGray),
                 ))
             } else {
-                Line::from(Span::styled(
+                let mut spans: Vec<Span> = Vec::new();
+                if !commit.decorations.is_empty() {
+                    spans.push(Span::raw("("));
+                    for (i, deco) in commit.decorations.iter().enumerate() {
+                        if i > 0 {
+                            spans.push(Span::raw(", "));
+                        }
+                        spans.push(Span::styled(
+                            deco.label.clone(),
+                            decoration_style(&deco.kind),
+                        ));
+                    }
+                    spans.push(Span::raw(") "));
+                }
+                spans.push(Span::styled(
                     truncate(&commit.subject, subject_width as usize),
                     if commit.merge {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default().fg(Color::White)
                     },
-                ))
+                ));
+                Line::from(spans)
             };
 
             let author_span = Line::from(Span::styled(
@@ -174,27 +189,15 @@ pub fn render(
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
     // Graph lines from git-graph are already Unicode box-drawing characters; use them directly
     let padded = format!("{:width$}", commit.graph, width = graph_width);
-    let mut spans = Vec::new();
 
-    spans.push(Span::styled(
+    Line::from(Span::styled(
         padded,
         if commit.merge {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
         },
-    ));
-
-    for deco in &commit.decorations {
-        let (bg, fg) = decoration_colors(&deco.kind);
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            format!(" {} ", deco.label),
-            Style::default().fg(fg).bg(bg),
-        ));
-    }
-
-    Line::from(spans)
+    ))
 }
 
 fn build_hash_span(commit: &Commit) -> Line<'static> {
@@ -230,12 +233,12 @@ fn graph_only_decorations(commit: &Commit) -> String {
     }
 }
 
-fn decoration_colors(kind: &DecorationKind) -> (Color, Color) {
+fn decoration_style(kind: &DecorationKind) -> Style {
     match kind {
-        DecorationKind::Head => (Color::Rgb(0, 85, 0), Color::Rgb(100, 255, 100)),
-        DecorationKind::Tag => (Color::Rgb(0, 85, 85), Color::Rgb(100, 255, 255)),
-        DecorationKind::LocalBranch => (Color::Rgb(85, 85, 0), Color::Rgb(255, 255, 100)),
-        DecorationKind::RemoteBranch => (Color::Rgb(85, 0, 85), Color::Rgb(255, 100, 255)),
+        DecorationKind::Tag => Style::default().fg(Color::Yellow),
+        DecorationKind::LocalBranch => Style::default().fg(Color::Green),
+        DecorationKind::RemoteBranch => Style::default().fg(Color::Red),
+        DecorationKind::Head => Style::default().fg(Color::Rgb(100, 255, 100)),
     }
 }
 
