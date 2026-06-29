@@ -1260,12 +1260,7 @@ impl App {
             diff_focus_style,
         );
 
-        let count_info = ui::help_bar::format_commit_count(
-            self.selected_index,
-            self.visible_count(),
-            self.all_commits.len(),
-        );
-        ui::help_bar::render(frame, help_area, self.focus, &count_info);
+        ui::help_bar::render(frame, help_area, self.focus);
 
         // Trigger diff load on selection change
         let current_hash = if self.visible_count() > 0 {

@@ -9,7 +9,7 @@ use ratatui::{
 use crate::models::Panel;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
-pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &str) {
+pub fn render(frame: &mut Frame, area: Rect, focus: Panel) {
     if area.width < 10 || area.height < 2 {
         return;
     }
@@ -60,8 +60,6 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
         spans.push(Span::raw("  "));
     }
 
-    spans.push(Span::styled(commit_count_info, desc_style));
-
     let paragraph = Paragraph::new(Line::from(spans)).block(
         Block::default()
             .title(" Help ")
@@ -70,41 +68,4 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, commit_count_info: &s
     );
 
     frame.render_widget(paragraph, area);
-}
-
-/// Format commit count information string.
-/// Shows dash when no commits, or "selected/total" or "selected/total (filtered from full)".
-pub fn format_commit_count(selected: usize, visible: usize, total: usize) -> String {
-    if visible == 0 {
-        " - ".to_string()
-    } else if visible == total {
-        format!(" {}/{} ", selected + 1, visible)
-    } else {
-        format!(" {}/{} (filtered from {}) ", selected + 1, visible, total)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_commit_count_no_commits() {
-        assert_eq!(format_commit_count(0, 0, 0), " - ");
-    }
-
-    #[test]
-    fn test_format_commit_count_all_visible() {
-        assert_eq!(format_commit_count(2, 10, 10), " 3/10 ");
-    }
-
-    #[test]
-    fn test_format_commit_count_filtered() {
-        assert_eq!(format_commit_count(0, 5, 20), " 1/5 (filtered from 20) ");
-    }
-
-    #[test]
-    fn test_format_commit_count_first_item() {
-        assert_eq!(format_commit_count(0, 1, 1), " 1/1 ");
-    }
 }

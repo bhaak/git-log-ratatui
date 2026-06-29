@@ -181,7 +181,14 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .header(header)
         .block(
             Block::default()
-                .title(" Commits ")
+                .title(format!(
+                    " Commits - {} ",
+                    format_commit_count_info(
+                        ctx.visible_index,
+                        ctx.commits.len(),
+                        ctx.total_loaded,
+                    )
+                ))
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )
@@ -193,6 +200,16 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     }
 
     frame.render_stateful_widget(table, area, state);
+}
+
+fn format_commit_count_info(selected: usize, visible: usize, total: usize) -> String {
+    if visible == 0 {
+        "-".to_string()
+    } else if visible == total {
+        format!("{}/{}", selected + 1, visible)
+    } else {
+        format!("{}/{} ({} filtered)", selected + 1, visible, total)
+    }
 }
 
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
@@ -304,5 +321,25 @@ mod tests {
         // max_len=5: target=4, byte 4 is inside 🎉 → step back to byte 2 (=char boundary 🎉 start)
         // &s[..2]="hi" → "hi…"
         assert_eq!(truncate(s, 5), "hi…");
+    }
+
+    #[test]
+    fn test_format_commit_count_info_no_commits() {
+        assert_eq!(format_commit_count_info(0, 0, 0), "-");
+    }
+
+    #[test]
+    fn test_format_commit_count_info_all_visible() {
+        assert_eq!(format_commit_count_info(2, 10, 10), "3/10");
+    }
+
+    #[test]
+    fn test_format_commit_count_info_filtered() {
+        assert_eq!(format_commit_count_info(0, 5, 20), "1/5 (20 filtered)");
+    }
+
+    #[test]
+    fn test_format_commit_count_info_first_item() {
+        assert_eq!(format_commit_count_info(0, 1, 1), "1/1");
     }
 }
