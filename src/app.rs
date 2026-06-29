@@ -813,62 +813,40 @@ impl App {
         let click_pos = (col, row);
 
         // Scrollbar click handling — intercept before content click
-        let (_, branch_sb) = ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
-        if rect_contains(&branch_sb, click_pos) {
+        if let Some(new_pos) = self
+            .branch_scrollbar
+            .click_to_index(branch_visible_area, click_pos)
+        {
             self.dragging = None;
-            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                branch_sb,
-                row,
-                self.branch_scrollbar.content_length(),
-                self.branch_scrollbar.viewport_length(),
-            ) {
-                self.focus = Panel::Branches;
-                self.scrollbar_drag = Some(Panel::Branches);
-                if new_pos < self.branch_tree.len() {
-                    self.branch_index = new_pos;
-                }
+            self.focus = Panel::Branches;
+            self.scrollbar_drag = Some(Panel::Branches);
+            if new_pos < self.branch_tree.len() {
+                self.branch_index = new_pos;
             }
             return;
         }
-        let (_, table_sb) = ui::scrollbar_view::ScrollbarView::split(areas.table);
-        if rect_contains(&table_sb, click_pos) {
+        if let Some(new_pos) = self.table_scrollbar.click_to_index(areas.table, click_pos) {
             self.dragging = None;
-            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                table_sb,
-                row,
-                self.table_scrollbar.content_length(),
-                self.table_scrollbar.viewport_length(),
-            ) {
-                self.focus = Panel::Commits;
-                self.scrollbar_drag = Some(Panel::Commits);
-                // new_pos is a filtered index; find the closest visible row
-                let mut fidx = new_pos;
-                loop {
-                    if let Some(vis_idx) = self.filtered_to_visible(fidx) {
-                        self.selected_index = vis_idx;
-                        break;
-                    }
-                    if fidx == 0 {
-                        break;
-                    }
-                    fidx -= 1;
+            self.focus = Panel::Commits;
+            self.scrollbar_drag = Some(Panel::Commits);
+            let mut fidx = new_pos;
+            loop {
+                if let Some(vis_idx) = self.filtered_to_visible(fidx) {
+                    self.selected_index = vis_idx;
+                    break;
                 }
+                if fidx == 0 {
+                    break;
+                }
+                fidx -= 1;
             }
             return;
         }
-        let (_, diff_sb) = ui::scrollbar_view::ScrollbarView::split(areas.diff);
-        if rect_contains(&diff_sb, click_pos) {
+        if let Some(new_pos) = self.diff_scrollbar.click_to_index(areas.diff, click_pos) {
             self.dragging = None;
-            if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                diff_sb,
-                row,
-                self.diff_scrollbar.content_length(),
-                self.diff_scrollbar.viewport_length(),
-            ) {
-                self.focus = Panel::Diff;
-                self.scrollbar_drag = Some(Panel::Diff);
-                self.diff_scroll = new_pos;
-            }
+            self.focus = Panel::Diff;
+            self.scrollbar_drag = Some(Panel::Diff);
+            self.diff_scroll = new_pos;
             return;
         }
 
@@ -965,26 +943,19 @@ impl App {
             );
             match panel {
                 Panel::Branches => {
-                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(branch_visible_area);
-                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                        sb,
-                        row,
-                        self.branch_scrollbar.content_length(),
-                        self.branch_scrollbar.viewport_length(),
-                    ) {
+                    if let Some(new_pos) = self
+                        .branch_scrollbar
+                        .click_to_index(branch_visible_area, (col, row))
+                    {
                         if new_pos < self.branch_tree.len() {
                             self.branch_index = new_pos;
                         }
                     }
                 }
                 Panel::Commits => {
-                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(areas.table);
-                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                        sb,
-                        row,
-                        self.table_scrollbar.content_length(),
-                        self.table_scrollbar.viewport_length(),
-                    ) {
+                    if let Some(new_pos) =
+                        self.table_scrollbar.click_to_index(areas.table, (col, row))
+                    {
                         let mut fidx = new_pos;
                         loop {
                             if let Some(vis_idx) = self.filtered_to_visible(fidx) {
@@ -999,13 +970,9 @@ impl App {
                     }
                 }
                 Panel::Diff => {
-                    let (_, sb) = ui::scrollbar_view::ScrollbarView::split(areas.diff);
-                    if let Some(new_pos) = ui::scrollbar_view::ScrollbarView::map_click_to_position(
-                        sb,
-                        row,
-                        self.diff_scrollbar.content_length(),
-                        self.diff_scrollbar.viewport_length(),
-                    ) {
+                    if let Some(new_pos) =
+                        self.diff_scrollbar.click_to_index(areas.diff, (col, row))
+                    {
                         self.diff_scroll = new_pos;
                     }
                 }

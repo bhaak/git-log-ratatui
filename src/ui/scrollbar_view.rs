@@ -96,4 +96,25 @@ impl ScrollbarView {
 
         Some(((ratio * range).round() as usize).min(max_position))
     }
+
+    /// Convenience: split `panel_area` and map a mouse click to a scroll position.
+    ///
+    /// Combines `split()`, positional containment check and `map_click_to_position()`.
+    /// Returns `None` if content fits entirely or click is outside the scrollbar area.
+    pub fn click_to_index(&self, panel_area: Rect, click_pos: (u16, u16)) -> Option<usize> {
+        let (_, sb) = Self::split(panel_area);
+        if click_pos.0 < sb.x
+            || click_pos.0 >= sb.x + sb.width
+            || click_pos.1 < sb.y
+            || click_pos.1 >= sb.y + sb.height
+        {
+            return None;
+        }
+        Self::map_click_to_position(
+            sb,
+            click_pos.1,
+            self.content_length(),
+            self.viewport_length(),
+        )
+    }
 }
