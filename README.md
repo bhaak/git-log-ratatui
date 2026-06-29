@@ -15,6 +15,9 @@ A TUI for browsing git log with ratatui.
 - Clipboard: copy short/full commit hash with y/Y
 - System clipboard paste into search with Ctrl+V
 - Scrollbars on branch, commit, and diff panels
+- Mouse support: click to focus/select, scroll to navigate, drag to resize panels
+- Suspend with Ctrl+Z (restores UI on resume)
+- Resizable panels: drag borders to adjust branch width and diff height
 
 ## Installation
 
@@ -36,47 +39,56 @@ If no path is given, the current directory is used.
 
 | Key | Action |
 |-----|--------|
-| `q` | Quit |
-| `Tab` | Cycle focus forward |
+| `q` / `Ctrl+C` | Quit |
+| `Tab` / `l` | Cycle focus forward |
+| `Shift+Tab` / `h` | Cycle focus backward |
+| `j` / `k` | Move down/up in focused panel |
+| `Ctrl+S` | Cycle branch scope |
+| `y` | Copy short hash (7 chars) |
+| `Y` | Copy full hash |
+| `Ctrl+V` | Paste clipboard into search |
+| `Ctrl+Z` | Suspend (fg to resume) |
 
 ### Branches
 
 | Key | Action |
 |-----|--------|
-| `↑↓` | Navigate |
-| `→←` | Expand/collapse |
-| `Space` | Toggle expand |
-| `Enter` | Load selected branch commits |
+| `↑↓` / `j`/`k` | Navigate |
+| `→` / `Enter` | Expand or load branch |
+| `←` | Collapse |
+| `Space` | Toggle expand/collapse |
 
 ### Search
 
 | Key | Action |
 |-----|--------|
 | `Esc` | Clear search |
-| `Ctrl+V` | Paste from clipboard |
+| `Ctrl+A` | Move cursor to start |
+| `Ctrl+E` | Move cursor to end |
+| `Ctrl+←/→` | Jump by word |
 
 ### Scope
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+S` | Cycle branch scope |
+| `Space` / `Enter` | Cycle branch scope |
 
 ### Commits
 
 | Key | Action |
 |-----|--------|
-| `↑↓` | Navigate |
-| `y` | Copy short hash (7 chars) |
-| `Y` | Copy full hash |
+| `↑↓` / `j`/`k` | Navigate |
+| `Enter` | Focus diff panel |
+| `PageUp` / `PageDown` | Jump 10 commits |
 
 ### Diff
 
 | Key | Action |
 |-----|--------|
-| `↑↓` | Navigate files |
+| `↑↓` / `j`/`k` | Navigate files or scroll |
 | `Enter` | Jump to selected file's diff |
-| `n/p` | Next/previous file |
-| `Home/End` | Scroll to top/bottom |
+| `n` / `p` | Next/previous file |
+| `Home` / `End` | Scroll to top/bottom |
 
 ## Architecture
 
