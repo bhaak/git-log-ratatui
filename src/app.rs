@@ -24,14 +24,6 @@ use crate::workers::{
     DiffCommand, DiffResult, DiffWorker,
 };
 
-const DEFAULT_BRANCH_PCT: u16 = 20;
-const MIN_BRANCH_PCT: u16 = 10;
-const MAX_BRANCH_PCT: u16 = 40;
-
-const DEFAULT_DIFF_PCT: u16 = 35;
-const MIN_DIFF_PCT: u16 = 10;
-const MAX_DIFF_PCT: u16 = 65;
-
 pub struct App {
     repo_path: String,
     branch_worker: BranchWorker,
@@ -64,7 +56,7 @@ pub struct App {
     focus: Panel,
     branch_width_pct: u16,
     diff_height_pct: u16,
-    dragging: Option<DragDirection>,
+    dragging: Option<ui::layout::DragDirection>,
     scrollbar_drag: Option<Panel>,
     last_size: Option<(u16, u16)>,
     last_mouse_pos: Option<(u16, u16)>,
@@ -80,12 +72,6 @@ pub struct App {
     commits_loaded: bool,
     diff_pending: bool,
     poll_interval_ms: u8,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DragDirection {
-    Vertical,
-    Horizontal,
 }
 
 impl App {
@@ -118,8 +104,8 @@ impl App {
             diff_scroll: 0,
             last_selected_hash: None,
             focus: Panel::Commits,
-            branch_width_pct: DEFAULT_BRANCH_PCT,
-            diff_height_pct: DEFAULT_DIFF_PCT,
+            branch_width_pct: ui::layout::DEFAULT_BRANCH_PCT,
+            diff_height_pct: ui::layout::DEFAULT_DIFF_PCT,
             dragging: None,
             scrollbar_drag: None,
             last_size: None,
@@ -952,21 +938,13 @@ impl App {
         let full = Rect::new(0, 0, tw, th);
         let (branch_area, right_area, _, _, table_area, _) = self.compute_areas(full);
 
-        let border_x = branch_area.x + branch_area.width;
-        if (col as i32 - border_x as i32).abs() <= 2
-            && row >= branch_area.y
-            && row < branch_area.y + branch_area.height
-        {
-            self.dragging = Some(DragDirection::Vertical);
+        if ui::layout::is_on_vertical_border(col, row, branch_area) {
+            self.dragging = Some(ui::layout::DragDirection::Vertical);
             return;
         }
 
-        let border_y = table_area.y + table_area.height;
-        if (row as i32 - border_y as i32).abs() <= 2
-            && col >= right_area.x
-            && col < right_area.x + right_area.width
-        {
-            self.dragging = Some(DragDirection::Horizontal);
+        if ui::layout::is_on_horizontal_border(col, row, right_area, table_area) {
+            self.dragging = Some(ui::layout::DragDirection::Horizontal);
         }
     }
 
@@ -1037,17 +1015,14 @@ impl App {
         }
 
         match self.dragging {
-            Some(DragDirection::Vertical) => {
+            Some(ui::layout::DragDirection::Vertical) => {
                 if let Some((tw, _)) = self.last_size {
-                    let pct = ((col as f32) / (tw as f32) * 100.0) as u16;
-                    self.branch_width_pct = pct.clamp(MIN_BRANCH_PCT, MAX_BRANCH_PCT);
+                    self.branch_width_pct = ui::layout::vertical_resize_pct(col, tw);
                 }
             }
-            Some(DragDirection::Horizontal) => {
+            Some(ui::layout::DragDirection::Horizontal) => {
                 if let Some((_, th)) = self.last_size {
-                    let pct = (((th.saturating_sub(row).saturating_sub(3)) as f32) / (th as f32)
-                        * 100.0) as u16;
-                    self.diff_height_pct = pct.clamp(MIN_DIFF_PCT, MAX_DIFF_PCT);
+                    self.diff_height_pct = ui::layout::horizontal_resize_pct(row, th, 3);
                 }
             }
             None => {}
@@ -1391,8 +1366,8 @@ mod tests {
             diff_scroll: 0,
             last_selected_hash: None,
             focus: Panel::Commits,
-            branch_width_pct: DEFAULT_BRANCH_PCT,
-            diff_height_pct: DEFAULT_DIFF_PCT,
+            branch_width_pct: ui::layout::DEFAULT_BRANCH_PCT,
+            diff_height_pct: ui::layout::DEFAULT_DIFF_PCT,
             dragging: None,
             scrollbar_drag: None,
             last_size: None,
