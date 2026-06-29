@@ -133,10 +133,15 @@ impl GitRepository {
         };
 
         let mut diff_opts = git2::DiffOptions::new();
-        let diff = self
+        let mut diff = self
             .repo
             .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))
             .map_err(|e| format!("Diff error: {}", e))?;
+
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        diff.find_similar(Some(&mut find_opts))
+            .map_err(|e| format!("Rename detection error: {}", e))?;
 
         let mut diff_lines = Vec::new();
         let mut file_entries = Vec::new();
