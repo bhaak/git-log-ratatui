@@ -889,7 +889,6 @@ impl App {
                         } else {
                             self.request_commits(Some(item.full_path.clone()));
                         }
-                        self.focus = Panel::Commits;
                     }
                 }
             }
