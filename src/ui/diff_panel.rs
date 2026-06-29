@@ -126,11 +126,7 @@ fn build_all_lines<'a>(
             } else {
                 Style::default().fg(Color::Rgb(100, 150, 255))
             };
-            let status_style = if selected {
-                Style::default().bg(Color::White).fg(status_color)
-            } else {
-                Style::default().fg(status_color)
-            };
+            let status_style = Style::default().fg(status_color);
             let display_name = if let Some(ref old) = entry.old_name {
                 diff_paths(old, &entry.name)
             } else {
