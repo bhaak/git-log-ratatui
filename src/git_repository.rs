@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use git_graph::graph::GitGraph;
+use rayon::prelude::*;
 
 use crate::diff_format::append_diff_line;
 use crate::graph::{build_commits_from_graph, create_graph_settings};
@@ -247,6 +248,12 @@ impl GitRepository {
             });
         }
 
+        // Sort every decoration list once by priority, so enrich_commits can
+        // simply clone without re-sorting per commit.
+        for decos in map.values_mut() {
+            decos.sort_unstable_by_key(|d| d.kind.priority());
+        }
+
         Ok(map)
     }
 
@@ -256,31 +263,38 @@ impl GitRepository {
         commits: &mut [Commit],
         decoration_map: &HashMap<git2::Oid, Vec<Decoration>>,
     ) {
-        for commit in commits.iter_mut() {
-            if commit.graph_only || commit.hash.is_empty() {
-                continue;
-            }
+        let repo_path = self.repo_path.clone();
 
-            let oid = match git2::Oid::from_str(&commit.hash) {
-                Ok(oid) => oid,
-                Err(_) => continue,
-            };
-            let git_commit = match self.repo.find_commit(oid) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+        // Open one git2::Repository per rayon worker thread; find_commit is read-only.
+        commits.par_iter_mut().for_each_init(
+            || {
+                git2::Repository::open(Path::new(&repo_path))
+                    .expect("Failed to open repository for enrich_commits")
+            },
+            |repo, commit| {
+                if commit.graph_only || commit.hash.is_empty() {
+                    return;
+                }
 
-            commit.author = git_commit.author().name().unwrap_or("").to_string();
-            commit.date = time_to_string(git_commit.time());
-            commit.subject = git_commit.summary().unwrap_or("").to_string();
-            commit.merge = git_commit.parent_count() > 1;
+                let oid = match git2::Oid::from_str(&commit.hash) {
+                    Ok(oid) => oid,
+                    Err(_) => return,
+                };
+                let git_commit = match repo.find_commit(oid) {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
 
-            if let Some(decos) = decoration_map.get(&oid) {
-                let mut sorted: Vec<Decoration> = decos.clone();
-                sorted.sort_by_key(|d| d.kind.priority());
-                commit.decorations = sorted;
-            }
-        }
+                commit.author = git_commit.author().name().unwrap_or("").to_string();
+                commit.date = time_to_string(git_commit.time());
+                commit.subject = git_commit.summary().unwrap_or("").to_string();
+                commit.merge = git_commit.parent_count() > 1;
+
+                if let Some(decos) = decoration_map.get(&oid) {
+                    commit.decorations = decos.clone();
+                }
+            },
+        );
 
         let mut expanded_idx = 0;
         for commit in commits.iter_mut() {
