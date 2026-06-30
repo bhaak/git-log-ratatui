@@ -38,7 +38,7 @@ pub fn create_graph_settings(scope: BranchScope) -> &'static Settings {
 }
 
 pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
-    let mut commits = Vec::new();
+    let mut commits = Vec::with_capacity(graph.commits.len());
 
     let num_cols = graph
         .all_branches
@@ -48,10 +48,27 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
         .map(|c| c + 1)
         .unwrap_or(1);
 
+    // Collect branches with column and range for sweep-line processing.
+    // Sorting by start/end avoids O(N*B) per-commit scanning.
+    let mut branch_starts: Vec<(usize, usize)> = Vec::new();
+    let mut branch_ends: Vec<(usize, usize)> = Vec::new();
+    for branch in graph.all_branches.iter() {
+        let Some(col) = branch.visual.column else {
+            continue;
+        };
+        let (Some(start), Some(end)) = branch.range else {
+            continue;
+        };
+        branch_starts.push((start, col));
+        branch_ends.push((end, col));
+    }
+    branch_starts.sort_unstable_by_key(|&(s, _)| s);
+    branch_ends.sort_unstable_by_key(|&(e, _)| e);
+
     // Build a map from parent OID to the set of child columns.
     // Used to detect fork points: if any child is in a different column,
     // the parent commit is a fork point.
-    let mut child_cols: HashMap<Oid, HashSet<usize>> = HashMap::new();
+    let mut child_cols: HashMap<Oid, HashSet<usize>> = HashMap::with_capacity(graph.commits.len());
     for info in graph.commits.iter() {
         let current_col = info
             .branch_trace
@@ -62,30 +79,39 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
         }
     }
 
+    let mut active = vec![false; num_cols];
+    let mut max_active_col: usize = 0;
+    let mut start_ptr: usize = 0;
+    let mut end_ptr: usize = 0;
+
     for (i, info) in graph.commits.iter().enumerate() {
         let current_col = info
             .branch_trace
             .and_then(|t| graph.all_branches[t].visual.column)
             .unwrap_or(0);
 
-        // Determine which branches are active at this commit index
-        let mut active = vec![false; num_cols];
-        let mut max_active_col = current_col;
-        for branch in graph.all_branches.iter() {
-            let col = match branch.visual.column {
-                Some(c) => c,
-                None => continue,
-            };
-            let (Some(start), Some(end)) = branch.range else {
-                continue;
-            };
-            if start <= i && i <= end {
-                active[col] = true;
-                if col > max_active_col {
-                    max_active_col = col;
-                }
-            }
+        // Sweep-line: add branches starting at or before this commit index
+        while start_ptr < branch_starts.len() && branch_starts[start_ptr].0 <= i {
+            let col = branch_starts[start_ptr].1;
+            active[col] = true;
+            max_active_col = max_active_col.max(col);
+            start_ptr += 1;
         }
+
+        // Sweep-line: remove branches that ended before this commit index
+        while end_ptr < branch_ends.len() && branch_ends[end_ptr].0 < i {
+            let col = branch_ends[end_ptr].1;
+            active[col] = false;
+            end_ptr += 1;
+        }
+
+        // Recompute max_active_col if the max column branch was removed
+        if !active[max_active_col] {
+            max_active_col = active.iter().rposition(|&a| a).unwrap_or(0);
+        }
+
+        // Ensure current column is always covered
+        max_active_col = max_active_col.max(current_col);
 
         // Find fork points: commits with children in at least two different columns
         let mut fork_start_cols = Vec::new();
