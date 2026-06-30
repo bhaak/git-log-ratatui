@@ -1,9 +1,9 @@
 
 - [ ] after suspend, no cursor is shown
 - [ ] fg does not fully restore the UI
-- [ ] +/-/~/→ in green, red, yellow, blue? for added, removed, changed, and moved
+- [X] +/-/~/→ in green, red, yellow, blue? for added, removed, changed, and moved
 
-- [ ] / is shown in tree view
+- [X] / is shown in tree view
 
 - [ ] show commit in local timezone or with timezone info
 
