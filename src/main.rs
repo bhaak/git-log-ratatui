@@ -1,8 +1,13 @@
 mod app;
 mod clipboard;
+mod diff_format;
+mod diff_pairing;
 mod git_repository;
+mod graph;
 mod lcs;
 mod models;
+mod text_utils;
+mod time_format;
 mod tree;
 mod ui;
 mod workers;

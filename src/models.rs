@@ -34,6 +34,18 @@ pub enum DecorationKind {
     RemoteBranch,
 }
 
+impl DecorationKind {
+    /// Sort priority for decoration display (lower = first).
+    pub fn priority(&self) -> u8 {
+        match self {
+            DecorationKind::Head => 0,
+            DecorationKind::LocalBranch => 1,
+            DecorationKind::Tag => 2,
+            DecorationKind::RemoteBranch => 3,
+        }
+    }
+}
+
 /// Structured metadata for a single commit (from git2).
 #[derive(Debug, Clone, Default)]
 pub struct CommitInfo {

@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::models::*;
+use crate::text_utils::{format_commit_count_info, truncate};
 use crate::ui::layout::TABLE_OVERHEAD;
 
 const COL_GRAPH_MAX: u16 = 12;
@@ -202,16 +203,6 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     frame.render_stateful_widget(table, area, state);
 }
 
-fn format_commit_count_info(selected: usize, visible: usize, total: usize) -> String {
-    if visible == 0 {
-        "-".to_string()
-    } else if visible == total {
-        format!("{}/{}", selected + 1, visible)
-    } else {
-        format!("{}/{} ({} filtered)", selected + 1, visible, total)
-    }
-}
-
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
     // Graph lines from git-graph are already Unicode box-drawing characters; use them directly
     let padded = format!("{:width$}", commit.graph, width = graph_width);
@@ -268,78 +259,131 @@ fn decoration_style(kind: &DecorationKind) -> Style {
     }
 }
 
-/// Truncate a string to at most `max_len` bytes, snapping to a valid char boundary.
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len || max_len <= 1 {
-        return s.to_string();
-    }
-    // Find the last valid char boundary at or before max_len - 1 (for the "…" char)
-    let target = max_len.saturating_sub(1);
-    let end = if s.is_char_boundary(target) {
-        target
-    } else {
-        (0..target)
-            .rev()
-            .find(|&i| s.is_char_boundary(i))
-            .unwrap_or(0)
-    };
-    if end == 0 {
-        return s.to_string(); // can't meaningfully truncate with a char-safe prefix
-    }
-    format!("{}…", &s[..end])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn make_commit(hash: &str, graph: &str, merge: bool, decorations: Vec<Decoration>) -> Commit {
+        Commit {
+            hash: hash.to_string(),
+            graph: graph.to_string(),
+            graph_only: false,
+            author: String::new(),
+            date: String::new(),
+            subject: String::new(),
+            merge,
+            decorations,
+            deco_line: 0,
+        }
+    }
+
+    // --- build_hash_span ---
+
     #[test]
-    fn test_truncate_ascii() {
-        assert_eq!(truncate("hello", 5), "hello");
-        assert_eq!(truncate("hello", 4), "hel…");
+    fn test_build_hash_span_long_hash() {
+        let c = make_commit("abc1234567890abcdef", "", false, vec![]);
+        let span = build_hash_span(&c);
+        // Should be truncated to SHORT_HASH_LEN (7)
+        let expected = Span::styled(
+            "abc1234".to_string(),
+            Style::default().fg(Color::Rgb(200, 150, 100)),
+        );
+        assert_eq!(span, Line::from(expected));
     }
 
     #[test]
-    fn test_truncate_multibyte() {
-        // "Mäller": M(0)+ä(1-2)+l(3)+l(4)+e(5)+r(6) = 7 bytes
-        assert_eq!(truncate("Mäller", 7), "Mäller");
-        // max_len=5: target=4, byte 4 is 'l' (=char boundary) → &s[..4]="Mäl" → "Mäl…"
-        assert_eq!(truncate("Mäller", 5), "Mäl…");
-        // max_len=3: target=2, byte 2 is inside 'ä' → step back to byte 1 (still inside 'ä')
-        // step back to byte 0 (=char boundary) → &s[..0]="" → "…"
-        // Actually "…" for empty prefix is bad UX but technically correct char-safe behavior.
-        // The caller should pass reasonable max_len values (>= 1).
+    fn test_build_hash_span_short_hash() {
+        let c = make_commit("abc", "", false, vec![]);
+        let span = build_hash_span(&c);
+        let expected = Span::styled(
+            "abc".to_string(),
+            Style::default().fg(Color::Rgb(200, 150, 100)),
+        );
+        assert_eq!(span, Line::from(expected));
     }
 
     #[test]
-    fn test_truncate_emoji() {
-        // "hi🎉there" = h(0)+i(1)+🎉(2-5)+t(6)+h(7)+e(8)+r(9)+e(10) = 11 bytes
-        let s = "hi🎉there";
-        assert_eq!(truncate(s, 20), "hi🎉there");
-        // max_len=9: target=8, byte 8 is 'e' (=char boundary) → &s[..8]="hi🎉th" → "hi🎉th…"
-        assert_eq!(truncate(s, 9), "hi🎉th…");
-        // max_len=5: target=4, byte 4 is inside 🎉 → step back to byte 2 (=char boundary 🎉 start)
-        // &s[..2]="hi" → "hi…"
-        assert_eq!(truncate(s, 5), "hi…");
+    fn test_build_hash_span_merge() {
+        let c = make_commit("abc1234567890abcdef", "", true, vec![]);
+        let span = build_hash_span(&c);
+        let expected = Span::styled(
+            "abc1234".to_string(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        assert_eq!(span, Line::from(expected));
+    }
+
+    // --- build_graph_span ---
+
+    #[test]
+    fn test_build_graph_span_normal() {
+        let c = make_commit("", "●", false, vec![]);
+        let span = build_graph_span(&c, 2);
+        let expected = Span::styled("● ".to_string(), Style::default().fg(Color::DarkGray));
+        assert_eq!(span, Line::from(expected));
     }
 
     #[test]
-    fn test_format_commit_count_info_no_commits() {
-        assert_eq!(format_commit_count_info(0, 0, 0), "-");
+    fn test_build_graph_span_merge() {
+        let c = make_commit("", "○", true, vec![]);
+        let span = build_graph_span(&c, 1);
+        let expected = Span::styled("○".to_string(), Style::default().fg(Color::Yellow));
+        assert_eq!(span, Line::from(expected));
+    }
+
+    // --- graph_only_decorations ---
+
+    #[test]
+    fn test_graph_only_decorations_empty() {
+        let c = make_commit("", "", false, vec![]);
+        assert_eq!(graph_only_decorations(&c), "");
     }
 
     #[test]
-    fn test_format_commit_count_info_all_visible() {
-        assert_eq!(format_commit_count_info(2, 10, 10), "3/10");
+    fn test_graph_only_decorations_with_labels() {
+        let c = make_commit(
+            "",
+            "",
+            false,
+            vec![
+                Decoration {
+                    label: "main".to_string(),
+                    kind: DecorationKind::LocalBranch,
+                },
+                Decoration {
+                    label: "v1.0".to_string(),
+                    kind: DecorationKind::Tag,
+                },
+            ],
+        );
+        assert_eq!(graph_only_decorations(&c), "main, v1.0");
+    }
+
+    // --- decoration_style ---
+
+    #[test]
+    fn test_decoration_style_tag() {
+        let style = decoration_style(&DecorationKind::Tag);
+        assert_eq!(style, Style::default().fg(Color::Yellow));
     }
 
     #[test]
-    fn test_format_commit_count_info_filtered() {
-        assert_eq!(format_commit_count_info(0, 5, 20), "1/5 (20 filtered)");
+    fn test_decoration_style_local_branch() {
+        let style = decoration_style(&DecorationKind::LocalBranch);
+        assert_eq!(style, Style::default().fg(Color::Green));
     }
 
     #[test]
-    fn test_format_commit_count_info_first_item() {
-        assert_eq!(format_commit_count_info(0, 1, 1), "1/1");
+    fn test_decoration_style_remote_branch() {
+        let style = decoration_style(&DecorationKind::RemoteBranch);
+        assert_eq!(style, Style::default().fg(Color::Red));
+    }
+
+    #[test]
+    fn test_decoration_style_head() {
+        let style = decoration_style(&DecorationKind::Head);
+        assert_eq!(style, Style::default().fg(Color::Rgb(100, 255, 100)));
     }
 }

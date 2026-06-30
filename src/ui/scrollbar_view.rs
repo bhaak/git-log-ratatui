@@ -121,3 +121,72 @@ impl ScrollbarView {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scrollbar_view_new_is_empty() {
+        let sv = ScrollbarView::new();
+        assert_eq!(sv.content_length(), 0);
+        assert_eq!(sv.viewport_length(), 0);
+    }
+
+    #[test]
+    fn test_split_produces_two_areas() {
+        let panel = Rect::new(0, 0, 100, 30);
+        let (content, scrollbar) = ScrollbarView::split(panel);
+        assert_eq!(content.width + scrollbar.width, panel.width);
+        assert_eq!(scrollbar.width, SCROLLBAR_WIDTH);
+        assert_eq!(content.height, panel.height);
+        assert_eq!(scrollbar.height, panel.height);
+    }
+
+    #[test]
+    fn test_map_click_to_position_top() {
+        let sb = Rect::new(95, 0, 1, 30);
+        let pos = ScrollbarView::map_click_to_position(sb, 0, 100, 10);
+        assert_eq!(pos, Some(0));
+    }
+
+    #[test]
+    fn test_map_click_to_position_bottom() {
+        let sb = Rect::new(95, 0, 1, 30);
+        let pos = ScrollbarView::map_click_to_position(sb, 29, 100, 10);
+        assert!(pos.is_some());
+        assert!(pos.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_map_click_to_position_no_scroll_needed() {
+        let sb = Rect::new(95, 0, 1, 30);
+        // Content fits in viewport — no scrollbar needed
+        assert_eq!(ScrollbarView::map_click_to_position(sb, 15, 5, 10), None);
+    }
+
+    #[test]
+    fn test_map_click_to_position_zero_height() {
+        let sb = Rect::new(95, 0, 1, 0);
+        assert_eq!(ScrollbarView::map_click_to_position(sb, 0, 100, 10), None);
+    }
+
+    #[test]
+    fn test_click_to_index_inside_scrollbar() {
+        let sv = ScrollbarView::new();
+        let panel = Rect::new(0, 0, 100, 30);
+        // Click on the scrollbar area (x=99, which is in the scrollbar column)
+        let result = sv.click_to_index(panel, (99, 5));
+        // content_length=0, viewport_length=0 → no scroll needed → None
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_click_to_index_outside_scrollbar() {
+        let sv = ScrollbarView::new();
+        let panel = Rect::new(0, 0, 100, 30);
+        // Click on the content area, not the scrollbar
+        let result = sv.click_to_index(panel, (50, 5));
+        assert_eq!(result, None);
+    }
+}

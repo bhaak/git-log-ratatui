@@ -17,6 +17,7 @@ use ratatui::{
 
 use crate::clipboard;
 use crate::models::*;
+use crate::text_utils;
 use crate::tree;
 use crate::ui;
 use crate::workers::{
@@ -642,8 +643,7 @@ impl App {
                 self.apply_search_filter();
             }
             KeyCode::Backspace if self.cursor_pos > 0 => {
-                let prev =
-                    ui::search_panel::prev_char_boundary(&self.search_query, self.cursor_pos);
+                let prev = text_utils::prev_char_boundary(&self.search_query, self.cursor_pos);
                 self.search_query.remove(prev);
                 self.cursor_pos = prev;
                 self.apply_search_filter();
@@ -655,19 +655,19 @@ impl App {
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.cursor_pos =
-                        ui::search_panel::prev_word_boundary(&self.search_query, self.cursor_pos);
+                        text_utils::prev_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
                     self.cursor_pos =
-                        ui::search_panel::prev_char_boundary(&self.search_query, self.cursor_pos);
+                        text_utils::prev_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.cursor_pos =
-                        ui::search_panel::next_word_boundary(&self.search_query, self.cursor_pos);
+                        text_utils::next_word_boundary(&self.search_query, self.cursor_pos);
                 } else {
                     self.cursor_pos =
-                        ui::search_panel::next_char_boundary(&self.search_query, self.cursor_pos);
+                        text_utils::next_char_boundary(&self.search_query, self.cursor_pos);
                 }
             }
             KeyCode::Home => {
@@ -871,7 +871,7 @@ impl App {
             return;
         }
 
-        if rect_contains(&areas.branch, click_pos) {
+        if ui::layout::rect_contains(&areas.branch, click_pos) {
             self.focus = Panel::Branches;
             let rel_row = (row
                 .saturating_sub(areas.branch.y)
@@ -892,12 +892,12 @@ impl App {
                     }
                 }
             }
-        } else if rect_contains(&areas.scope, click_pos) {
+        } else if ui::layout::rect_contains(&areas.scope, click_pos) {
             self.focus = Panel::Scope;
             self.cycle_scope();
-        } else if rect_contains(&areas.search, click_pos) {
+        } else if ui::layout::rect_contains(&areas.search, click_pos) {
             self.focus = Panel::Search;
-        } else if rect_contains(&areas.table, click_pos) {
+        } else if ui::layout::rect_contains(&areas.table, click_pos) {
             self.focus = Panel::Commits;
             let rel_row = (row.saturating_sub(areas.table.y).saturating_sub(
                 ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD),
@@ -906,7 +906,7 @@ impl App {
             if let Some(vis_idx) = self.filtered_to_visible(filtered_idx) {
                 self.selected_index = vis_idx;
             }
-        } else if rect_contains(&areas.diff, click_pos) {
+        } else if ui::layout::rect_contains(&areas.diff, click_pos) {
             self.focus = Panel::Diff;
             let rel_row = (row
                 .saturating_sub(areas.diff.y)
@@ -1031,7 +1031,7 @@ impl App {
         let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
         let pos = (col, row);
 
-        if rect_contains(&areas.branch, pos) {
+        if ui::layout::rect_contains(&areas.branch, pos) {
             if direction > 0 {
                 // Scroll down
                 if self.branch_index + 1 < self.branch_tree.len() {
@@ -1047,7 +1047,7 @@ impl App {
                     self.branch_index = self.branch_tree.len() - 1;
                 }
             }
-        } else if rect_contains(&areas.table, pos) {
+        } else if ui::layout::rect_contains(&areas.table, pos) {
             if self.visible_count() > 0 {
                 if direction > 0 {
                     self.selected_index = (self.selected_index + 1) % self.visible_count();
@@ -1059,7 +1059,7 @@ impl App {
                     }
                 }
             }
-        } else if rect_contains(&areas.diff, pos) {
+        } else if ui::layout::rect_contains(&areas.diff, pos) {
             if direction > 0 {
                 self.diff_scroll += 1;
             } else {
@@ -1279,13 +1279,6 @@ impl App {
             }
         }
     }
-}
-
-fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
-    pos.0 >= rect.x
-        && pos.0 < rect.x + rect.width
-        && pos.1 >= rect.y
-        && pos.1 < rect.y + rect.height
 }
 
 #[cfg(test)]
