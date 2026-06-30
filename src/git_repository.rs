@@ -197,7 +197,7 @@ impl GitRepository {
         let repo = git2::Repository::open(Path::new(&self.repo_path))
             .map_err(|e| format!("Failed to open repository for git-graph: {}", e))?;
 
-        let graph = GitGraph::new(repo, &settings, start_point, None)
+        let graph = GitGraph::new(repo, settings, start_point, None)
             .map_err(|e| format!("git-graph error: {}", e))?;
 
         let mut commits = build_commits_from_graph(&graph);

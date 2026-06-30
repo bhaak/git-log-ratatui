@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use git2::Oid;
 use git_graph::graph::GitGraph;
@@ -9,12 +10,7 @@ use git_graph::settings::{
 
 use crate::models::{BranchScope, Commit};
 
-pub fn create_graph_settings(scope: BranchScope) -> Settings {
-    let include_remote = match scope {
-        BranchScope::All | BranchScope::Remote => true,
-        BranchScope::Local => false,
-    };
-
+fn base_settings(include_remote: bool) -> Settings {
     Settings {
         reverse_commit_order: false,
         debug: false,
@@ -28,6 +24,16 @@ pub fn create_graph_settings(scope: BranchScope) -> Settings {
         branches: BranchSettings::from(BranchSettingsDef::simple())
             .expect("simple branching model is valid"),
         merge_patterns: MergePatterns::default(),
+    }
+}
+
+static SETTINGS_WITH_REMOTE: LazyLock<Settings> = LazyLock::new(|| base_settings(true));
+static SETTINGS_LOCAL_ONLY: LazyLock<Settings> = LazyLock::new(|| base_settings(false));
+
+pub fn create_graph_settings(scope: BranchScope) -> &'static Settings {
+    match scope {
+        BranchScope::All | BranchScope::Remote => &SETTINGS_WITH_REMOTE,
+        BranchScope::Local => &SETTINGS_LOCAL_ONLY,
     }
 }
 
@@ -293,7 +299,7 @@ mod tests {
     /// Build a GitGraph from a repository with default settings.
     fn build_graph(repo: git2::Repository) -> GitGraph {
         let settings = create_graph_settings(BranchScope::All);
-        GitGraph::new(repo, &settings, None, None).expect("GitGraph::new failed")
+        GitGraph::new(repo, settings, None, None).expect("GitGraph::new failed")
     }
 
     #[test]
@@ -417,7 +423,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let repo = git2::Repository::init(&dir).unwrap();
 
-        let result = GitGraph::new(repo, &create_graph_settings(BranchScope::All), None, None);
+        let result = GitGraph::new(repo, create_graph_settings(BranchScope::All), None, None);
         match result {
             Ok(graph) => {
                 let commits = build_commits_from_graph(&graph);

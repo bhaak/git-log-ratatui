@@ -28,6 +28,12 @@ use crossterm::{
 struct Cli {
     /// Path to the git repository (defaults to current directory).
     path: Option<String>,
+    /// Run in profiling mode: load all data once and print timing.
+    #[arg(long)]
+    profile: bool,
+    /// Number of iterations for profile mode (default: 1).
+    #[arg(long, default_value = "1")]
+    profile_iterations: u32,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +50,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if git2::Repository::discover(&repo_path).is_err() {
         eprintln!("Error: '{}' is not a git repository.", repo_path);
         std::process::exit(1);
+    }
+
+    if cli.profile {
+        let mut app = app::App::new(repo_path)?;
+        return app
+            .run_profile(cli.profile_iterations)
+            .map_err(|e| e.into());
     }
 
     // Setup terminal

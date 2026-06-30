@@ -58,6 +58,11 @@ impl BranchWorker {
     pub fn try_recv(&self) -> Option<BranchResult> {
         self.result_rx.try_recv().ok()
     }
+
+    /// Receive a result (blocking).
+    pub fn recv(&self) -> Option<BranchResult> {
+        self.result_rx.recv().ok()
+    }
 }
 
 // --- Commit worker ---
@@ -118,6 +123,11 @@ impl CommitWorker {
     /// Try to receive a result (non-blocking).
     pub fn try_recv(&self) -> Option<CommitResult> {
         self.result_rx.try_recv().ok()
+    }
+
+    /// Receive a result (blocking).
+    pub fn recv(&self) -> Option<CommitResult> {
+        self.result_rx.recv().ok()
     }
 }
 
@@ -191,5 +201,10 @@ impl DiffWorker {
     /// Try to receive a result (non-blocking).
     pub fn try_recv(&self) -> Option<DiffResult> {
         self.result_rx.try_recv().ok()
+    }
+
+    /// Receive a result (blocking).
+    pub fn recv(&self) -> Option<DiffResult> {
+        self.result_rx.recv().ok()
     }
 }
