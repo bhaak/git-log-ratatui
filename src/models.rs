@@ -9,6 +9,9 @@ pub struct Commit {
     pub subject: String,
     /// Unicode graph line from git-graph (already box-drawing characters).
     pub graph: String,
+    /// Lane color index per character position (same length as graph).
+    /// 255 = no lane (space). Otherwise lane_index % LANE_COLORS.len() picks the color.
+    pub graph_colors: Vec<u8>,
     /// True if this is a merge commit (has multiple parents).
     pub merge: bool,
     /// True if this row is a graph-only continuation line (no commit).

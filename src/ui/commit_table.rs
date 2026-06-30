@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::graph::LANE_COLORS;
 use crate::models::*;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::ui::layout::TABLE_OVERHEAD;
@@ -204,17 +205,38 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
 }
 
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
-    // Graph lines from git-graph are already Unicode box-drawing characters; use them directly
-    let padded = format!("{:width$}", commit.graph, width = graph_width);
+    if commit.graph.is_empty() || commit.graph_colors.len() != commit.graph.chars().count() {
+        // Fallback: single-color graph line
+        let padded = format!("{:width$}", commit.graph, width = graph_width);
+        return Line::from(Span::styled(
+            padded,
+            if commit.merge {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            },
+        ));
+    }
 
-    Line::from(Span::styled(
-        padded,
-        if commit.merge {
-            Style::default().fg(Color::Yellow)
+    let chars: Vec<char> = commit.graph.chars().collect();
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(chars.len());
+
+    for (i, &ch) in chars.iter().enumerate() {
+        let color = if i < commit.graph_colors.len() && commit.graph_colors[i] != 255 {
+            LANE_COLORS[(commit.graph_colors[i] as usize) % LANE_COLORS.len()]
         } else {
-            Style::default().fg(Color::DarkGray)
-        },
-    ))
+            Color::DarkGray
+        };
+        spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
+    }
+
+    // Pad to graph_width
+    let current_width = spans.len();
+    for _ in current_width..graph_width {
+        spans.push(Span::raw(" "));
+    }
+
+    Line::from(spans)
 }
 
 fn build_hash_span(commit: &Commit) -> Line<'static> {
@@ -267,6 +289,7 @@ mod tests {
         Commit {
             hash: hash.to_string(),
             graph: graph.to_string(),
+            graph_colors: vec![],
             graph_only: false,
             author: String::new(),
             date: String::new(),

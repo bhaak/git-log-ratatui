@@ -7,8 +7,21 @@ use git_graph::print::format::CommitFormat;
 use git_graph::settings::{
     BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
 };
+use ratatui::style::Color;
 
 use crate::models::{BranchScope, Commit};
+
+/// 8 lane colors distributed evenly across the hue spectrum (port from GitX's laneColors).
+pub const LANE_COLORS: [Color; 8] = [
+    Color::Rgb(0xCC, 0x66, 0x4D), // reddish
+    Color::Rgb(0xCC, 0x99, 0x4D), // orange
+    Color::Rgb(0xCC, 0xCC, 0x4D), // yellow
+    Color::Rgb(0x4D, 0xCC, 0x66), // green
+    Color::Rgb(0x4D, 0xCC, 0xCC), // cyan
+    Color::Rgb(0x4D, 0x99, 0xCC), // blue
+    Color::Rgb(0x99, 0x4D, 0xCC), // purple
+    Color::Rgb(0xCC, 0x4D, 0x99), // magenta
+];
 
 fn base_settings(include_remote: bool) -> Settings {
     Settings {
@@ -154,45 +167,48 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             }
         }
 
-        // Build graph line string — draw corners at parent columns
-        let mut line = String::with_capacity(max_active_col + 1);
-        for (col, &is_active) in active.iter().enumerate().take(max_active_col + 1) {
+        // Build graph line string and per-column color indices.
+        let cap = max_active_col + 1;
+        let mut line = String::with_capacity(cap);
+        let mut colors = Vec::with_capacity(cap);
+        for (col, &is_active) in active.iter().enumerate().take(cap) {
             let is_merge_parent = merge_parent_cols.contains(&col);
             let is_fork_start = fork_start_cols.contains(&col);
 
             if is_active || is_merge_parent || is_fork_start {
+                let lane_color = (col % LANE_COLORS.len()) as u8;
                 if col == current_col {
                     line.push(if info.is_merge {
                         '\u{25CB}'
                     } else {
                         '\u{25CF}'
                     });
-                    // ○ merge, ● normal
                 } else if is_merge_parent {
-                    // Merge connector: horizontal lines curving down
                     if col < current_col {
-                        line.push('\u{256D}'); // ╭ parent to the left, curve from right
+                        line.push('\u{256D}');
                     } else {
-                        line.push('\u{256E}'); // ╮ parent to the right, curve from left
+                        line.push('\u{256E}');
                     }
                 } else if is_fork_start {
-                    // New branch starting here: vertical line curving toward child branch
                     if col < current_col {
-                        line.push('\u{2570}'); // ╰ new branch left, curve from right
+                        line.push('\u{2570}');
                     } else {
-                        line.push('\u{256F}'); // ╯ new branch right, curve from left
+                        line.push('\u{256F}');
                     }
                 } else {
-                    line.push('\u{2502}'); // │ branch continuation
+                    line.push('\u{2502}');
                 }
+                colors.push(lane_color);
             } else {
                 line.push(' ');
+                colors.push(255);
             }
         }
 
         commits.push(Commit {
             hash: info.oid.to_string(),
             graph: line,
+            graph_colors: colors,
             graph_only: false,
             author: String::new(),
             date: String::new(),
