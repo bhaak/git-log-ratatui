@@ -48,7 +48,8 @@ pub struct App {
     cursor_pos: usize,
 
     all_commits: Vec<Commit>,
-    filtered_commits: Vec<Commit>,
+    /// None = show all commits (references all_commits directly, no clone needed).
+    filtered_commits: Option<Vec<Commit>>,
     selected_index: usize,
     /// Maps visible row (skipping graph_only) to filtered_commits index.
     visible_to_commit: Vec<usize>,
@@ -101,7 +102,7 @@ impl App {
             search_query: String::new(),
             cursor_pos: 0,
             all_commits: Vec::new(),
-            filtered_commits: Vec::new(),
+            filtered_commits: None,
             selected_index: 0,
             visible_to_commit: Vec::new(),
             commit_info: None,
@@ -270,8 +271,19 @@ impl App {
                     self.all_commits = commits;
                     self.apply_search_filter();
                     self.commits_loaded = true;
-                    if !self.filtered_commits.is_empty() && self.commit_info.is_none() {
-                        let hash = self.filtered_commits[0].hash.clone();
+                    if !self
+                        .filtered_commits
+                        .as_deref()
+                        .unwrap_or(&self.all_commits)
+                        .is_empty()
+                        && self.commit_info.is_none()
+                    {
+                        let hash = self
+                            .filtered_commits
+                            .as_deref()
+                            .unwrap_or(&self.all_commits)[0]
+                            .hash
+                            .clone();
                         if !hash.is_empty() {
                             self.request_diff(&hash);
                         }
@@ -336,21 +348,22 @@ impl App {
 
     fn apply_search_filter(&mut self) {
         if self.search_query.is_empty() {
-            self.filtered_commits = self.all_commits.clone();
+            self.filtered_commits = None;
         } else {
             let q = self.search_query.to_lowercase();
-            self.filtered_commits = self
-                .all_commits
-                .iter()
-                .filter(|c| {
-                    c.graph_only
-                        || c.hash.to_lowercase().contains(&q)
-                        || c.author.to_lowercase().contains(&q)
-                        || c.date.to_lowercase().contains(&q)
-                        || c.subject.to_lowercase().contains(&q)
-                })
-                .cloned()
-                .collect();
+            self.filtered_commits = Some(
+                self.all_commits
+                    .iter()
+                    .filter(|c| {
+                        c.graph_only
+                            || c.hash.to_lowercase().contains(&q)
+                            || c.author.to_lowercase().contains(&q)
+                            || c.date.to_lowercase().contains(&q)
+                            || c.subject.to_lowercase().contains(&q)
+                    })
+                    .cloned()
+                    .collect(),
+            );
         }
         self.build_visible_mapping();
         self.selected_index = 0;
@@ -358,8 +371,12 @@ impl App {
     }
 
     fn build_visible_mapping(&mut self) {
-        self.visible_to_commit = (0..self.filtered_commits.len())
-            .filter(|&i| !self.filtered_commits[i].graph_only)
+        let commits = self
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&self.all_commits);
+        self.visible_to_commit = (0..commits.len())
+            .filter(|&i| !commits[i].graph_only)
             .collect();
     }
 
@@ -477,7 +494,12 @@ impl App {
             KeyCode::Char('y') => {
                 if self.visible_count() > 0 {
                     let ci = self.visible_to_filtered(self.selected_index);
-                    if let Some(c) = self.filtered_commits.get(ci) {
+                    if let Some(c) = self
+                        .filtered_commits
+                        .as_deref()
+                        .unwrap_or(&self.all_commits)
+                        .get(ci)
+                    {
                         let short = if c.hash.len() > ui::commit_table::SHORT_HASH_LEN {
                             &c.hash[..ui::commit_table::SHORT_HASH_LEN]
                         } else {
@@ -491,7 +513,12 @@ impl App {
             KeyCode::Char('Y') => {
                 if self.visible_count() > 0 {
                     let ci = self.visible_to_filtered(self.selected_index);
-                    if let Some(c) = self.filtered_commits.get(ci) {
+                    if let Some(c) = self
+                        .filtered_commits
+                        .as_deref()
+                        .unwrap_or(&self.all_commits)
+                        .get(ci)
+                    {
                         let _ = clipboard::copy_to_clipboard(&c.hash);
                     }
                 }
@@ -1271,7 +1298,10 @@ impl App {
             ui::scrollbar_view::ScrollbarView::split(areas.table);
 
         let table_ctx = ui::commit_table::CommitTableCtx {
-            commits: &self.filtered_commits,
+            commits: self
+                .filtered_commits
+                .as_deref()
+                .unwrap_or(&self.all_commits),
             visible_index: self.selected_index,
             is_focused: self.focus == Panel::Commits,
             visible_to_commit: &self.visible_to_commit,
@@ -1291,7 +1321,10 @@ impl App {
         self.table_scrollbar.render(
             frame,
             table_scrollbar_area,
-            self.filtered_commits.len(),
+            self.filtered_commits
+                .as_deref()
+                .unwrap_or(&self.all_commits)
+                .len(),
             table_visible,
             self.table_state.offset(),
             table_focus_style,
@@ -1338,7 +1371,11 @@ impl App {
         // Trigger diff load on selection change
         let current_hash = if self.visible_count() > 0 {
             let ci = self.visible_to_filtered(self.selected_index);
-            self.filtered_commits.get(ci).map(|c| c.hash.clone())
+            self.filtered_commits
+                .as_deref()
+                .unwrap_or(&self.all_commits)
+                .get(ci)
+                .map(|c| c.hash.clone())
         } else {
             None
         };
@@ -1374,7 +1411,7 @@ mod tests {
             search_query: String::new(),
             cursor_pos: 0,
             all_commits: Vec::new(),
-            filtered_commits: Vec::new(),
+            filtered_commits: None,
             selected_index: 0,
             visible_to_commit: Vec::new(),
             commit_info: None,
@@ -1418,7 +1455,13 @@ mod tests {
         }];
         app.search_query.clear();
         app.apply_search_filter();
-        assert_eq!(app.filtered_commits.len(), 1);
+        assert_eq!(
+            app.filtered_commits
+                .as_deref()
+                .unwrap_or(&app.all_commits)
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1450,8 +1493,8 @@ mod tests {
         ];
         app.search_query = "bug".into();
         app.apply_search_filter();
-        assert_eq!(app.filtered_commits.len(), 1);
-        assert_eq!(app.filtered_commits[0].hash, "abc");
+        assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
+        assert_eq!(app.filtered_commits.as_deref().unwrap()[0].hash, "abc");
     }
 
     #[test]
@@ -1470,13 +1513,13 @@ mod tests {
         }];
         app.search_query = "bug".into();
         app.apply_search_filter();
-        assert_eq!(app.filtered_commits.len(), 1);
+        assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
     }
 
     #[test]
     fn test_visible_mapping_skips_graph_only() {
         let mut app = test_app();
-        app.filtered_commits = vec![
+        app.filtered_commits = Some(vec![
             Commit {
                 hash: "abc".into(),
                 author: "a".into(),
@@ -1510,7 +1553,7 @@ mod tests {
                 decorations: vec![],
                 deco_line: 0,
             },
-        ];
+        ]);
         app.build_visible_mapping();
         assert_eq!(app.visible_count(), 2);
         assert_eq!(app.visible_to_filtered(0), 0); // first commit
@@ -1527,7 +1570,7 @@ mod tests {
     #[test]
     fn test_clamp_selection_in_range() {
         let mut app = test_app();
-        app.filtered_commits = vec![Commit {
+        app.filtered_commits = Some(vec![Commit {
             hash: "abc".into(),
             author: "a".into(),
             date: "d".into(),
@@ -1537,7 +1580,7 @@ mod tests {
             graph_only: false,
             decorations: vec![],
             deco_line: 0,
-        }];
+        }]);
         app.build_visible_mapping();
         app.selected_index = 0;
         app.clamp_selection();
