@@ -187,6 +187,7 @@ impl GitRepository {
         &self,
         branch: Option<&str>,
         scope: BranchScope,
+        limit: Option<usize>,
     ) -> Result<Vec<Commit>, String> {
         let decoration_map = self.build_decoration_map()?;
 
@@ -198,7 +199,10 @@ impl GitRepository {
         let repo = git2::Repository::open(Path::new(&self.repo_path))
             .map_err(|e| format!("Failed to open repository for git-graph: {}", e))?;
 
-        let graph = GitGraph::new(repo, settings, start_point, None)
+        // `limit` caps the revwalk to the newest N commits. Because the walk is
+        // topological + time sorted, the first N commits are stable as N grows,
+        // so raising the limit only appends older commits.
+        let graph = GitGraph::new(repo, settings, start_point, limit)
             .map_err(|e| format!("git-graph error: {}", e))?;
 
         let mut commits = build_commits_from_graph(&graph);
@@ -315,7 +319,7 @@ mod tests {
     fn test_fetch_commits_on_current_repo() {
         let git = GitRepository::open(".").expect("failed to open repository");
         let commits = git
-            .fetch_commits(None, BranchScope::All)
+            .fetch_commits(None, BranchScope::All, None)
             .expect("fetch_commits failed");
         assert!(!commits.is_empty(), "expected at least one commit");
 

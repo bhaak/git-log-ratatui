@@ -88,10 +88,47 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         })
         .add_modifier(Modifier::BOLD);
 
-    // Calculate dynamic graph width (use char count, not byte length — all Unicode
-    // box-drawing/graph characters are single-width but 3 bytes each in UTF-8)
-    let max_graph = ctx
-        .commits
+    // Map the visible selection to an absolute index into `ctx.commits`.
+    let mapped_index = ctx
+        .visible_to_commit
+        .get(ctx.visible_index)
+        .copied()
+        .unwrap_or(0);
+
+    // Determine the viewport window and only build rows for the rows actually
+    // on screen. Building a Row for every commit (potentially tens of thousands)
+    // on every frame is what made navigation sluggish on large repos.
+    // TABLE_OVERHEAD accounts for the two borders plus the header row, which
+    // matches ratatui's own inner-height calculation for a bordered table.
+    let viewport_height = area.height.saturating_sub(TABLE_OVERHEAD) as usize;
+    let total = ctx.commits.len();
+
+    // Scroll-follow-selection: keep the previous absolute offset unless the
+    // selection has moved out of view, then clamp so we never scroll past the end.
+    let mut offset = state.offset();
+    if mapped_index < offset {
+        offset = mapped_index;
+    } else if viewport_height > 0 && mapped_index >= offset + viewport_height {
+        offset = mapped_index + 1 - viewport_height;
+    }
+    let max_offset = total.saturating_sub(viewport_height);
+    offset = offset.min(max_offset);
+
+    // Persist the absolute offset so the scrollbar and mouse-click mapping
+    // (which both read `state.offset()`) stay correct.
+    *state.offset_mut() = offset;
+
+    let end = (offset + viewport_height).min(total);
+    let window = if offset < end {
+        &ctx.commits[offset..end]
+    } else {
+        &[][..]
+    };
+
+    // Calculate dynamic graph width from the visible window only (use char count,
+    // not byte length — all Unicode box-drawing/graph characters are single-width
+    // but 3 bytes each in UTF-8).
+    let max_graph = window
         .iter()
         .map(|c| c.graph.chars().count())
         .max()
@@ -113,16 +150,8 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         Constraint::Length(COL_DATE),
     ];
 
-    // Build rows with mapped selection
-    let mapped_index = ctx
-        .visible_to_commit
-        .get(ctx.visible_index)
-        .copied()
-        .unwrap_or(0);
-
     // Filter graph_only rows out and show them with minimal content
-    let rows: Vec<Row> = ctx
-        .commits
+    let rows: Vec<Row> = window
         .iter()
         .map(|commit| {
             let graph_span = build_graph_span(commit, col_graph as usize);
@@ -197,11 +226,16 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .row_highlight_style(highlight_style)
         .column_spacing(1);
 
-    if !ctx.commits.is_empty() && mapped_index < ctx.commits.len() {
-        state.select(Some(mapped_index));
+    // `state` now holds the absolute offset (for the scrollbar / mouse mapping).
+    // Render with a local state whose offset is relative to the window slice, so
+    // the highlight lands on the right row without ratatui re-deriving the offset.
+    let mut local_state = TableState::default();
+    *local_state.offset_mut() = 0;
+    if !window.is_empty() && mapped_index >= offset && mapped_index < end {
+        local_state.select(Some(mapped_index - offset));
     }
 
-    frame.render_stateful_widget(table, area, state);
+    frame.render_stateful_widget(table, area, &mut local_state);
 }
 
 fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
@@ -408,5 +442,59 @@ mod tests {
     fn test_decoration_style_head() {
         let style = decoration_style(&DecorationKind::Head);
         assert_eq!(style, Style::default().fg(Color::LightGreen));
+    }
+
+    // --- viewport windowing (performance regression guard) ---
+
+    fn render_with(commit_count: usize, visible_index: usize, height: u16) -> TableState {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let commits: Vec<Commit> = (0..commit_count)
+            .map(|i| make_commit(&format!("{:040x}", i), "*", false, vec![]))
+            .collect();
+        let visible_to_commit: Vec<usize> = (0..commits.len()).collect();
+        let ctx = CommitTableCtx {
+            commits: &commits,
+            visible_index,
+            is_focused: true,
+            visible_to_commit: &visible_to_commit,
+            total_loaded: commits.len(),
+            search_active: false,
+        };
+        let mut state = TableState::default();
+        let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), &ctx, &mut state))
+            .unwrap();
+        state
+    }
+
+    #[test]
+    fn test_offset_follows_selection_into_view() {
+        // Height 13 => 13 - TABLE_OVERHEAD(3) = 10 visible data rows.
+        let state = render_with(1000, 500, 13);
+        let offset = state.offset();
+        let viewport = 10;
+        assert!(offset <= 500, "offset {} must not exceed selection", offset);
+        assert!(
+            500 < offset + viewport,
+            "selection must be within [{}, {}) viewport",
+            offset,
+            offset + viewport
+        );
+    }
+
+    #[test]
+    fn test_offset_zero_when_selection_at_start() {
+        let state = render_with(1000, 0, 13);
+        assert_eq!(state.offset(), 0);
+    }
+
+    #[test]
+    fn test_offset_clamped_at_end() {
+        // Selecting the last commit must not scroll past the end.
+        let state = render_with(1000, 999, 13);
+        let viewport = 10;
+        assert_eq!(state.offset(), 1000 - viewport);
     }
 }

@@ -70,9 +70,11 @@ impl BranchWorker {
 /// Commands sent to the commit worker thread.
 pub enum CommitCommand {
     /// Fetch commits for the given branch (None = all) and scope.
+    /// `limit` caps how many commits are walked (None = full history).
     FetchCommits {
         branch: Option<String>,
         scope: BranchScope,
+        limit: Option<usize>,
     },
 }
 
@@ -99,8 +101,12 @@ impl CommitWorker {
         thread::spawn(move || {
             for cmd in cmd_rx {
                 let result = match cmd {
-                    CommitCommand::FetchCommits { branch, scope } => {
-                        match repo.fetch_commits(branch.as_deref(), scope) {
+                    CommitCommand::FetchCommits {
+                        branch,
+                        scope,
+                        limit,
+                    } => {
+                        match repo.fetch_commits(branch.as_deref(), scope, limit) {
                             Ok(commits) => CommitResult::Commits(commits),
                             Err(e) => CommitResult::Error(e),
                         }

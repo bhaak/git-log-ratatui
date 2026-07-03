@@ -27,6 +27,10 @@ use crate::workers::{
 };
 
 const PAGE_SIZE: usize = 10;
+/// Number of commits loaded at startup. Keeps first paint fast on large repos.
+const INITIAL_COMMIT_LIMIT: usize = 5000;
+/// How many additional commits to load when scrolling near the end.
+const COMMIT_LIMIT_INCREMENT: usize = 5000;
 const POLL_INTERVAL_DEFAULT: u8 = 10;
 const POLL_INTERVAL_MAX: u8 = 200;
 const POLL_BACKOFF_STEP: u8 = 10;
@@ -80,6 +84,14 @@ pub struct App {
     commits_loaded: bool,
     diff_pending: bool,
     poll_interval_ms: u8,
+
+    /// Current cap on how many commits are loaded (grows as the user scrolls).
+    commit_limit: usize,
+    /// True once the full history has been loaded (raising the limit yields no more).
+    all_commits_loaded: bool,
+    /// True while an incremental "load more" request is in flight, so the
+    /// selection is preserved instead of reset when the larger result arrives.
+    loading_more: bool,
 }
 
 impl App {
@@ -127,6 +139,9 @@ impl App {
             commits_loaded: false,
             diff_pending: false,
             poll_interval_ms: POLL_INTERVAL_DEFAULT,
+            commit_limit: INITIAL_COMMIT_LIMIT,
+            all_commits_loaded: false,
+            loading_more: false,
         })
     }
 
@@ -234,11 +249,38 @@ impl App {
 
     fn request_commits(&mut self, branch: Option<String>) {
         self.commits_loaded = false;
+        // Fresh load (startup, branch change, scope change): reset the window.
+        self.commit_limit = INITIAL_COMMIT_LIMIT;
+        self.all_commits_loaded = false;
+        self.loading_more = false;
         self.selected_branch = branch.clone();
         self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.branch_scope,
+            limit: Some(self.commit_limit),
         });
+    }
+
+    /// Raise the commit limit and reload, appending older commits. Triggered when
+    /// the selection nears the end of the currently loaded commits.
+    fn request_more_commits(&mut self) {
+        self.commits_loaded = false;
+        self.loading_more = true;
+        self.commit_limit = self.commit_limit.saturating_add(COMMIT_LIMIT_INCREMENT);
+        self.commit_worker.send(CommitCommand::FetchCommits {
+            branch: self.selected_branch.clone(),
+            scope: self.branch_scope,
+            limit: Some(self.commit_limit),
+        });
+    }
+
+    /// Re-run the search filter after an incremental load while keeping the
+    /// current selection (unlike `apply_search_filter`, which resets it to 0).
+    fn reapply_filter_preserving_selection(&mut self) {
+        let prev = self.selected_index;
+        self.apply_search_filter();
+        self.selected_index = prev;
+        self.clamp_selection();
     }
 
     fn request_diff(&mut self, hash: &str) {
@@ -268,8 +310,18 @@ impl App {
         while let Some(result) = self.commit_worker.try_recv() {
             match result {
                 CommitResult::Commits(commits) => {
+                    let prev_len = self.all_commits.len();
                     self.all_commits = commits;
-                    self.apply_search_filter();
+                    if self.loading_more {
+                        self.loading_more = false;
+                        // Raising the limit yielded no new commits => history exhausted.
+                        if self.all_commits.len() <= prev_len {
+                            self.all_commits_loaded = true;
+                        }
+                        self.reapply_filter_preserving_selection();
+                    } else {
+                        self.apply_search_filter();
+                    }
                     self.commits_loaded = true;
                     if !self
                         .filtered_commits
@@ -1236,6 +1288,17 @@ impl App {
         self.cursor_pos = self.cursor_pos.min(self.search_query.len());
         self.clamp_selection();
 
+        // Incrementally load older commits when the selection nears the end of
+        // what's currently loaded. Skipped while a search filter is active (the
+        // filtered view isn't a reliable proxy for the loaded window) and while a
+        // load is already in flight (commits_loaded == false).
+        if !self.all_commits_loaded && self.commits_loaded && self.filtered_commits.is_none() {
+            let loaded = self.visible_count();
+            if loaded > 0 && self.selected_index + PAGE_SIZE >= loaded {
+                self.request_more_commits();
+            }
+        }
+
         // --- Branch panel (content + scrollbar) ---
         // Trim bottom so the help bar does not overwrite the panel border
         let branch_visible_area = Rect::new(
@@ -1436,6 +1499,9 @@ mod tests {
             commits_loaded: false,
             diff_pending: false,
             poll_interval_ms: 0,
+            commit_limit: INITIAL_COMMIT_LIMIT,
+            all_commits_loaded: false,
+            loading_more: false,
         }
     }
 
