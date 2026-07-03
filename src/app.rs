@@ -617,6 +617,7 @@ impl App {
             // Toggle simplified graph (colored bullets, no box-drawing lines)
             KeyCode::Char('g') if key.modifiers.is_empty() && self.focus == Panel::Commits => {
                 self.simplified_graph = !self.simplified_graph;
+                self.request_commits(self.selected_branch.clone());
                 return Ok(true);
             }
             _ => {}
