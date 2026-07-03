@@ -178,7 +178,11 @@ impl DiffWorker {
         let (result_tx, result_rx) = mpsc::channel::<DiffResult>();
 
         thread::spawn(move || {
-            for cmd in cmd_rx {
+            while let Ok(mut cmd) = cmd_rx.recv() {
+                // Drain all queued commands, keeping only the most recent one.
+                while let Ok(next) = cmd_rx.try_recv() {
+                    cmd = next;
+                }
                 let result = match cmd {
                     DiffCommand::FetchDiff { hash } => {
                         let commit_info = match repo.fetch_commit_info(&hash) {
