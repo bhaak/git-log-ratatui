@@ -95,6 +95,10 @@ pub struct App {
     /// When true, the complex git graph (box-drawing connectors) is replaced
     /// with simple colored bullets where color denotes the branch lane.
     simplified_graph: bool,
+    /// Cached commit list from the full (git-graph) fetch path.
+    full_commits_cache: Option<Vec<Commit>>,
+    /// Cached commit list from the simplified (git2 revwalk) fetch path.
+    simplified_commits_cache: Option<Vec<Commit>>,
 }
 
 impl App {
@@ -146,6 +150,8 @@ impl App {
             all_commits_loaded: false,
             loading_more: false,
             simplified_graph,
+            full_commits_cache: None,
+            simplified_commits_cache: None,
         })
     }
 
@@ -258,12 +264,46 @@ impl App {
         self.all_commits_loaded = false;
         self.loading_more = false;
         self.selected_branch = branch.clone();
+        // Branch / scope changed: the other mode's cache is now stale.
+        self.full_commits_cache = None;
+        self.simplified_commits_cache = None;
         self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.branch_scope,
             limit: Some(self.commit_limit),
             simplified: self.simplified_graph,
         });
+    }
+
+    /// Toggle between full (git-graph) and simplified (git2 revwalk) graphs.
+    /// Saves the current commit list to a cache so re-toggling is instant.
+    fn toggle_simplified_graph(&mut self) {
+        // Save current commits into the cache for the old mode.
+        if self.simplified_graph {
+            self.simplified_commits_cache = Some(self.all_commits.clone());
+        } else {
+            self.full_commits_cache = Some(self.all_commits.clone());
+        }
+
+        self.simplified_graph = !self.simplified_graph;
+
+        // Restore from cache if the target mode was previously loaded.
+        if self.simplified_graph {
+            if let Some(cached) = self.simplified_commits_cache.take() {
+                self.all_commits = cached;
+                self.commits_loaded = true;
+                self.apply_search_filter();
+                return;
+            }
+        } else if let Some(cached) = self.full_commits_cache.take() {
+            self.all_commits = cached;
+            self.commits_loaded = true;
+            self.apply_search_filter();
+            return;
+        }
+
+        // Cache miss: fetch from the worker thread.
+        self.request_commits(self.selected_branch.clone());
     }
 
     /// Raise the commit limit and reload, appending older commits. Triggered when
@@ -329,6 +369,12 @@ impl App {
                         self.apply_search_filter();
                     }
                     self.commits_loaded = true;
+                    // Cache the result for the current mode so toggle is instant.
+                    if self.simplified_graph {
+                        self.simplified_commits_cache = Some(self.all_commits.clone());
+                    } else {
+                        self.full_commits_cache = Some(self.all_commits.clone());
+                    }
                     if !self
                         .filtered_commits
                         .as_deref()
@@ -616,8 +662,7 @@ impl App {
             }
             // Toggle simplified graph (colored bullets, no box-drawing lines)
             KeyCode::Char('g') if key.modifiers.is_empty() && self.focus == Panel::Commits => {
-                self.simplified_graph = !self.simplified_graph;
-                self.request_commits(self.selected_branch.clone());
+                self.toggle_simplified_graph();
                 return Ok(true);
             }
             _ => {}
@@ -1516,6 +1561,8 @@ mod tests {
             all_commits_loaded: false,
             loading_more: false,
             simplified_graph: false,
+            full_commits_cache: None,
+            simplified_commits_cache: None,
         }
     }
 
