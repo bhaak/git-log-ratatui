@@ -92,6 +92,9 @@ pub struct App {
     /// True while an incremental "load more" request is in flight, so the
     /// selection is preserved instead of reset when the larger result arrives.
     loading_more: bool,
+    /// When true, the complex git graph (box-drawing connectors) is replaced
+    /// with simple colored bullets where color denotes the branch lane.
+    simplified_graph: bool,
 }
 
 impl App {
@@ -142,6 +145,7 @@ impl App {
             commit_limit: INITIAL_COMMIT_LIMIT,
             all_commits_loaded: false,
             loading_more: false,
+            simplified_graph: false,
         })
     }
 
@@ -606,6 +610,11 @@ impl App {
                     self.cursor_pos = 0;
                     self.apply_search_filter();
                 }
+                return Ok(true);
+            }
+            // Toggle simplified graph (colored bullets, no box-drawing lines)
+            KeyCode::Char('g') if key.modifiers.is_empty() && self.focus == Panel::Commits => {
+                self.simplified_graph = !self.simplified_graph;
                 return Ok(true);
             }
             _ => {}
@@ -1370,6 +1379,7 @@ impl App {
             visible_to_commit: &self.visible_to_commit,
             total_loaded: self.all_commits.len(),
             search_active: !self.search_query.is_empty(),
+            simplified_graph: self.simplified_graph,
         };
         ui::commit_table::render(frame, table_content_area, &table_ctx, &mut self.table_state);
 
@@ -1502,6 +1512,7 @@ mod tests {
             commit_limit: INITIAL_COMMIT_LIMIT,
             all_commits_loaded: false,
             loading_more: false,
+            simplified_graph: false,
         }
     }
 

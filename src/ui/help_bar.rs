@@ -40,6 +40,7 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel) {
             ("y", "Copy hash 7"),
             ("Y", "Copy full"),
             ("Enter", "→ Diff"),
+            ("g", "Graph toggle"),
         ],
         Panel::Diff => vec![
             ("j/k/↑↓", "File"),

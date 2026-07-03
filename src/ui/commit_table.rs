@@ -28,6 +28,8 @@ pub struct CommitTableCtx<'a> {
     pub visible_to_commit: &'a [usize],
     pub total_loaded: usize,
     pub search_active: bool,
+    /// When true, show simple colored bullets instead of full box-drawing graph.
+    pub simplified_graph: bool,
 }
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
@@ -127,14 +129,17 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
 
     // Calculate dynamic graph width from the visible window only (use char count,
     // not byte length — all Unicode box-drawing/graph characters are single-width
-    // but 3 bytes each in UTF-8).
-    let max_graph = window
-        .iter()
-        .map(|c| c.graph.chars().count())
-        .max()
-        .unwrap_or(MIN_GRAPH_WIDTH as usize) as u16;
-
-    let col_graph = max_graph.clamp(MIN_GRAPH_WIDTH, COL_GRAPH_MAX);
+    // but 3 bytes each in UTF-8). In simplified mode the graph is always 1 column.
+    let col_graph = if ctx.simplified_graph {
+        1
+    } else {
+        let max_graph = window
+            .iter()
+            .map(|c| c.graph.chars().count())
+            .max()
+            .unwrap_or(MIN_GRAPH_WIDTH as usize) as u16;
+        max_graph.clamp(MIN_GRAPH_WIDTH, COL_GRAPH_MAX)
+    };
 
     let available_width = area.width.saturating_sub(crate::ui::layout::PANEL_BORDER_H);
     let fixed_width = col_graph + COL_HASH + COL_AUTHOR + COL_DATE + COL_SEPARATORS;
@@ -154,7 +159,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     let rows: Vec<Row> = window
         .iter()
         .map(|commit| {
-            let graph_span = build_graph_span(commit, col_graph as usize);
+            let graph_span = build_graph_span(commit, col_graph as usize, ctx.simplified_graph);
             let hash_span = build_hash_span(commit);
 
             let subject_span = if commit.graph_only {
@@ -238,7 +243,11 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     frame.render_stateful_widget(table, area, &mut local_state);
 }
 
-fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
+fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Line<'static> {
+    if simplified {
+        return build_simplified_graph(commit);
+    }
+
     if commit.graph.is_empty() || commit.graph_colors.len() != commit.graph.chars().count() {
         // Fallback: single-color graph line
         let padded = format!("{:width$}", commit.graph, width = graph_width);
@@ -271,6 +280,25 @@ fn build_graph_span(commit: &Commit, graph_width: usize) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+
+/// Simplified graph: a colored bullet (●), or ○ for merges, no connecting lines.
+fn build_simplified_graph(commit: &Commit) -> Line<'static> {
+    let lane = commit
+        .graph_colors
+        .iter()
+        .find(|&&c| c != 255)
+        .copied()
+        .unwrap_or(0);
+
+    let ch = if commit.merge { '○' } else { '●' };
+    let color = if commit.merge {
+        Color::Yellow
+    } else {
+        LANE_COLORS[(lane as usize) % LANE_COLORS.len()]
+    };
+
+    Line::from(Span::styled(ch.to_string(), Style::default().fg(color)))
 }
 
 fn build_hash_span(commit: &Commit) -> Line<'static> {
@@ -377,7 +405,7 @@ mod tests {
     #[test]
     fn test_build_graph_span_normal() {
         let c = make_commit("", "●", false, vec![]);
-        let span = build_graph_span(&c, 2);
+        let span = build_graph_span(&c, 2, false);
         let expected = Span::styled("● ".to_string(), Style::default().fg(Color::DarkGray));
         assert_eq!(span, Line::from(expected));
     }
@@ -385,7 +413,25 @@ mod tests {
     #[test]
     fn test_build_graph_span_merge() {
         let c = make_commit("", "○", true, vec![]);
-        let span = build_graph_span(&c, 1);
+        let span = build_graph_span(&c, 1, false);
+        let expected = Span::styled("○".to_string(), Style::default().fg(Color::Yellow));
+        assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_build_simplified_graph_regular() {
+        let mut c = make_commit("", "●", false, vec![]);
+        c.graph_colors = vec![2]; // lane 2 → cyan
+        let span = build_simplified_graph(&c);
+        let expected = Span::styled("●".to_string(), Style::default().fg(LANE_COLORS[2]));
+        assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_build_simplified_graph_merge() {
+        let mut c = make_commit("", "○", true, vec![]);
+        c.graph_colors = vec![0];
+        let span = build_simplified_graph(&c);
         let expected = Span::styled("○".to_string(), Style::default().fg(Color::Yellow));
         assert_eq!(span, Line::from(expected));
     }
@@ -460,6 +506,7 @@ mod tests {
             visible_to_commit: &visible_to_commit,
             total_loaded: commits.len(),
             search_active: false,
+            simplified_graph: false,
         };
         let mut state = TableState::default();
         let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
