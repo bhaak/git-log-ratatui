@@ -407,6 +407,6 @@ mod tests {
     #[test]
     fn test_decoration_style_head() {
         let style = decoration_style(&DecorationKind::Head);
-        assert_eq!(style, Style::default().fg(Color::Rgb(100, 255, 100)));
+        assert_eq!(style, Style::default().fg(Color::LightGreen));
     }
 }
