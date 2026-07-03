@@ -98,7 +98,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(repo_path: String) -> Result<Self, String> {
+    pub fn new(repo_path: String, simplified_graph: bool) -> Result<Self, String> {
         let branch_worker = BranchWorker::new(&repo_path)?;
         let commit_worker = CommitWorker::new(&repo_path)?;
         let diff_worker = DiffWorker::new(&repo_path)?;
@@ -145,7 +145,7 @@ impl App {
             commit_limit: INITIAL_COMMIT_LIMIT,
             all_commits_loaded: false,
             loading_more: false,
-            simplified_graph: false,
+            simplified_graph,
         })
     }
 
@@ -1674,7 +1674,7 @@ mod tests {
 
     #[test]
     fn test_app_new_returns_ok() {
-        let result = App::new(".".to_string());
+        let result = App::new(".".to_string(), false);
         assert!(result.is_ok());
     }
 }

@@ -34,6 +34,9 @@ struct Cli {
     /// Number of iterations for profile mode (default: 1).
     #[arg(long, default_value = "1")]
     profile_iterations: u32,
+    /// Start with simplified graph (colored bullets, no connecting lines).
+    #[arg(long, short = 's')]
+    simplified_graph: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if cli.profile {
-        let mut app = app::App::new(repo_path)?;
+        let mut app = app::App::new(repo_path, cli.simplified_graph)?;
         return app
             .run_profile(cli.profile_iterations)
             .map_err(|e| e.into());
@@ -69,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let result = {
-        let mut app = app::App::new(repo_path)?;
+        let mut app = app::App::new(repo_path, cli.simplified_graph)?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(&mut terminal)))
     };
 
