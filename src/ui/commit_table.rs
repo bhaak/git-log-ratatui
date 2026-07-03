@@ -283,19 +283,17 @@ fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Li
 }
 
 /// Simplified graph: a colored bullet (●), or ○ for merges, no connecting lines.
+/// Bullets are colored by branch lane; commits not on a known branch tip render in gray.
 fn build_simplified_graph(commit: &Commit) -> Line<'static> {
-    let lane = commit
-        .graph_colors
-        .iter()
-        .find(|&&c| c != 255)
-        .copied()
-        .unwrap_or(0);
+    let lane = commit.graph_colors.iter().find(|&&c| c != 255).copied();
 
     let ch = if commit.merge { '○' } else { '●' };
     let color = if commit.merge {
         Color::Yellow
+    } else if let Some(l) = lane {
+        LANE_COLORS[(l as usize) % LANE_COLORS.len()]
     } else {
-        LANE_COLORS[(lane as usize) % LANE_COLORS.len()]
+        Color::DarkGray
     };
 
     Line::from(Span::styled(ch.to_string(), Style::default().fg(color)))

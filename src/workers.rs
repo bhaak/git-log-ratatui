@@ -71,10 +71,12 @@ impl BranchWorker {
 pub enum CommitCommand {
     /// Fetch commits for the given branch (None = all) and scope.
     /// `limit` caps how many commits are walked (None = full history).
+    /// `simplified` skips git-graph and uses a fast git2 Revwalk path.
     FetchCommits {
         branch: Option<String>,
         scope: BranchScope,
         limit: Option<usize>,
+        simplified: bool,
     },
 }
 
@@ -105,8 +107,14 @@ impl CommitWorker {
                         branch,
                         scope,
                         limit,
+                        simplified,
                     } => {
-                        match repo.fetch_commits(branch.as_deref(), scope, limit) {
+                        let fetch_result = if simplified {
+                            repo.fetch_commits_simplified(branch.as_deref(), scope, limit)
+                        } else {
+                            repo.fetch_commits(branch.as_deref(), scope, limit)
+                        };
+                        match fetch_result {
                             Ok(commits) => CommitResult::Commits(commits),
                             Err(e) => CommitResult::Error(e),
                         }

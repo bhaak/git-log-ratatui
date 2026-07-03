@@ -262,6 +262,7 @@ impl App {
             branch,
             scope: self.branch_scope,
             limit: Some(self.commit_limit),
+            simplified: self.simplified_graph,
         });
     }
 
@@ -275,6 +276,7 @@ impl App {
             branch: self.selected_branch.clone(),
             scope: self.branch_scope,
             limit: Some(self.commit_limit),
+            simplified: self.simplified_graph,
         });
     }
 

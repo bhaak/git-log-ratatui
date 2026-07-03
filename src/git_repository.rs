@@ -210,6 +210,157 @@ impl GitRepository {
         Ok(commits)
     }
 
+    /// Fast-path fetch that skips git-graph entirely. Walks commits with git2
+    /// Revwalk and assigns lane colors based on which branch tip each commit
+    /// belongs to. Much faster for the simplified graph view.
+    pub fn fetch_commits_simplified(
+        &self,
+        branch: Option<&str>,
+        scope: BranchScope,
+        limit: Option<usize>,
+    ) -> Result<Vec<Commit>, String> {
+        let decoration_map = self.build_decoration_map()?;
+        let branch_tip_colors = self.build_branch_tip_colors(scope)?;
+
+        let mut revwalk = self
+            .repo
+            .revwalk()
+            .map_err(|e| format!("Failed to create revwalk: {}", e))?;
+
+        revwalk
+            .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
+            .map_err(|e| format!("Failed to set revwalk sorting: {}", e))?;
+
+        if let Some(b) = branch {
+            revwalk
+                .push_ref(b)
+                .map_err(|e| format!("Failed to push branch ref '{}': {}", b, e))?;
+        } else {
+            self.push_scope_refs(&mut revwalk, scope)?;
+        }
+
+        let mut commits: Vec<Commit> = Vec::new();
+        for oid_result in revwalk {
+            let oid = oid_result.map_err(|e| format!("Revwalk error: {}", e))?;
+            if let Some(max) = limit {
+                if commits.len() >= max {
+                    break;
+                }
+            }
+
+            let lane = branch_tip_colors.get(&oid).copied().unwrap_or(255);
+            let graph = if lane == 255 {
+                // Find merge status from git2 for graph char
+                let merge = self
+                    .repo
+                    .find_commit(oid)
+                    .map(|c| c.parent_count() > 1)
+                    .unwrap_or(false);
+                let ch = if merge { '○' } else { '●' };
+                ch.to_string()
+            } else {
+                '●'.to_string()
+            };
+
+            commits.push(Commit {
+                hash: oid.to_string(),
+                graph,
+                graph_colors: vec![lane],
+                graph_only: false,
+                author: String::new(),
+                date: String::new(),
+                subject: String::new(),
+                merge: false,
+                decorations: Vec::new(),
+                deco_line: 0,
+            });
+        }
+
+        self.enrich_commits(&mut commits, &decoration_map);
+        Ok(commits)
+    }
+
+    /// Push all refs matching the scope into the revwalk.
+    fn push_scope_refs(
+        &self,
+        revwalk: &mut git2::Revwalk,
+        scope: BranchScope,
+    ) -> Result<(), String> {
+        let refs = self
+            .repo
+            .references()
+            .map_err(|e| format!("Failed to list references: {}", e))?;
+
+        for r in refs {
+            let r = r.map_err(|e| format!("Ref error: {}", e))?;
+            if !r.is_branch() && !r.is_tag() {
+                continue;
+            }
+            if scope == BranchScope::Local && r.is_remote() {
+                continue;
+            }
+            if scope == BranchScope::Remote && !r.is_remote() {
+                continue;
+            }
+            if r.is_tag() {
+                continue; // skip tags for commit walk
+            }
+            if let Some(name) = r.name() {
+                revwalk
+                    .push_ref(name)
+                    .map_err(|e| format!("Failed to push ref '{}': {}", name, e))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Build a mapping from branch tip OID to lane color index.
+    /// Each unique branch gets a color from LANE_COLORS based on its name hash.
+    fn build_branch_tip_colors(
+        &self,
+        scope: BranchScope,
+    ) -> Result<HashMap<git2::Oid, u8>, String> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut tips: HashMap<git2::Oid, u8> = HashMap::new();
+        let refs = self
+            .repo
+            .references()
+            .map_err(|e| format!("Failed to list references: {}", e))?;
+
+        for r in refs {
+            let r = r.map_err(|e| format!("Ref error: {}", e))?;
+            if !r.is_branch() {
+                continue;
+            }
+            if scope == BranchScope::Local && r.is_remote() {
+                continue;
+            }
+            if scope == BranchScope::Remote && !r.is_remote() {
+                continue;
+            }
+
+            let target_oid = match r.target() {
+                Some(oid) => oid,
+                None => continue,
+            };
+
+            let name = r.shorthand().unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+
+            let mut hasher = DefaultHasher::new();
+            name.hash(&mut hasher);
+            let color_idx = (hasher.finish() % crate::graph::LANE_COLORS.len() as u64) as u8;
+
+            tips.entry(target_oid).or_insert(color_idx);
+        }
+
+        Ok(tips)
+    }
+
     /// Build a map from commit Oid to decorations by iterating all references.
     fn build_decoration_map(&self) -> Result<HashMap<git2::Oid, Vec<Decoration>>, String> {
         let mut map: HashMap<git2::Oid, Vec<Decoration>> = HashMap::new();
