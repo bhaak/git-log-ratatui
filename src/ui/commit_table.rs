@@ -277,7 +277,7 @@ fn decoration_style(kind: &DecorationKind) -> Style {
         DecorationKind::Tag => Style::default().fg(Color::Yellow),
         DecorationKind::LocalBranch => Style::default().fg(Color::Green),
         DecorationKind::RemoteBranch => Style::default().fg(Color::Red),
-        DecorationKind::Head => Style::default().fg(Color::Rgb(100, 255, 100)),
+        DecorationKind::Head => Style::default().fg(Color::LightGreen),
     }
 }
 
