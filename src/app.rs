@@ -1838,4 +1838,62 @@ mod tests {
         let result = App::new(".".to_string(), false, false);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_scrollbar_click_does_not_change_selection() {
+        let mut app = test_app();
+
+        // Use a 100-wide terminal. With DEFAULT_BRANCH_PCT=20, branch gets 20 cols.
+        // Scrollbar is at col=19 (rightmost column of branch area).
+        app.last_size = Some((100, 30));
+        app.branch_tree = (0..50)
+            .map(|i| TreeItem {
+                name: format!("branch_{}", i),
+                key: format!("branch_{}", i),
+                depth: 0,
+                is_branch: true,
+                full_path: format!("branch_{}", i),
+                expanded: false,
+                expandable: false,
+                tree_prefix: String::new(),
+            })
+            .collect();
+
+        // Simulate a prior render that set up the scrollbar state so
+        // click_to_index returns Some for scrollbar clicks.
+        {
+            use ratatui::{backend::TestBackend, Terminal};
+            let mut terminal = Terminal::new(TestBackend::new(2, 10)).unwrap();
+            terminal
+                .draw(|f| {
+                    app.branch_scrollbar.render(
+                        f,
+                        Rect::new(1, 0, 1, 10),
+                        50,
+                        5,
+                        0,
+                        Style::default(),
+                    );
+                })
+                .unwrap();
+        }
+
+        let prev_branch_index = app.branch_index;
+
+        // Click on the branch panel scrollbar column (rightmost of 20-col area = col 19)
+        app.handle_mouse_click(19, 5);
+
+        assert_eq!(
+            app.branch_index, prev_branch_index,
+            "branch_index should NOT change on scrollbar click"
+        );
+
+        // Click on content area (col=5, row=3) should change branch_index
+        app.handle_mouse_click(5, 3);
+        // BORDER_OVERHEAD=1, branch area y=0 → rel_row = 3 - 0 - 1 = 2
+        assert_eq!(
+            app.branch_index, 2,
+            "branch_index should change on content click"
+        );
+    }
 }
