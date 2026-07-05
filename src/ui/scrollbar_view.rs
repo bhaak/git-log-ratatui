@@ -189,4 +189,66 @@ mod tests {
         let result = sv.click_to_index(panel, (50, 5));
         assert_eq!(result, None);
     }
+
+    #[test]
+    fn test_click_to_index_catches_scrollbar_column_when_content_overflows() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut sv = ScrollbarView::new();
+        // Render to set content_length and viewport_length
+        let mut terminal = Terminal::new(TestBackend::new(2, 10)).unwrap();
+        terminal
+            .draw(|f| {
+                sv.render(
+                    f,
+                    Rect::new(1, 0, 1, 10),
+                    100, // content_length
+                    5,   // viewport_length (5 < 100 → needs scrollbar)
+                    0,   // position
+                    Style::default(),
+                );
+            })
+            .unwrap();
+
+        let panel = Rect::new(0, 0, 100, 30);
+        // Click on the scrollbar column (rightmost)
+        let result = sv.click_to_index(panel, (99, 5));
+        assert!(
+            result.is_some(),
+            "scrollbar click should be caught when content overflows"
+        );
+
+        // Click on content area (not scrollbar)
+        let result = sv.click_to_index(panel, (50, 5));
+        assert_eq!(
+            result, None,
+            "content click should not be caught by scrollbar handler"
+        );
+    }
+
+    #[test]
+    fn test_click_to_index_on_scrollbar_when_content_fits_returns_none() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut sv = ScrollbarView::new();
+        let mut terminal = Terminal::new(TestBackend::new(2, 10)).unwrap();
+        terminal
+            .draw(|f| {
+                sv.render(
+                    f,
+                    Rect::new(1, 0, 1, 10),
+                    5,  // content_length
+                    10, // viewport_length (10 >= 5 → no scroll needed)
+                    0,
+                    Style::default(),
+                );
+            })
+            .unwrap();
+
+        let panel = Rect::new(0, 0, 100, 30);
+        // Even though click is on scrollbar column, content fits so no position returned
+        let result = sv.click_to_index(panel, (99, 5));
+        assert_eq!(
+            result, None,
+            "scrollbar click when content fits should return None"
+        );
+    }
 }
