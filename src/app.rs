@@ -102,10 +102,13 @@ pub struct App {
     full_commits_cache: Option<Vec<Commit>>,
     /// Cached commit list from the simplified (git2 revwalk) fetch path.
     simplified_commits_cache: Option<Vec<Commit>>,
+    /// When true, shows frame timing in panel titles via --debug.
+    debug: bool,
+    last_frame_time_ms: u64,
 }
 
 impl App {
-    pub fn new(repo_path: String, simplified_graph: bool) -> Result<Self, String> {
+    pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Result<Self, String> {
         let branch_worker = BranchWorker::new(&repo_path)?;
         let commit_worker = CommitWorker::new(&repo_path)?;
         let diff_worker = DiffWorker::new(&repo_path)?;
@@ -156,6 +159,8 @@ impl App {
             simplified_graph,
             full_commits_cache: None,
             simplified_commits_cache: None,
+            debug,
+            last_frame_time_ms: 0,
         })
     }
 
@@ -167,10 +172,18 @@ impl App {
         self.request_commits(None);
 
         loop {
+            let frame_start = if self.debug {
+                Some(Instant::now())
+            } else {
+                None
+            };
             self.process_git_results();
             let draw_result = terminal.draw(|frame| self.render(frame));
             if let Err(e) = draw_result {
                 return Err(format!("Render error: {}", e));
+            }
+            if let Some(start) = frame_start {
+                self.last_frame_time_ms = start.elapsed().as_millis() as u64;
             }
             if !self.handle_event()? {
                 break;
@@ -1357,6 +1370,13 @@ impl App {
             return;
         }
 
+        let debug_label = if self.debug {
+            Some(format!("{}ms", self.last_frame_time_ms))
+        } else {
+            None
+        };
+        let debug_label = debug_label.as_deref();
+
         let areas = ui::layout::compute_areas(full, self.branch_width_pct, self.diff_height_pct);
 
         let help_area = Rect::new(
@@ -1398,6 +1418,7 @@ impl App {
             &self.branch_tree,
             self.branch_index,
             self.focus == Panel::Branches,
+            debug_label,
         );
 
         self.branch_list_offset = branch_list_state.offset();
@@ -1431,6 +1452,7 @@ impl App {
             branch_label,
             &title,
             self.focus == Panel::Search,
+            debug_label,
         );
 
         ui::scope_panel::render(
@@ -1438,6 +1460,7 @@ impl App {
             areas.scope,
             self.branch_scope,
             self.focus == Panel::Scope,
+            debug_label,
         );
 
         // --- Commit table (content + scrollbar) ---
@@ -1455,6 +1478,7 @@ impl App {
             total_loaded: self.all_commits.len(),
             search_active: !self.search_query.is_empty(),
             simplified_graph: self.simplified_graph,
+            debug_label,
         };
         ui::commit_table::render(frame, table_content_area, &table_ctx, &mut self.table_state);
 
@@ -1494,6 +1518,7 @@ impl App {
             diff_scroll: self.diff_scroll,
             is_focused: self.focus == Panel::Diff,
             short_hash,
+            debug_label,
         };
         let diff_total_lines = ui::diff_panel::render(frame, diff_content_area, &diff_ctx);
 
@@ -1591,6 +1616,8 @@ mod tests {
             simplified_graph: false,
             full_commits_cache: None,
             simplified_commits_cache: None,
+            debug: false,
+            last_frame_time_ms: 0,
         }
     }
 
@@ -1818,7 +1845,7 @@ mod tests {
 
     #[test]
     fn test_app_new_returns_ok() {
-        let result = App::new(".".to_string(), false);
+        let result = App::new(".".to_string(), false, false);
         assert!(result.is_ok());
     }
 }

@@ -22,6 +22,8 @@ pub struct DiffPanelCtx<'a> {
     pub diff_scroll: usize,
     pub is_focused: bool,
     pub short_hash: Option<&'a str>,
+    /// Optional debug frame timing label shown in the panel title.
+    pub debug_label: Option<&'a str>,
 }
 
 /// Render the diff panel with commit metadata, changed files, and colored diff.
@@ -54,6 +56,12 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
         " Diff".to_string()
     };
 
+    let debug_part = if let Some(label) = ctx.debug_label {
+        format!(" [{}]", label)
+    } else {
+        String::new()
+    };
+
     let scroll_info = if total > 0 {
         format!(" lines {}-{}/{} ", start, end, total)
     } else {
@@ -63,7 +71,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     let paragraph = Paragraph::new(all_lines)
         .block(
             Block::default()
-                .title(format!("{}{}", diff_title, scroll_info))
+                .title(format!("{}{}{}", diff_title, debug_part, scroll_info))
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )

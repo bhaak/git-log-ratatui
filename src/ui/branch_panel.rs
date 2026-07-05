@@ -14,6 +14,7 @@ pub fn render(
     tree_items: &[TreeItem],
     selected_index: usize,
     is_focused: bool,
+    debug_label: Option<&str>,
 ) -> ListState {
     if area.width < 4 || area.height < 2 {
         return ListState::default();
@@ -30,10 +31,16 @@ pub fn render(
         .map(|item| item.name.to_string())
         .collect();
 
+    let title = if let Some(label) = debug_label {
+        format!(" Branches [{}] ", label)
+    } else {
+        " Branches ".to_string()
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
-                .title(" Branches ")
+                .title(title)
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )

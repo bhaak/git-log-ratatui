@@ -8,7 +8,13 @@ use ratatui::{
 use crate::models::BranchScope;
 
 /// Render the scope panel showing the current branch scope.
-pub fn render(frame: &mut Frame, area: Rect, scope: BranchScope, is_focused: bool) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    scope: BranchScope,
+    is_focused: bool,
+    debug_label: Option<&str>,
+) {
     if area.width < 3 || area.height < 2 {
         return;
     }
@@ -21,10 +27,16 @@ pub fn render(frame: &mut Frame, area: Rect, scope: BranchScope, is_focused: boo
 
     let text = format!(" {}", scope.label());
 
+    let title = if let Some(label) = debug_label {
+        format!(" Scope [{}] ", label)
+    } else {
+        " Scope ".to_string()
+    };
+
     let paragraph = Paragraph::new(text)
         .block(
             Block::default()
-                .title(" Scope ")
+                .title(title)
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )

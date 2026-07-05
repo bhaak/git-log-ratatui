@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 /// Render the search panel with search input and cursor.
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
     area: Rect,
@@ -15,6 +16,7 @@ pub fn render(
     branch_label: &str,
     title: &str,
     is_focused: bool,
+    debug_label: Option<&str>,
 ) {
     if area.width < 4 || area.height < 2 {
         return;
@@ -26,8 +28,14 @@ pub fn render(
         Style::default().fg(Color::Gray)
     };
 
+    let full_title = if let Some(label) = debug_label {
+        format!(" {} [{}] ", title, label)
+    } else {
+        format!(" {} ", title)
+    };
+
     let block = Block::default()
-        .title(format!(" {} ", title))
+        .title(full_title)
         .borders(Borders::ALL)
         .border_style(border_style);
 

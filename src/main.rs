@@ -37,6 +37,9 @@ struct Cli {
     /// Start with simplified graph (colored bullets, no connecting lines).
     #[arg(long, short = 's')]
     simplified_graph: bool,
+    /// Show frame timing in panel titles.
+    #[arg(long, short = 'd')]
+    debug: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if cli.profile {
-        let mut app = app::App::new(repo_path, cli.simplified_graph)?;
+        let mut app = app::App::new(repo_path, cli.simplified_graph, cli.debug)?;
         return app
             .run_profile(cli.profile_iterations)
             .map_err(|e| e.into());
@@ -72,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let result = {
-        let mut app = app::App::new(repo_path, cli.simplified_graph)?;
+        let mut app = app::App::new(repo_path, cli.simplified_graph, cli.debug)?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(&mut terminal)))
     };
 

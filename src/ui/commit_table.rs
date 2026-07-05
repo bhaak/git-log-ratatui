@@ -30,6 +30,8 @@ pub struct CommitTableCtx<'a> {
     pub search_active: bool,
     /// When true, show simple colored bullets instead of full box-drawing graph.
     pub simplified_graph: bool,
+    /// Optional debug frame timing label shown in the panel title.
+    pub debug_label: Option<&'a str>,
 }
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
@@ -53,8 +55,13 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         } else {
             "No commits found in this repository."
         };
+        let title = if let Some(label) = ctx.debug_label {
+            format!(" Commits [{}] ", label)
+        } else {
+            " Commits ".to_string()
+        };
         let block = Block::default()
-            .title(" Commits ")
+            .title(title)
             .borders(Borders::ALL)
             .border_style(border_style);
         let inner = block.inner(area);
@@ -218,7 +225,12 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .block(
             Block::default()
                 .title(format!(
-                    " Commits - {} ",
+                    "{} - {} ",
+                    if let Some(label) = ctx.debug_label {
+                        format!(" Commits [{}]", label)
+                    } else {
+                        " Commits".to_string()
+                    },
                     format_commit_count_info(
                         ctx.visible_index,
                         ctx.commits.len(),
@@ -505,6 +517,7 @@ mod tests {
             total_loaded: commits.len(),
             search_active: false,
             simplified_graph: false,
+            debug_label: None,
         };
         let mut state = TableState::default();
         let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
