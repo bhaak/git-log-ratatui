@@ -114,6 +114,20 @@ pub fn compute_areas(full: Rect, branch_width_pct: u16, diff_height_pct: u16) ->
     }
 }
 
+/// Check if a point (col, row) is on the 1-character border of a rectangle,
+/// i.e. not in the interior content area.
+pub fn is_on_border_of(col: u16, row: u16, rect: Rect) -> bool {
+    col == rect.x
+        || col >= rect.x + rect.width.saturating_sub(1)
+        || row == rect.y
+        || row >= rect.y + rect.height.saturating_sub(1)
+}
+
+/// Check if a point (col, row) is inside a rectangle AND not on its border.
+pub fn rect_contains_interior(rect: &Rect, pos: (u16, u16)) -> bool {
+    rect_contains(rect, pos) && !is_on_border_of(pos.0, pos.1, *rect)
+}
+
 /// Check if a point (col, row) is inside a rectangle.
 pub fn rect_contains(rect: &Rect, pos: (u16, u16)) -> bool {
     pos.0 >= rect.x
@@ -284,5 +298,70 @@ mod tests {
 
         // Diff is below table
         assert!(areas.diff.y >= areas.table.y + areas.table.height);
+    }
+
+    // --- is_on_border_of ---
+
+    #[test]
+    fn test_is_on_border_of_top() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(is_on_border_of(5, 0, rect));
+    }
+
+    #[test]
+    fn test_is_on_border_of_bottom() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(is_on_border_of(5, 9, rect));
+    }
+
+    #[test]
+    fn test_is_on_border_of_left() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(is_on_border_of(0, 5, rect));
+    }
+
+    #[test]
+    fn test_is_on_border_of_right() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(is_on_border_of(9, 5, rect));
+    }
+
+    #[test]
+    fn test_is_on_border_of_interior() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(!is_on_border_of(5, 5, rect));
+    }
+
+    #[test]
+    fn test_is_on_border_of_corner() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(is_on_border_of(0, 0, rect));
+        assert!(is_on_border_of(9, 0, rect));
+        assert!(is_on_border_of(0, 9, rect));
+        assert!(is_on_border_of(9, 9, rect));
+    }
+
+    // --- rect_contains_interior ---
+
+    #[test]
+    fn test_rect_contains_interior_inside() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(rect_contains_interior(&rect, (5, 5)));
+    }
+
+    #[test]
+    fn test_rect_contains_interior_on_border() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(!rect_contains_interior(&rect, (0, 5)));
+        assert!(!rect_contains_interior(&rect, (9, 5)));
+        assert!(!rect_contains_interior(&rect, (5, 0)));
+        assert!(!rect_contains_interior(&rect, (5, 9)));
+    }
+
+    #[test]
+    fn test_rect_contains_interior_outside() {
+        let rect = Rect::new(0, 0, 10, 10);
+        assert!(!rect_contains_interior(&rect, (10, 5)));
+        assert!(!rect_contains_interior(&rect, (5, 10)));
     }
 }

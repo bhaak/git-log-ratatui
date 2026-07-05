@@ -1097,34 +1097,21 @@ impl App {
         );
         let click_pos = (col, row);
 
-        // Scrollbar click handling — intercept before content click
-        if let Some(new_pos) = self
+        // Scrollbar click handling — intercept before content click.
+        // Scrollbar clicks scroll without changing the selected item.
+        if let Some(_new_pos) = self
             .branch_scrollbar
             .click_to_index(branch_visible_area, click_pos)
         {
             self.dragging = None;
             self.focus = Panel::Branches;
             self.scrollbar_drag = Some(Panel::Branches);
-            if new_pos < self.branch_tree.len() {
-                self.branch_index = new_pos;
-            }
             return;
         }
-        if let Some(new_pos) = self.table_scrollbar.click_to_index(areas.table, click_pos) {
+        if let Some(_new_pos) = self.table_scrollbar.click_to_index(areas.table, click_pos) {
             self.dragging = None;
             self.focus = Panel::Commits;
             self.scrollbar_drag = Some(Panel::Commits);
-            let mut fidx = new_pos;
-            loop {
-                if let Some(vis_idx) = self.filtered_to_visible(fidx) {
-                    self.selected_index = vis_idx;
-                    break;
-                }
-                if fidx == 0 {
-                    break;
-                }
-                fidx -= 1;
-            }
             return;
         }
         if let Some(new_pos) = self.diff_scrollbar.click_to_index(areas.diff, click_pos) {
@@ -1135,7 +1122,7 @@ impl App {
             return;
         }
 
-        if ui::layout::rect_contains(&branch_visible_area, click_pos) {
+        if ui::layout::rect_contains_interior(&branch_visible_area, click_pos) {
             self.focus = Panel::Branches;
             let rel_row = (row
                 .saturating_sub(areas.branch.y)
@@ -1163,7 +1150,7 @@ impl App {
             self.cycle_scope();
         } else if ui::layout::rect_contains(&areas.search, click_pos) {
             self.focus = Panel::Search;
-        } else if ui::layout::rect_contains(&areas.table, click_pos) {
+        } else if ui::layout::rect_contains_interior(&areas.table, click_pos) {
             self.focus = Panel::Commits;
             let rel_row = (row.saturating_sub(areas.table.y).saturating_sub(
                 ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD),
@@ -1235,31 +1222,14 @@ impl App {
             );
             match panel {
                 Panel::Branches => {
-                    if let Some(new_pos) = self
+                    // Scrollbar drag scrolls but does not change the selected item.
+                    let _ = self
                         .branch_scrollbar
-                        .click_to_index(branch_visible_area, (col, row))
-                    {
-                        if new_pos < self.branch_tree.len() {
-                            self.branch_index = new_pos;
-                        }
-                    }
+                        .click_to_index(branch_visible_area, (col, row));
                 }
                 Panel::Commits => {
-                    if let Some(new_pos) =
-                        self.table_scrollbar.click_to_index(areas.table, (col, row))
-                    {
-                        let mut fidx = new_pos;
-                        loop {
-                            if let Some(vis_idx) = self.filtered_to_visible(fidx) {
-                                self.selected_index = vis_idx;
-                                break;
-                            }
-                            if fidx == 0 {
-                                break;
-                            }
-                            fidx -= 1;
-                        }
-                    }
+                    // Scrollbar drag scrolls but does not change the selected item.
+                    let _ = self.table_scrollbar.click_to_index(areas.table, (col, row));
                 }
                 Panel::Diff => {
                     if let Some(new_pos) =
