@@ -1112,17 +1112,17 @@ impl App {
             if actual_index < self.branch_tree.len() {
                 self.branch_index = actual_index;
                 if let Some(item) = self.branch_tree.get(actual_index) {
-                    if item.expandable {
-                        let new_state = !item.expanded;
-                        self.expanded_nodes.insert(item.key.clone(), new_state);
-                        self.rebuild_branch_tree();
-                    } else if item.is_branch {
+                    if item.is_branch {
                         if item.full_path == "__all__" {
                             self.request_commits(None);
                         } else {
                             self.request_commits(Some(item.full_path.clone()));
                         }
                         self.focus = Panel::Commits;
+                    } else if item.expandable {
+                        let new_state = !item.expanded;
+                        self.expanded_nodes.insert(item.key.clone(), new_state);
+                        self.rebuild_branch_tree();
                     }
                 }
             }

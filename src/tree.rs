@@ -245,4 +245,38 @@ mod tests {
         let items = flatten_tree(&root, 0, &expanded);
         assert!(items.is_empty());
     }
+
+    #[test]
+    fn test_branch_with_child_branches_is_both_branch_and_expandable() {
+        // When a branch name is also a prefix (e.g. "feature" and "feature/login"),
+        // the "feature" node should be both a branch AND expandable.
+        let branches = vec!["feature".to_string(), "feature/login".to_string()];
+        let mut root = build_branch_tree(&branches);
+        sort_tree(&mut root);
+
+        let expanded = BTreeMap::new();
+        let items = flatten_tree(&root, 0, &expanded);
+
+        // "feature" item should exist
+        let feature_item = items
+            .iter()
+            .find(|i| i.full_path == "feature")
+            .expect("feature branch item not found");
+
+        assert!(
+            feature_item.is_branch,
+            "feature should be marked as a branch"
+        );
+        assert!(
+            feature_item.expandable,
+            "feature should be expandable since it has child branches"
+        );
+        // "feature/login" should also exist under it
+        let login_item = items
+            .iter()
+            .find(|i| i.full_path == "feature/login")
+            .expect("feature/login branch item not found");
+        assert!(login_item.is_branch);
+        assert!(!login_item.expandable);
+    }
 }
