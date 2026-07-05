@@ -129,9 +129,9 @@ impl CommitWorker {
         Ok(CommitWorker { cmd_tx, result_rx })
     }
 
-    /// Send a command to the commit worker.
-    pub fn send(&self, cmd: CommitCommand) {
-        let _ = self.cmd_tx.send(cmd);
+    /// Send a command to the commit worker. Returns false if the channel is closed.
+    pub fn send(&self, cmd: CommitCommand) -> bool {
+        self.cmd_tx.send(cmd).is_ok()
     }
 
     /// Try to receive a result (non-blocking).

@@ -9,7 +9,7 @@ use ratatui::{
 use crate::models::Panel;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
-pub fn render(frame: &mut Frame, area: Rect, focus: Panel) {
+pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>) {
     if area.width < 10 || area.height < 2 {
         return;
     }
@@ -61,9 +61,15 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel) {
         spans.push(Span::raw("  "));
     }
 
+    let title = if let Some(msg) = status {
+        format!(" Help | {} ", msg)
+    } else {
+        " Help ".to_string()
+    };
+
     let paragraph = Paragraph::new(Line::from(spans)).block(
         Block::default()
-            .title(" Help ")
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray)),
     );
