@@ -105,6 +105,9 @@ pub struct App {
     /// When true, shows frame timing in panel titles via --debug.
     debug: bool,
     last_frame_time_ms: u64,
+    /// Set true when state changes; cleared after each render. Avoids
+    /// redrawing when nothing happened (no event, no worker data).
+    dirty: bool,
 }
 
 impl App {
@@ -161,6 +164,7 @@ impl App {
             simplified_commits_cache: None,
             debug,
             last_frame_time_ms: 0,
+            dirty: true,
         })
     }
 
@@ -177,13 +181,18 @@ impl App {
             } else {
                 None
             };
-            self.process_git_results();
-            let draw_result = terminal.draw(|frame| self.render(frame));
-            if let Err(e) = draw_result {
-                return Err(format!("Render error: {}", e));
+            if self.process_git_results() {
+                self.dirty = true;
             }
-            if let Some(start) = frame_start {
-                self.last_frame_time_ms = start.elapsed().as_millis() as u64;
+            if self.dirty {
+                let draw_result = terminal.draw(|frame| self.render(frame));
+                if let Err(e) = draw_result {
+                    return Err(format!("Render error: {}", e));
+                }
+                if let Some(start) = frame_start {
+                    self.last_frame_time_ms = start.elapsed().as_millis() as u64;
+                }
+                self.dirty = false;
             }
             if !self.handle_event()? {
                 break;
@@ -372,9 +381,13 @@ impl App {
     }
 
     /// Poll all three worker channels for results (non-blocking, parallel streams).
-    fn process_git_results(&mut self) {
+    /// Returns true if any worker produced data that requires a redraw.
+    fn process_git_results(&mut self) -> bool {
+        let mut changed = false;
+
         // Poll branch worker
         while let Some(result) = self.branch_worker.try_recv() {
+            changed = true;
             match result {
                 BranchResult::Branches(branches) => {
                     self.all_branches = branches;
@@ -389,13 +402,13 @@ impl App {
 
         // Poll commit worker
         while let Some(result) = self.commit_worker.try_recv() {
+            changed = true;
             match result {
                 CommitResult::Commits(commits) => {
                     let prev_len = self.all_commits.len();
                     self.all_commits = commits;
                     if self.loading_more {
                         self.loading_more = false;
-                        // Raising the limit yielded no new commits => history exhausted.
                         if self.all_commits.len() <= prev_len {
                             self.all_commits_loaded = true;
                         }
@@ -405,7 +418,6 @@ impl App {
                     }
                     self.commits_loaded = true;
                     self.status_message = None;
-                    // Cache the result for the current mode so toggle is instant.
                     if self.simplified_graph {
                         self.simplified_commits_cache = Some(self.all_commits.clone());
                     } else {
@@ -437,6 +449,7 @@ impl App {
 
         // Poll diff worker
         while let Some(result) = self.diff_worker.try_recv() {
+            changed = true;
             match result {
                 DiffResult::Diff {
                     commit_info,
@@ -455,6 +468,8 @@ impl App {
                 }
             }
         }
+
+        changed
     }
 
     // --- Branch tree ---
@@ -563,13 +578,16 @@ impl App {
         let ev = event::read().map_err(|e| format!("Event error: {}", e))?;
 
         match ev {
-            Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                self.dirty = true;
+                self.handle_key(key)
+            }
             Event::Mouse(mouse) => {
-                // Ignore move events to avoid redrawing on every mouse movement.
+                // Ignore move events — they don't change anything visible.
                 if let MouseEventKind::Moved = mouse.kind {
                     return Ok(true);
                 }
-                // Track mouse position for scroll
+                self.dirty = true;
                 if let MouseEventKind::Down(_) | MouseEventKind::Drag(_) = mouse.kind {
                     self.last_mouse_pos = Some((mouse.column, mouse.row));
                 }
@@ -580,6 +598,7 @@ impl App {
                 Ok(true)
             }
             Event::Resize(w, h) => {
+                self.dirty = true;
                 self.last_size = Some((w, h));
                 Ok(true)
             }
@@ -1618,6 +1637,7 @@ mod tests {
             simplified_commits_cache: None,
             debug: false,
             last_frame_time_ms: 0,
+            dirty: false,
         }
     }
 
