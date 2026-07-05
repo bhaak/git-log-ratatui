@@ -7,6 +7,8 @@
 
 - [ ] show commit in local timezone or with timezone info
 - [X] diffworker shows diffs faster
+- [ ] word wrap in diff
+- [ ] handle text overflow in diff
 
 *** Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
