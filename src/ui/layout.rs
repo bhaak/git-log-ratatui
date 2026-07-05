@@ -123,9 +123,17 @@ pub fn is_on_border_of(col: u16, row: u16, rect: Rect) -> bool {
         || row >= rect.y + rect.height.saturating_sub(1)
 }
 
-/// Check if a point (col, row) is inside a rectangle AND not on its border.
+/// Check if a point (col, row) is inside a rectangle AND not on its border
+/// AND not in the rightmost scrollbar column.
 pub fn rect_contains_interior(rect: &Rect, pos: (u16, u16)) -> bool {
-    rect_contains(rect, pos) && !is_on_border_of(pos.0, pos.1, *rect)
+    rect_contains(rect, pos)
+        && !is_on_border_of(pos.0, pos.1, *rect)
+        && !is_on_scrollbar_col(pos.0, *rect)
+}
+
+/// True when `col` is in the rightmost column of `rect` (the scrollbar).
+pub fn is_on_scrollbar_col(col: u16, rect: Rect) -> bool {
+    col >= rect.x + rect.width.saturating_sub(SCROLLBAR_WIDTH)
 }
 
 /// Check if a point (col, row) is inside a rectangle.
@@ -363,5 +371,14 @@ mod tests {
         let rect = Rect::new(0, 0, 10, 10);
         assert!(!rect_contains_interior(&rect, (10, 5)));
         assert!(!rect_contains_interior(&rect, (5, 10)));
+    }
+
+    #[test]
+    fn test_rect_contains_interior_excludes_scrollbar_column() {
+        let rect = Rect::new(0, 0, 20, 10);
+        // Scrollbar column is at x=19 (rightmost 1 column)
+        assert!(!rect_contains_interior(&rect, (19, 5)));
+        // Content column just left of scrollbar is valid
+        assert!(rect_contains_interior(&rect, (18, 5)));
     }
 }
