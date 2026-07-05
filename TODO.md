@@ -6,6 +6,7 @@
 - [X] / is shown in tree view
 
 - [ ] show commit in local timezone or with timezone info
+- [X] diffworker shows diffs faster
 
 *** Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
