@@ -232,8 +232,11 @@ impl GitRepository {
             .map_err(|e| format!("Failed to set revwalk sorting: {}", e))?;
 
         if let Some(b) = branch {
+            let refname = self
+                .resolve_branch_ref_name(b)
+                .unwrap_or_else(|| format!("refs/heads/{}", b));
             revwalk
-                .push_ref(b)
+                .push_ref(&refname)
                 .map_err(|e| format!("Failed to push branch ref '{}': {}", b, e))?;
         } else {
             self.push_scope_refs(&mut revwalk, scope)?;
@@ -280,7 +283,28 @@ impl GitRepository {
         Ok(commits)
     }
 
-    /// Push all refs matching the scope into the revwalk.
+    /// Resolve a shorthand branch name (e.g. "main" or "origin/main") to a full
+    /// git reference name (e.g. "refs/heads/main" or "refs/remotes/origin/main").
+    fn resolve_branch_ref_name(&self, branch: &str) -> Option<String> {
+        // Try local branch
+        if let Ok(r) = self.repo.find_reference(&format!("refs/heads/{}", branch)) {
+            return r.name().map(|n| n.to_string());
+        }
+        // Try remote branch
+        if let Ok(r) = self
+            .repo
+            .find_reference(&format!("refs/remotes/{}", branch))
+        {
+            return r.name().map(|n| n.to_string());
+        }
+        // If branch already contains a ref prefix, try it directly
+        if branch.starts_with("refs/") {
+            if let Ok(r) = self.repo.find_reference(branch) {
+                return r.name().map(|n| n.to_string());
+            }
+        }
+        None
+    }
     fn push_scope_refs(
         &self,
         revwalk: &mut git2::Revwalk,
@@ -485,5 +509,97 @@ mod tests {
             all_have_hashes,
             "expected all commits to have hashes in linear history"
         );
+    }
+
+    #[test]
+    fn test_fetch_commits_for_branch_with_shorthand_name() {
+        use std::process::Command;
+
+        let tmp = std::env::temp_dir().join("git-test-branch-head");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&tmp)
+                .args(args)
+                .output()
+                .expect("git command failed")
+        };
+
+        run(&["init"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "user.email", "test@test.com"]);
+        std::fs::write(tmp.join("file"), "content").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-m", "root"]);
+
+        // Create feature branch from root
+        run(&["checkout", "-b", "feature/test"]);
+        std::fs::write(tmp.join("file"), "feature").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-m", "feature commit"]);
+        let feat_hash = String::from_utf8(run(&["rev-parse", "--short", "HEAD"]).stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Commit on main after branching
+        run(&["checkout", "main"]);
+        std::fs::write(tmp.join("file"), "main after branch").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-m", "main commit"]);
+
+        // Fetch commits for feature/test using shorthand name (full graph)
+        let git = GitRepository::open(&tmp.to_string_lossy()).unwrap();
+        let commits = git
+            .fetch_commits(Some("feature/test"), BranchScope::Local, None)
+            .expect("fetch_commits for feature/test failed");
+
+        assert!(!commits.is_empty(), "should have commits for feature/test");
+
+        // The first non-empty-hash commit should be the branch HEAD
+        let first = commits
+            .iter()
+            .find(|c| !c.hash.is_empty())
+            .expect("should have at least one real commit");
+
+        let short = &first.hash[..first.hash.len().min(7)];
+        assert_eq!(
+            short, feat_hash,
+            "first commit should be feature/test HEAD ({}) but got ({})",
+            feat_hash, short
+        );
+
+        // Also test with simplified path (shorthand resolution)
+        let commits_simple = git
+            .fetch_commits_simplified(Some("feature/test"), BranchScope::Local, None)
+            .expect("fetch_commits_simplified for feature/test failed");
+        assert!(
+            !commits_simple.is_empty(),
+            "should have commits for feature/test (simplified)"
+        );
+        let first_simple = commits_simple
+            .iter()
+            .find(|c| !c.hash.is_empty())
+            .expect("should have at least one real commit");
+        let short_simple = &first_simple.hash[..first_simple.hash.len().min(7)];
+        assert_eq!(
+            short_simple, feat_hash,
+            "first commit (simplified) should be feature/test HEAD ({}) but got ({})",
+            feat_hash, short_simple
+        );
+
+        // Test with "main" shorthand and simplified path
+        let main_commits = git
+            .fetch_commits_simplified(Some("main"), BranchScope::Local, None)
+            .expect("fetch_commits_simplified for main failed");
+        assert!(
+            !main_commits.is_empty(),
+            "should have commits for main (simplified)"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

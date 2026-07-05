@@ -74,6 +74,9 @@ pub struct App {
     last_mouse_pos: Option<(u16, u16)>,
     table_state: TableState,
 
+    /// Stored scroll offset of the branch list widget, updated each render frame.
+    branch_list_offset: usize,
+
     /// Scrollbar widgets for each scrollable panel.
     branch_scrollbar: ui::scrollbar_view::ScrollbarView,
     table_scrollbar: ui::scrollbar_view::ScrollbarView,
@@ -138,6 +141,7 @@ impl App {
             last_size: None,
             last_mouse_pos: None,
             table_state: TableState::default(),
+            branch_list_offset: 0,
             branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
@@ -259,20 +263,36 @@ impl App {
 
     fn request_commits(&mut self, branch: Option<String>) {
         self.commits_loaded = false;
+        // Clear stale commit data immediately so the old branch's commits are
+        // not shown while the new branch's data is loading. Also reset
+        // selection to the first commit (tip of the branch) and clear diff
+        // data so the old branch's metadata isn't shown.
+        self.all_commits.clear();
+        self.filtered_commits = None;
+        self.visible_to_commit.clear();
+        self.selected_index = 0;
+        self.commit_info = None;
+        self.diff_lines = Vec::new();
+        self.file_entries = Vec::new();
+        self.last_selected_hash = None;
+        self.table_state = TableState::default();
         // Fresh load (startup, branch change, scope change): reset the window.
         self.commit_limit = INITIAL_COMMIT_LIMIT;
         self.all_commits_loaded = false;
         self.loading_more = false;
         self.selected_branch = branch.clone();
+        self.status_message = Some("Loading commits...".to_string());
         // Branch / scope changed: the other mode's cache is now stale.
         self.full_commits_cache = None;
         self.simplified_commits_cache = None;
-        self.commit_worker.send(CommitCommand::FetchCommits {
+        if !self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.branch_scope,
             limit: Some(self.commit_limit),
             simplified: self.simplified_graph,
-        });
+        }) {
+            self.status_message = Some("Commit worker disconnected — restart required".to_string());
+        }
     }
 
     /// Toggle between full (git-graph) and simplified (git2 revwalk) graphs.
@@ -312,12 +332,14 @@ impl App {
         self.commits_loaded = false;
         self.loading_more = true;
         self.commit_limit = self.commit_limit.saturating_add(COMMIT_LIMIT_INCREMENT);
-        self.commit_worker.send(CommitCommand::FetchCommits {
+        if !self.commit_worker.send(CommitCommand::FetchCommits {
             branch: self.selected_branch.clone(),
             scope: self.branch_scope,
             limit: Some(self.commit_limit),
             simplified: self.simplified_graph,
-        });
+        }) {
+            self.status_message = Some("Commit worker disconnected — restart required".to_string());
+        }
     }
 
     /// Re-run the search filter after an incremental load while keeping the
@@ -369,6 +391,7 @@ impl App {
                         self.apply_search_filter();
                     }
                     self.commits_loaded = true;
+                    self.status_message = None;
                     // Cache the result for the current mode so toggle is instant.
                     if self.simplified_graph {
                         self.simplified_commits_cache = Some(self.all_commits.clone());
@@ -1080,14 +1103,15 @@ impl App {
             return;
         }
 
-        if ui::layout::rect_contains(&areas.branch, click_pos) {
+        if ui::layout::rect_contains(&branch_visible_area, click_pos) {
             self.focus = Panel::Branches;
             let rel_row = (row
                 .saturating_sub(areas.branch.y)
                 .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
-            if rel_row < self.branch_tree.len() {
-                self.branch_index = rel_row;
-                if let Some(item) = self.branch_tree.get(rel_row) {
+            let actual_index = rel_row + self.branch_list_offset;
+            if actual_index < self.branch_tree.len() {
+                self.branch_index = actual_index;
+                if let Some(item) = self.branch_tree.get(actual_index) {
                     if item.expandable {
                         let new_state = !item.expanded;
                         self.expanded_nodes.insert(item.key.clone(), new_state);
@@ -1098,6 +1122,7 @@ impl App {
                         } else {
                             self.request_commits(Some(item.full_path.clone()));
                         }
+                        self.focus = Panel::Commits;
                     }
                 }
             }
@@ -1375,6 +1400,8 @@ impl App {
             self.focus == Panel::Branches,
         );
 
+        self.branch_list_offset = branch_list_state.offset();
+
         let branch_focus_style = if self.focus == Panel::Branches {
             Style::default().fg(Color::Rgb(180, 140, 255))
         } else {
@@ -1487,7 +1514,7 @@ impl App {
             diff_focus_style,
         );
 
-        ui::help_bar::render(frame, help_area, self.focus);
+        ui::help_bar::render(frame, help_area, self.focus, self.status_message.as_deref());
 
         // Trigger diff load on selection change
         let current_hash = if self.visible_count() > 0 {
@@ -1549,6 +1576,7 @@ mod tests {
             last_size: None,
             last_mouse_pos: None,
             table_state: TableState::default(),
+            branch_list_offset: 0,
             branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
@@ -1720,6 +1748,72 @@ mod tests {
         app.selected_index = 0;
         app.clamp_selection();
         assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_branch_click_with_scroll_offset() {
+        let mut app = test_app();
+
+        // Simulate a scrolled branch tree — the list widget offset is 20,
+        // meaning 20 items are scrolled off the top.
+        app.branch_tree = (0..50)
+            .map(|i| TreeItem {
+                name: format!("branch_{}", i),
+                key: format!("branch_{}", i),
+                depth: 0,
+                is_branch: true,
+                full_path: format!("branch_{}", i),
+                expanded: false,
+                expandable: false,
+                tree_prefix: String::new(),
+            })
+            .collect();
+        app.branch_list_offset = 20;
+
+        // Simulate a click at the 5th visible row (terminal row = panel_y + BORDER_OVERHEAD + 5).
+        // Panel is at y=0, BORDER_OVERHEAD=1, so clicking terminal row 6 should give
+        // rel_row=5, and actual_index = 5 + 20 = 25.
+        let panel_y = 0u16;
+        let click_row = 6u16; // panel_y=0, BORDER_OVERHEAD=1 → rel_row = 6-0-1 = 5
+        let rel_row = (click_row
+            .saturating_sub(panel_y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        let actual_index = rel_row + app.branch_list_offset;
+
+        assert_eq!(rel_row, 5);
+        assert_eq!(actual_index, 25);
+        assert!(actual_index < app.branch_tree.len());
+        assert_eq!(app.branch_tree[actual_index].full_path, "branch_25");
+    }
+
+    #[test]
+    fn test_branch_click_without_scroll() {
+        let mut app = test_app();
+
+        app.branch_tree = (0..10)
+            .map(|i| TreeItem {
+                name: format!("branch_{}", i),
+                key: format!("branch_{}", i),
+                depth: 0,
+                is_branch: true,
+                full_path: format!("branch_{}", i),
+                expanded: false,
+                expandable: false,
+                tree_prefix: String::new(),
+            })
+            .collect();
+        app.branch_list_offset = 0;
+
+        let panel_y = 0u16;
+        let click_row = 3u16; // panel_y=0, BORDER_OVERHEAD=1 → rel_row = 3-0-1 = 2
+        let rel_row = (click_row
+            .saturating_sub(panel_y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        let actual_index = rel_row + app.branch_list_offset;
+
+        assert_eq!(rel_row, 2);
+        assert_eq!(actual_index, 2);
+        assert_eq!(app.branch_tree[actual_index].full_path, "branch_2");
     }
 
     #[test]
