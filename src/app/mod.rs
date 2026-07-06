@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use crossterm::{
@@ -27,6 +27,10 @@ use crate::workers::{
     DiffCommand, DiffResult, DiffWorker,
 };
 
+use state::AppState;
+
+mod state;
+
 const PAGE_SIZE: usize = 10;
 /// Number of commits loaded at startup. Keeps first paint fast on large repos.
 const INITIAL_COMMIT_LIMIT: usize = 5000;
@@ -37,78 +41,24 @@ const POLL_INTERVAL_MAX: u8 = 200;
 const POLL_BACKOFF_STEP: u8 = 10;
 
 pub struct App {
-    repo_path: String,
+    pub state: AppState,
     branch_worker: BranchWorker,
     commit_worker: CommitWorker,
     diff_worker: DiffWorker,
+}
 
-    all_branches: BranchData,
-    branch_tree: Vec<TreeItem>,
-    expanded_nodes: BTreeMap<String, bool>,
-    branch_index: usize,
-    branch_scope: BranchScope,
-    selected_branch: Option<String>,
+impl Deref for App {
+    type Target = AppState;
 
-    search_query: String,
-    cursor_pos: usize,
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
 
-    all_commits: Vec<Commit>,
-    /// None = show all commits (references all_commits directly, no clone needed).
-    filtered_commits: Option<Vec<Commit>>,
-    selected_index: usize,
-    /// Maps visible row (skipping graph_only) to filtered_commits index.
-    visible_to_commit: Vec<usize>,
-
-    commit_info: Option<CommitInfo>,
-    diff_lines: Vec<String>,
-    file_entries: Vec<FileEntry>,
-    selected_file_index: usize,
-    diff_scroll: usize,
-    last_selected_hash: Option<String>,
-
-    focus: Panel,
-    branch_width_pct: u16,
-    diff_height_pct: u16,
-    dragging: Option<ui::layout::DragDirection>,
-    scrollbar_drag: Option<Panel>,
-    last_size: Option<(u16, u16)>,
-    last_mouse_pos: Option<(u16, u16)>,
-    table_state: TableState,
-
-    /// Stored scroll offset of the branch list widget, updated each render frame.
-    branch_list_offset: usize,
-
-    /// Scrollbar widgets for each scrollable panel.
-    branch_scrollbar: ui::scrollbar_view::ScrollbarView,
-    table_scrollbar: ui::scrollbar_view::ScrollbarView,
-    diff_scrollbar: ui::scrollbar_view::ScrollbarView,
-
-    status_message: Option<String>,
-    branches_loaded: bool,
-    commits_loaded: bool,
-    diff_pending: bool,
-    poll_interval_ms: u8,
-
-    /// Current cap on how many commits are loaded (grows as the user scrolls).
-    commit_limit: usize,
-    /// True once the full history has been loaded (raising the limit yields no more).
-    all_commits_loaded: bool,
-    /// True while an incremental "load more" request is in flight, so the
-    /// selection is preserved instead of reset when the larger result arrives.
-    loading_more: bool,
-    /// When true, the complex git graph (box-drawing connectors) is replaced
-    /// with simple colored bullets where color denotes the branch lane.
-    simplified_graph: bool,
-    /// Cached commit list from the full (git-graph) fetch path.
-    full_commits_cache: Option<Vec<Commit>>,
-    /// Cached commit list from the simplified (git2 revwalk) fetch path.
-    simplified_commits_cache: Option<Vec<Commit>>,
-    /// When true, shows frame timing in panel titles via --debug.
-    debug: bool,
-    last_frame_time_ms: u64,
-    /// Set true when state changes; cleared after each render. Avoids
-    /// redrawing when nothing happened (no event, no worker data).
-    dirty: bool,
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 impl App {
@@ -118,57 +68,10 @@ impl App {
         let diff_worker = workers::new_diff_worker(&repo_path)?;
 
         Ok(App {
-            repo_path,
+            state: AppState::new(repo_path, simplified_graph, debug),
             branch_worker,
             commit_worker,
             diff_worker,
-            all_branches: BranchData {
-                default_branch: None,
-                entries: Vec::new(),
-            },
-            branch_tree: Vec::new(),
-            expanded_nodes: BTreeMap::new(),
-            branch_index: 0,
-            branch_scope: BranchScope::All,
-            selected_branch: None,
-            search_query: String::new(),
-            cursor_pos: 0,
-            all_commits: Vec::new(),
-            filtered_commits: None,
-            selected_index: 0,
-            visible_to_commit: Vec::new(),
-            commit_info: None,
-            diff_lines: Vec::new(),
-            file_entries: Vec::new(),
-            selected_file_index: 0,
-            diff_scroll: 0,
-            last_selected_hash: None,
-            focus: Panel::Commits,
-            branch_width_pct: ui::layout::DEFAULT_BRANCH_PCT,
-            diff_height_pct: ui::layout::DEFAULT_DIFF_PCT,
-            dragging: None,
-            scrollbar_drag: None,
-            last_size: None,
-            last_mouse_pos: None,
-            table_state: TableState::default(),
-            branch_list_offset: 0,
-            branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            status_message: None,
-            branches_loaded: false,
-            commits_loaded: false,
-            diff_pending: false,
-            poll_interval_ms: POLL_INTERVAL_DEFAULT,
-            commit_limit: INITIAL_COMMIT_LIMIT,
-            all_commits_loaded: false,
-            loading_more: false,
-            simplified_graph,
-            full_commits_cache: None,
-            simplified_commits_cache: None,
-            debug,
-            last_frame_time_ms: 0,
-            dirty: true,
         })
     }
 
@@ -904,39 +807,54 @@ impl App {
                 self.branch_index += 1;
             }
             KeyCode::Right => {
-                if let Some(item) = self.branch_tree.get(self.branch_index) {
-                    if item.expandable && !item.expanded {
-                        self.expanded_nodes.insert(item.key.clone(), true);
-                        self.rebuild_branch_tree();
-                    }
+                let action = self
+                    .branch_tree
+                    .get(self.branch_index)
+                    .filter(|item| item.expandable && !item.expanded)
+                    .map(|item| item.key.clone());
+                if let Some(key) = action {
+                    self.expanded_nodes.insert(key, true);
+                    self.rebuild_branch_tree();
                 }
             }
             KeyCode::Left => {
-                if let Some(item) = self.branch_tree.get(self.branch_index) {
-                    if item.expandable && item.expanded {
-                        self.expanded_nodes.insert(item.key.clone(), false);
-                        self.rebuild_branch_tree();
-                    }
+                let action = self
+                    .branch_tree
+                    .get(self.branch_index)
+                    .filter(|item| item.expandable && item.expanded)
+                    .map(|item| item.key.clone());
+                if let Some(key) = action {
+                    self.expanded_nodes.insert(key, false);
+                    self.rebuild_branch_tree();
                 }
             }
             KeyCode::Char(' ') => {
-                if let Some(item) = self.branch_tree.get(self.branch_index) {
-                    if item.expandable {
-                        let new_state = !item.expanded;
-                        self.expanded_nodes.insert(item.key.clone(), new_state);
-                        self.rebuild_branch_tree();
-                    }
+                let action = self
+                    .branch_tree
+                    .get(self.branch_index)
+                    .filter(|item| item.expandable)
+                    .map(|item| (item.key.clone(), !item.expanded));
+                if let Some((key, new_state)) = action {
+                    self.expanded_nodes.insert(key, new_state);
+                    self.rebuild_branch_tree();
                 }
             }
             KeyCode::Enter => {
-                if let Some(item) = self.branch_tree.get(self.branch_index) {
+                let action = self.branch_tree.get(self.branch_index).map(|item| {
                     if item.is_branch {
-                        self.request_commits(Some(item.full_path.clone()));
-                        self.focus = Panel::Commits;
+                        (Some(item.full_path.clone()), None)
                     } else if item.expandable {
-                        // Toggle expandable directory on Enter
-                        let new_state = !item.expanded;
-                        self.expanded_nodes.insert(item.key.clone(), new_state);
+                        (None, Some((item.key.clone(), !item.expanded)))
+                    } else {
+                        (None, None)
+                    }
+                });
+                if let Some((branch_path, toggle)) = action {
+                    if let Some(path) = branch_path {
+                        self.request_commits(Some(path));
+                        self.focus = Panel::Commits;
+                    } else if let Some((key, new_state)) = toggle {
+                        self.expanded_nodes.insert(key, new_state);
                         self.rebuild_branch_tree();
                     }
                 }
@@ -975,7 +893,8 @@ impl App {
                 self.apply_search_filter();
             }
             KeyCode::Delete if self.cursor_pos < self.search_query.len() => {
-                self.search_query.remove(self.cursor_pos);
+                let pos = self.cursor_pos;
+                self.search_query.remove(pos);
                 self.apply_search_filter();
             }
             KeyCode::Left => {
@@ -1003,7 +922,8 @@ impl App {
                 self.cursor_pos = self.search_query.len();
             }
             KeyCode::Char(ch) => {
-                self.search_query.insert(self.cursor_pos, ch);
+                let pos = self.cursor_pos;
+                self.search_query.insert(pos, ch);
                 self.cursor_pos += ch.len_utf8();
                 self.apply_search_filter();
             }
@@ -1192,13 +1112,21 @@ impl App {
             let actual_index = rel_row + self.branch_list_offset;
             if actual_index < self.branch_tree.len() {
                 self.branch_index = actual_index;
-                if let Some(item) = self.branch_tree.get(actual_index) {
+                let action = self.branch_tree.get(actual_index).map(|item| {
                     if item.is_branch {
-                        self.request_commits(Some(item.full_path.clone()));
-                        self.focus = Panel::Commits;
+                        (Some(item.full_path.clone()), None)
                     } else if item.expandable {
-                        let new_state = !item.expanded;
-                        self.expanded_nodes.insert(item.key.clone(), new_state);
+                        (None, Some((item.key.clone(), !item.expanded)))
+                    } else {
+                        (None, None)
+                    }
+                });
+                if let Some((branch_path, toggle)) = action {
+                    if let Some(path) = branch_path {
+                        self.request_commits(Some(path));
+                        self.focus = Panel::Commits;
+                    } else if let Some((key, new_state)) = toggle {
+                        self.expanded_nodes.insert(key, new_state);
                         self.rebuild_branch_tree();
                     }
                 }
@@ -1478,12 +1406,14 @@ impl App {
         let branch_visible = (branch_content_area
             .height
             .saturating_sub(ui::layout::PANEL_BORDER_H)) as usize;
+        let branch_tree_len = self.branch_tree.len();
+        let branch_offset = branch_list_state.offset();
         self.branch_scrollbar.render(
             frame,
             branch_scrollbar_area,
-            self.branch_tree.len(),
+            branch_tree_len,
             branch_visible,
-            branch_list_state.offset(),
+            branch_offset,
             branch_focus_style,
         );
 
@@ -1514,20 +1444,26 @@ impl App {
         let (table_content_area, table_scrollbar_area) =
             ui::scrollbar_view::ScrollbarView::split(areas.table);
 
+        let state = &mut self.state;
         let table_ctx = ui::commit_table::CommitTableCtx {
-            commits: self
+            commits: state
                 .filtered_commits
                 .as_deref()
-                .unwrap_or(&self.all_commits),
-            visible_index: self.selected_index,
-            is_focused: self.focus == Panel::Commits,
-            visible_to_commit: &self.visible_to_commit,
-            total_loaded: self.all_commits.len(),
-            search_active: !self.search_query.is_empty(),
-            simplified_graph: self.simplified_graph,
+                .unwrap_or(&state.all_commits),
+            visible_index: state.selected_index,
+            is_focused: state.focus == Panel::Commits,
+            visible_to_commit: &state.visible_to_commit,
+            total_loaded: state.all_commits.len(),
+            search_active: !state.search_query.is_empty(),
+            simplified_graph: state.simplified_graph,
             debug_label,
         };
-        ui::commit_table::render(frame, table_content_area, &table_ctx, &mut self.table_state);
+        ui::commit_table::render(
+            frame,
+            table_content_area,
+            &table_ctx,
+            &mut state.table_state,
+        );
 
         let table_focus_style = if self.focus == Panel::Commits {
             Style::default().fg(Color::Rgb(180, 140, 255))
@@ -1537,15 +1473,18 @@ impl App {
         let table_visible = (table_content_area
             .height
             .saturating_sub(ui::layout::TABLE_OVERHEAD)) as usize;
+        let table_item_count = self
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&self.all_commits)
+            .len();
+        let table_offset = self.table_state.offset();
         self.table_scrollbar.render(
             frame,
             table_scrollbar_area,
-            self.filtered_commits
-                .as_deref()
-                .unwrap_or(&self.all_commits)
-                .len(),
+            table_item_count,
             table_visible,
-            self.table_state.offset(),
+            table_offset,
             table_focus_style,
         );
 
@@ -1577,12 +1516,13 @@ impl App {
         let diff_visible = (diff_content_area
             .height
             .saturating_sub(ui::layout::PANEL_BORDER_H)) as usize;
+        let diff_scroll_val = self.diff_scroll;
         self.diff_scrollbar.render(
             frame,
             diff_scrollbar_area,
             diff_total_lines,
             diff_visible,
-            self.diff_scroll,
+            diff_scroll_val,
             diff_focus_style,
         );
 
@@ -1618,57 +1558,10 @@ mod tests {
     /// Helper to build a minimal App for testing pure logic functions.
     fn test_app() -> App {
         App {
-            repo_path: ".".to_string(),
+            state: AppState::new(".".to_string(), false, false),
             branch_worker: workers::new_branch_worker(".").unwrap(),
             commit_worker: workers::new_commit_worker(".").unwrap(),
             diff_worker: workers::new_diff_worker(".").unwrap(),
-            all_branches: BranchData {
-                default_branch: None,
-                entries: Vec::new(),
-            },
-            branch_tree: Vec::new(),
-            expanded_nodes: BTreeMap::new(),
-            branch_index: 0,
-            branch_scope: BranchScope::All,
-            selected_branch: None,
-            search_query: String::new(),
-            cursor_pos: 0,
-            all_commits: Vec::new(),
-            filtered_commits: None,
-            selected_index: 0,
-            visible_to_commit: Vec::new(),
-            commit_info: None,
-            diff_lines: Vec::new(),
-            file_entries: Vec::new(),
-            selected_file_index: 0,
-            diff_scroll: 0,
-            last_selected_hash: None,
-            focus: Panel::Commits,
-            branch_width_pct: ui::layout::DEFAULT_BRANCH_PCT,
-            diff_height_pct: ui::layout::DEFAULT_DIFF_PCT,
-            dragging: None,
-            scrollbar_drag: None,
-            last_size: None,
-            last_mouse_pos: None,
-            table_state: TableState::default(),
-            branch_list_offset: 0,
-            branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            status_message: None,
-            branches_loaded: false,
-            commits_loaded: false,
-            diff_pending: false,
-            poll_interval_ms: 0,
-            commit_limit: INITIAL_COMMIT_LIMIT,
-            all_commits_loaded: false,
-            loading_more: false,
-            simplified_graph: false,
-            full_commits_cache: None,
-            simplified_commits_cache: None,
-            debug: false,
-            last_frame_time_ms: 0,
-            dirty: false,
         }
     }
 
