@@ -257,8 +257,14 @@ impl App {
     /// Returns true if any worker produced data that requires a redraw.
     fn process_git_results(&mut self) -> bool {
         let mut changed = false;
+        changed |= self.poll_branch_results();
+        changed |= self.poll_commit_results();
+        changed |= self.poll_diff_results();
+        changed
+    }
 
-        // Poll branch worker
+    fn poll_branch_results(&mut self) -> bool {
+        let mut changed = false;
         while let Some(result) = self.branch_worker.try_recv() {
             changed = true;
             match result {
@@ -273,8 +279,11 @@ impl App {
                 }
             }
         }
+        changed
+    }
 
-        // Poll commit worker
+    fn poll_commit_results(&mut self) -> bool {
+        let mut changed = false;
         while let Some(result) = self.commit_worker.try_recv() {
             changed = true;
             match result {
@@ -327,8 +336,11 @@ impl App {
                 }
             }
         }
+        changed
+    }
 
-        // Poll diff worker
+    fn poll_diff_results(&mut self) -> bool {
+        let mut changed = false;
         while let Some(result) = self.diff_worker.try_recv() {
             changed = true;
             match result {
@@ -350,7 +362,6 @@ impl App {
                 }
             }
         }
-
         changed
     }
 }
