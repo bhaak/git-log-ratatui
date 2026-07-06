@@ -14,6 +14,7 @@ use crossterm::terminal::{
 };
 use ratatui::layout::Rect;
 
+use super::branches;
 use super::search;
 use super::App;
 use super::{PAGE_SIZE, POLL_BACKOFF_STEP, POLL_INTERVAL_DEFAULT, POLL_INTERVAL_MAX};
@@ -306,7 +307,7 @@ fn handle_branch_keys(app: &mut App, key: KeyEvent) {
                 .map(|item| item.key.clone());
             if let Some(key) = action {
                 app.expanded_nodes.insert(key, true);
-                app.rebuild_branch_tree();
+                branches::rebuild_branch_tree(&mut app.state);
             }
         }
         KeyCode::Left => {
@@ -317,7 +318,7 @@ fn handle_branch_keys(app: &mut App, key: KeyEvent) {
                 .map(|item| item.key.clone());
             if let Some(key) = action {
                 app.expanded_nodes.insert(key, false);
-                app.rebuild_branch_tree();
+                branches::rebuild_branch_tree(&mut app.state);
             }
         }
         KeyCode::Char(' ') => {
@@ -328,7 +329,7 @@ fn handle_branch_keys(app: &mut App, key: KeyEvent) {
                 .map(|item| (item.key.clone(), !item.expanded));
             if let Some((key, new_state)) = action {
                 app.expanded_nodes.insert(key, new_state);
-                app.rebuild_branch_tree();
+                branches::rebuild_branch_tree(&mut app.state);
             }
         }
         KeyCode::Enter => {
@@ -347,7 +348,7 @@ fn handle_branch_keys(app: &mut App, key: KeyEvent) {
                     app.focus = Panel::Commits;
                 } else if let Some((key, new_state)) = toggle {
                     app.expanded_nodes.insert(key, new_state);
-                    app.rebuild_branch_tree();
+                    branches::rebuild_branch_tree(&mut app.state);
                 }
             }
         }
@@ -610,7 +611,7 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
                     app.focus = Panel::Commits;
                 } else if let Some((key, new_state)) = toggle {
                     app.expanded_nodes.insert(key, new_state);
-                    app.rebuild_branch_tree();
+                    branches::rebuild_branch_tree(&mut app.state);
                 }
             }
         }
