@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -5,14 +6,16 @@ use ratatui::{
     Frame,
 };
 
+use crate::app::branches;
 use crate::app::state::AppState;
+use crate::app::PAGE_SIZE;
 use crate::models::*;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{self as panel_mod, EventOutcome};
 
 /// Wrapper struct implementing the Panel trait for the branch tree view.
 pub struct BranchPanel;
 
-impl Panel for BranchPanel {
+impl panel_mod::Panel for BranchPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
         let _ = render(
             frame,
@@ -22,6 +25,76 @@ impl Panel for BranchPanel {
             is_focused,
             None,
         );
+    }
+
+    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+        let Event::Key(key) = event else {
+            return EventOutcome::Continue;
+        };
+        match key.code {
+            KeyCode::Up => {
+                state.branch_index = state.branch_index.saturating_sub(1);
+            }
+            KeyCode::Down if state.branch_index + 1 < state.branch_tree.len() => {
+                state.branch_index += 1;
+            }
+            KeyCode::Right => {
+                let action = state
+                    .branch_tree
+                    .get(state.branch_index)
+                    .filter(|item| item.expandable && !item.expanded)
+                    .map(|item| item.key.clone());
+                if let Some(k) = action {
+                    state.expanded_nodes.insert(k, true);
+                    branches::rebuild_branch_tree(state);
+                }
+            }
+            KeyCode::Left => {
+                let action = state
+                    .branch_tree
+                    .get(state.branch_index)
+                    .filter(|item| item.expandable && item.expanded)
+                    .map(|item| item.key.clone());
+                if let Some(k) = action {
+                    state.expanded_nodes.insert(k, false);
+                    branches::rebuild_branch_tree(state);
+                }
+            }
+            KeyCode::Char(' ') => {
+                let action = state
+                    .branch_tree
+                    .get(state.branch_index)
+                    .filter(|item| item.expandable)
+                    .map(|item| (item.key.clone(), !item.expanded));
+                if let Some((k, new_state)) = action {
+                    state.expanded_nodes.insert(k, new_state);
+                    branches::rebuild_branch_tree(state);
+                }
+            }
+            // Enter is handled at the App level (requires worker access)
+            KeyCode::Enter => {
+                let action = state.branch_tree.get(state.branch_index).map(|item| {
+                    if item.expandable {
+                        Some((item.key.clone(), !item.expanded))
+                    } else {
+                        None
+                    }
+                });
+                if let Some(Some((k, new_state))) = action {
+                    state.expanded_nodes.insert(k, new_state);
+                    branches::rebuild_branch_tree(state);
+                }
+            }
+            KeyCode::PageUp => {
+                state.branch_index = state.branch_index.saturating_sub(PAGE_SIZE);
+            }
+            KeyCode::PageDown => {
+                state.branch_index =
+                    (state.branch_index + PAGE_SIZE).min(state.branch_tree.len().saturating_sub(1));
+            }
+            _ => {}
+        }
+        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -50,7 +51,7 @@ pub fn render(
 }
 
 use crate::app::state::AppState;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{EventOutcome, Panel};
 
 /// Wrapper struct implementing the Panel trait for the scope indicator.
 pub struct ScopePanel;
@@ -58,6 +59,17 @@ pub struct ScopePanel;
 impl Panel for ScopePanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
         render(frame, area, state.branch_scope, is_focused, None);
+    }
+
+    fn handle_event(&mut self, event: &Event, _state: &mut AppState) -> EventOutcome {
+        // Scope cycling requires worker access, handled in App-level dispatch.
+        // Here we just consume Enter/Space to prevent them from doing nothing.
+        if let Event::Key(key) = event {
+            if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
+                // Action handled externally via cycle_scope in input.rs
+            }
+        }
+        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

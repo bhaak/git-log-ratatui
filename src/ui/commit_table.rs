@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
@@ -8,12 +9,14 @@ use ratatui::{
 
 use std::cell::RefCell;
 
+use crate::app::search;
 use crate::app::state::AppState;
+use crate::app::PAGE_SIZE;
 use crate::graph::LANE_COLORS;
 use crate::models::*;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::ui::layout::TABLE_OVERHEAD;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{EventOutcome, Panel as PanelTrait};
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
@@ -574,7 +577,7 @@ impl CommitPanel {
     }
 }
 
-impl Panel for CommitPanel {
+impl PanelTrait for CommitPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
         let commits = state
             .filtered_commits
@@ -591,6 +594,37 @@ impl Panel for CommitPanel {
             debug_label: None,
         };
         render(frame, area, &ctx, &mut self.table_state.borrow_mut());
+    }
+
+    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+        let Event::Key(key) = event else {
+            return EventOutcome::Continue;
+        };
+        match key.code {
+            KeyCode::Up if search::visible_count(state) > 0 => {
+                if state.selected_index > 0 {
+                    state.selected_index -= 1;
+                } else {
+                    state.selected_index = search::visible_count(state) - 1;
+                }
+            }
+            KeyCode::Down if search::visible_count(state) > 0 => {
+                state.selected_index = (state.selected_index + 1) % search::visible_count(state);
+            }
+            KeyCode::Enter => {
+                state.focus = Panel::Diff;
+            }
+            KeyCode::PageUp => {
+                state.selected_index = state.selected_index.saturating_sub(PAGE_SIZE);
+                search::clamp_selection(state);
+            }
+            KeyCode::PageDown if search::visible_count(state) > 0 => {
+                state.selected_index = (state.selected_index + PAGE_SIZE)
+                    .min(search::visible_count(state).saturating_sub(1));
+            }
+            _ => {}
+        }
+        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -110,8 +111,10 @@ pub fn render(
     frame.render_widget(paragraph, area);
 }
 
+use crate::app::search;
 use crate::app::state::AppState;
-use crate::ui::panel::Panel;
+use crate::text_utils;
+use crate::ui::panel::{EventOutcome, Panel};
 
 /// Wrapper struct implementing the Panel trait for the search input.
 pub struct SearchPanel;
@@ -130,6 +133,62 @@ impl Panel for SearchPanel {
             is_focused,
             None,
         );
+    }
+
+    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+        let Event::Key(key) = event else {
+            return EventOutcome::Continue;
+        };
+        match key.code {
+            KeyCode::Esc => {
+                state.search_query.clear();
+                state.cursor_pos = 0;
+                search::apply_search_filter(state);
+            }
+            KeyCode::Backspace if state.cursor_pos > 0 => {
+                let prev = text_utils::prev_char_boundary(&state.search_query, state.cursor_pos);
+                state.search_query.remove(prev);
+                state.cursor_pos = prev;
+                search::apply_search_filter(state);
+            }
+            KeyCode::Delete if state.cursor_pos < state.search_query.len() => {
+                let pos = state.cursor_pos;
+                state.search_query.remove(pos);
+                search::apply_search_filter(state);
+            }
+            KeyCode::Left => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    state.cursor_pos =
+                        text_utils::prev_word_boundary(&state.search_query, state.cursor_pos);
+                } else {
+                    state.cursor_pos =
+                        text_utils::prev_char_boundary(&state.search_query, state.cursor_pos);
+                }
+            }
+            KeyCode::Right => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    state.cursor_pos =
+                        text_utils::next_word_boundary(&state.search_query, state.cursor_pos);
+                } else {
+                    state.cursor_pos =
+                        text_utils::next_char_boundary(&state.search_query, state.cursor_pos);
+                }
+            }
+            KeyCode::Home => {
+                state.cursor_pos = 0;
+            }
+            KeyCode::End => {
+                state.cursor_pos = state.search_query.len();
+            }
+            KeyCode::Char(ch) => {
+                let pos = state.cursor_pos;
+                state.search_query.insert(pos, ch);
+                state.cursor_pos += ch.len_utf8();
+                search::apply_search_filter(state);
+            }
+            _ => {}
+        }
+        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

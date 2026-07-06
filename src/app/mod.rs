@@ -12,10 +12,10 @@ use crate::workers::{
 };
 use state::AppState;
 
-mod branches;
+pub(crate) mod branches;
 mod input;
 mod render;
-mod search;
+pub(crate) mod search;
 pub(crate) mod state;
 mod viewport;
 

@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -470,12 +471,12 @@ mod tests {
 }
 
 use crate::app::state::AppState;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{self as panel_mod, EventOutcome};
 
 /// Wrapper struct implementing the Panel trait for the diff view.
 pub struct DiffPanel;
 
-impl Panel for DiffPanel {
+impl panel_mod::Panel for DiffPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
         let short_hash = state.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
@@ -491,6 +492,76 @@ impl Panel for DiffPanel {
             debug_label: None,
         };
         let _ = render(frame, area, &ctx);
+    }
+
+    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+        let Event::Key(key) = event else {
+            return EventOutcome::Continue;
+        };
+        let file_section_end = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+        let past_meta = state.diff_scroll >= file_section_end || state.file_entries.is_empty();
+
+        match key.code {
+            KeyCode::Up => {
+                if past_meta {
+                    state.diff_scroll = state.diff_scroll.saturating_sub(1);
+                } else if state.selected_file_index > 0 {
+                    state.selected_file_index -= 1;
+                } else {
+                    state.selected_file_index = state.file_entries.len() - 1;
+                }
+            }
+            KeyCode::Down => {
+                if past_meta {
+                    state.diff_scroll += 1;
+                } else {
+                    state.selected_file_index =
+                        (state.selected_file_index + 1) % state.file_entries.len();
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = state.file_entries.get(state.selected_file_index) {
+                    let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                    state.diff_scroll = entry.diff_line + offset;
+                }
+            }
+            KeyCode::Char('n') if !state.file_entries.is_empty() => {
+                state.selected_file_index =
+                    (state.selected_file_index + 1) % state.file_entries.len();
+                let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                if let Some(entry) = state.file_entries.get(state.selected_file_index) {
+                    state.diff_scroll = entry.diff_line + offset;
+                }
+            }
+            KeyCode::Char('p') if !state.file_entries.is_empty() => {
+                if state.selected_file_index > 0 {
+                    state.selected_file_index -= 1;
+                    let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                    if let Some(entry) = state.file_entries.get(state.selected_file_index) {
+                        state.diff_scroll = entry.diff_line + offset;
+                    }
+                } else {
+                    state.diff_scroll = 0;
+                    state.selected_file_index = 0;
+                }
+            }
+            KeyCode::Home => {
+                state.diff_scroll = 0;
+            }
+            KeyCode::End => {
+                state.diff_scroll = usize::MAX;
+            }
+            KeyCode::PageUp => {
+                let page = state.diff_scrollbar.viewport_length().max(1);
+                state.diff_scroll = state.diff_scroll.saturating_sub(page);
+            }
+            KeyCode::PageDown => {
+                let page = state.diff_scrollbar.viewport_length().max(1);
+                state.diff_scroll = state.diff_scroll.saturating_add(page);
+            }
+            _ => {}
+        }
+        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {
