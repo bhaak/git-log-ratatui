@@ -6,10 +6,14 @@ use ratatui::{
     Frame,
 };
 
+use std::cell::RefCell;
+
+use crate::app::state::AppState;
 use crate::graph::LANE_COLORS;
 use crate::models::*;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::ui::layout::TABLE_OVERHEAD;
+use crate::ui::panel::Panel;
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
@@ -554,5 +558,52 @@ mod tests {
         let state = render_with(1000, 999, 13);
         let viewport = 10;
         assert_eq!(state.offset(), 1000 - viewport);
+    }
+}
+
+/// Wrapper struct implementing the Panel trait for the commit table.
+pub struct CommitPanel {
+    table_state: RefCell<TableState>,
+}
+
+impl CommitPanel {
+    pub fn new() -> Self {
+        CommitPanel {
+            table_state: RefCell::new(TableState::default()),
+        }
+    }
+}
+
+impl Panel for CommitPanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+        let commits = state
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&state.all_commits);
+        let ctx = CommitTableCtx {
+            commits,
+            visible_index: state.selected_index,
+            is_focused,
+            visible_to_commit: &state.visible_to_commit,
+            total_loaded: state.all_commits.len(),
+            search_active: !state.search_query.is_empty(),
+            simplified_graph: state.simplified_graph,
+            debug_label: None,
+        };
+        render(frame, area, &ctx, &mut self.table_state.borrow_mut());
+    }
+
+    fn help_keys(&self) -> &[(&str, &str)] {
+        &[
+            ("↑↓/j,k", "navigate"),
+            ("Enter", "show diff"),
+            ("y/Y", "copy hash"),
+            ("g", "toggle graph"),
+            ("PgUp/PgDn", "page"),
+        ]
+    }
+
+    fn label(&self) -> &str {
+        "Commits"
     }
 }

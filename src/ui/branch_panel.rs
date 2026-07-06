@@ -5,7 +5,38 @@ use ratatui::{
     Frame,
 };
 
+use crate::app::state::AppState;
 use crate::models::*;
+use crate::ui::panel::Panel;
+
+/// Wrapper struct implementing the Panel trait for the branch tree view.
+pub struct BranchPanel;
+
+impl Panel for BranchPanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+        let _ = render(
+            frame,
+            area,
+            &state.branch_tree,
+            state.branch_index,
+            is_focused,
+            None,
+        );
+    }
+
+    fn help_keys(&self) -> &[(&str, &str)] {
+        &[
+            ("↑↓", "navigate"),
+            ("Enter", "select"),
+            ("Space", "toggle"),
+            ("PgUp/PgDn", "page"),
+        ]
+    }
+
+    fn label(&self) -> &str {
+        "Branches"
+    }
+}
 
 /// Render the branch panel with a hierarchical tree view.
 pub fn render(

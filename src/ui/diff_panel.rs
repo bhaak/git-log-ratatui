@@ -468,3 +468,42 @@ mod tests {
         assert_eq!(diff_line_offset(None, files), 3); // header + 1 file + blank
     }
 }
+
+use crate::app::state::AppState;
+use crate::ui::panel::Panel;
+
+/// Wrapper struct implementing the Panel trait for the diff view.
+pub struct DiffPanel;
+
+impl Panel for DiffPanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+        let short_hash = state.commit_info.as_ref().map(|info| {
+            &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
+        });
+        let ctx = DiffPanelCtx {
+            commit_info: state.commit_info.as_ref(),
+            diff_lines: &state.diff_lines,
+            file_entries: &state.file_entries,
+            selected_file_index: state.selected_file_index,
+            diff_scroll: state.diff_scroll,
+            is_focused,
+            short_hash,
+            debug_label: None,
+        };
+        let _ = render(frame, area, &ctx);
+    }
+
+    fn help_keys(&self) -> &[(&str, &str)] {
+        &[
+            ("↑↓/j,k", "scroll/navigate files"),
+            ("n/p", "next/prev file"),
+            ("Enter", "jump to file diff"),
+            ("Home/End", "top/bottom"),
+            ("PgUp/PgDn", "page"),
+        ]
+    }
+
+    fn label(&self) -> &str {
+        "Diff"
+    }
+}

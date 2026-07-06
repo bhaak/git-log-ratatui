@@ -109,3 +109,38 @@ pub fn render(
 
     frame.render_widget(paragraph, area);
 }
+
+use crate::app::state::AppState;
+use crate::ui::panel::Panel;
+
+/// Wrapper struct implementing the Panel trait for the search input.
+pub struct SearchPanel;
+
+impl Panel for SearchPanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+        let branch_label = state.selected_branch.as_deref().unwrap_or("all branches");
+        let title = format!("Git Log - {} [{}]", state.repo_path, branch_label);
+        render(
+            frame,
+            area,
+            &state.search_query,
+            state.cursor_pos,
+            branch_label,
+            &title,
+            is_focused,
+            None,
+        );
+    }
+
+    fn help_keys(&self) -> &[(&str, &str)] {
+        &[
+            ("Ctrl+A/E", "start/end"),
+            ("Esc", "clear"),
+            ("Ctrl+V", "paste"),
+        ]
+    }
+
+    fn label(&self) -> &str {
+        "Search"
+    }
+}

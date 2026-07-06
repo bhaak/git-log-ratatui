@@ -48,3 +48,23 @@ pub fn render(
 
     frame.render_widget(paragraph, area);
 }
+
+use crate::app::state::AppState;
+use crate::ui::panel::Panel;
+
+/// Wrapper struct implementing the Panel trait for the scope indicator.
+pub struct ScopePanel;
+
+impl Panel for ScopePanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+        render(frame, area, state.branch_scope, is_focused, None);
+    }
+
+    fn help_keys(&self) -> &[(&str, &str)] {
+        &[("Enter/Space", "cycle scope")]
+    }
+
+    fn label(&self) -> &str {
+        "Scope"
+    }
+}
