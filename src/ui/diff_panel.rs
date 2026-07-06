@@ -496,35 +496,37 @@ mod tests {
     }
 }
 
+use crate::app::commands::Command;
 use crate::app::state::AppState;
-use crate::ui::panel::{self as panel_mod, EventOutcome};
+use crate::ui::panel::{self as panel_mod};
+use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the diff view.
 #[allow(clippy::items_after_test_module)]
 pub struct DiffPanel;
 
 impl panel_mod::Panel for DiffPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
         let short_hash = state.diff.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
         });
-        let ctx = DiffPanelCtx {
+        let diff_ctx = DiffPanelCtx {
             commit_info: state.diff.commit_info.as_ref(),
             diff_lines: &state.diff.diff_lines,
             file_entries: &state.diff.file_entries,
             selected_file_index: state.diff.selected_file_index,
             diff_scroll: state.diff.diff_scroll,
-            is_focused,
+            is_focused: ctx.is_focused(Panel::Diff),
             short_hash,
-            debug_label: None,
-            theme: &state.theme,
+            debug_label: ctx.debug_label,
+            theme: ctx.theme,
         };
-        let _ = render(frame, area, &ctx);
+        let _ = render(frame, area, &diff_ctx);
     }
 
-    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
         let Event::Key(key) = event else {
-            return EventOutcome::Continue;
+            return Vec::new();
         };
         let file_section_end = diff_line_offset(
             state.diff.commit_info.as_ref(),
@@ -537,77 +539,37 @@ impl panel_mod::Panel for DiffPanel {
         match key.code {
             KeyCode::Up => {
                 if past_meta {
-                    state.diff.diff_scroll = state.diff.diff_scroll.saturating_sub(1);
-                } else if state.diff.selected_file_index > 0 {
-                    state.diff.selected_file_index -= 1;
+                    vec![Command::ScrollDiff(-1)]
                 } else {
-                    state.diff.selected_file_index = state.diff.file_entries.len() - 1;
+                    vec![Command::MoveUp]
                 }
             }
             KeyCode::Down => {
                 if past_meta {
-                    state.diff.diff_scroll += 1;
+                    vec![Command::ScrollDiff(1)]
                 } else {
-                    state.diff.selected_file_index =
-                        (state.diff.selected_file_index + 1) % state.diff.file_entries.len();
+                    vec![Command::MoveDown]
                 }
             }
-            KeyCode::Enter => {
-                if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index) {
-                    let offset = diff_line_offset(
-                        state.diff.commit_info.as_ref(),
-                        &state.diff.file_entries,
-                        &state.theme,
-                    );
-                    state.diff.diff_scroll = entry.diff_line + offset;
-                }
-            }
+            KeyCode::Enter => vec![Command::JumpToDiffFile(state.diff.selected_file_index)],
             KeyCode::Char('n') if !state.diff.file_entries.is_empty() => {
-                state.diff.selected_file_index =
-                    (state.diff.selected_file_index + 1) % state.diff.file_entries.len();
-                let offset = diff_line_offset(
-                    state.diff.commit_info.as_ref(),
-                    &state.diff.file_entries,
-                    &state.theme,
-                );
-                if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index) {
-                    state.diff.diff_scroll = entry.diff_line + offset;
-                }
+                vec![Command::SelectNextFile]
             }
             KeyCode::Char('p') if !state.diff.file_entries.is_empty() => {
-                if state.diff.selected_file_index > 0 {
-                    state.diff.selected_file_index -= 1;
-                    let offset = diff_line_offset(
-                        state.diff.commit_info.as_ref(),
-                        &state.diff.file_entries,
-                        &state.theme,
-                    );
-                    if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index)
-                    {
-                        state.diff.diff_scroll = entry.diff_line + offset;
-                    }
-                } else {
-                    state.diff.diff_scroll = 0;
-                    state.diff.selected_file_index = 0;
-                }
+                vec![Command::SelectPrevFile]
             }
-            KeyCode::Home => {
-                state.diff.diff_scroll = 0;
-            }
-            KeyCode::End => {
-                state.diff.diff_scroll = usize::MAX;
-            }
+            KeyCode::Home => vec![Command::JumpToTop],
+            KeyCode::End => vec![Command::JumpToBottom],
             KeyCode::PageUp => {
                 let page = state.ui.diff_scrollbar.viewport_length().max(1);
-                state.diff.diff_scroll = state.diff.diff_scroll.saturating_sub(page);
+                vec![Command::ScrollDiff(-(page as i32))]
             }
             KeyCode::PageDown => {
                 let page = state.ui.diff_scrollbar.viewport_length().max(1);
-                state.diff.diff_scroll = state.diff.diff_scroll.saturating_add(page);
+                vec![Command::ScrollDiff(page as i32)]
             }
-            _ => {}
+            _ => Vec::new(),
         }
-        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

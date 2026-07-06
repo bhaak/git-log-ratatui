@@ -117,16 +117,17 @@ pub fn render(
     frame.render_widget(paragraph, area);
 }
 
-use crate::app::search;
+use crate::app::commands::Command;
 use crate::app::state::AppState;
 use crate::text_utils;
-use crate::ui::panel::{EventOutcome, Panel};
+use crate::ui::panel::Panel;
+use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the search input.
 pub struct SearchPanel;
 
 impl Panel for SearchPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
         let branch_label = state
             .branch
             .selected_branch
@@ -140,77 +141,80 @@ impl Panel for SearchPanel {
             state.search.cursor_pos,
             branch_label,
             &title,
-            is_focused,
-            None,
-            &state.theme,
+            ctx.is_focused(crate::models::Panel::Search),
+            ctx.debug_label,
+            ctx.theme,
         );
     }
 
-    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
         let Event::Key(key) = event else {
-            return EventOutcome::Continue;
+            return Vec::new();
         };
         match key.code {
-            KeyCode::Esc => {
-                state.search.search_query.clear();
-                state.search.cursor_pos = 0;
-                search::apply_search_filter(state);
-            }
+            KeyCode::Esc => vec![Command::ClearSearch],
             KeyCode::Backspace if state.search.cursor_pos > 0 => {
-                let prev = text_utils::prev_char_boundary(
-                    &state.search.search_query,
-                    state.search.cursor_pos,
-                );
-                state.search.search_query.remove(prev);
-                state.search.cursor_pos = prev;
-                search::apply_search_filter(state);
+                let pos = state.search.cursor_pos;
+                let prev = text_utils::prev_char_boundary(&state.search.search_query, pos);
+                let mut q = state.search.search_query.clone();
+                q.remove(prev);
+                vec![Command::SetSearch(q, prev)]
             }
             KeyCode::Delete if state.search.cursor_pos < state.search.search_query.len() => {
                 let pos = state.search.cursor_pos;
-                state.search.search_query.remove(pos);
-                search::apply_search_filter(state);
+                let mut q = state.search.search_query.clone();
+                q.remove(pos);
+                vec![Command::SetSearch(q, pos)]
             }
             KeyCode::Left => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    state.search.cursor_pos = text_utils::prev_word_boundary(
+                let new_pos = if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    text_utils::prev_word_boundary(
                         &state.search.search_query,
                         state.search.cursor_pos,
-                    );
+                    )
                 } else {
-                    state.search.cursor_pos = text_utils::prev_char_boundary(
+                    text_utils::prev_char_boundary(
                         &state.search.search_query,
                         state.search.cursor_pos,
-                    );
-                }
+                    )
+                };
+                vec![Command::SetSearch(
+                    state.search.search_query.clone(),
+                    new_pos,
+                )]
             }
             KeyCode::Right => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    state.search.cursor_pos = text_utils::next_word_boundary(
+                let new_pos = if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    text_utils::next_word_boundary(
                         &state.search.search_query,
                         state.search.cursor_pos,
-                    );
+                    )
                 } else {
-                    state.search.cursor_pos = text_utils::next_char_boundary(
+                    text_utils::next_char_boundary(
                         &state.search.search_query,
                         state.search.cursor_pos,
-                    );
-                }
+                    )
+                };
+                vec![Command::SetSearch(
+                    state.search.search_query.clone(),
+                    new_pos,
+                )]
             }
             KeyCode::Home => {
-                state.search.cursor_pos = 0;
+                vec![Command::SetSearch(state.search.search_query.clone(), 0)]
             }
             KeyCode::End => {
-                state.search.cursor_pos = state.search.search_query.len();
+                let len = state.search.search_query.len();
+                vec![Command::SetSearch(state.search.search_query.clone(), len)]
             }
             KeyCode::Char(ch) => {
                 let pos = state.search.cursor_pos;
-                state.search.search_query.insert(pos, ch);
-                state.search.cursor_pos += ch.len_utf8();
-                search::apply_search_filter(state);
+                let mut q = state.search.search_query.clone();
+                q.insert(pos, ch);
+                vec![Command::SetSearch(q, pos + ch.len_utf8())]
             }
-            _ => {}
+            _ => Vec::new(),
         }
-        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

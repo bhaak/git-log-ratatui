@@ -2,26 +2,22 @@ use crossterm::event::Event;
 use ratatui::layout::Rect;
 use ratatui::Frame;
 
+use crate::app::commands::Command;
 use crate::app::state::AppState;
 
-/// Outcome of a panel event handler.
-#[allow(dead_code)]
-pub enum EventOutcome {
-    Continue,
-    Quit,
-}
+use super::render_ctx::RenderCtx;
 
 /// Unified interface for UI panels.
 ///
-/// Each panel renders itself into a given area and handles keyboard/mouse events.
-#[allow(unused)]
+/// Each panel renders itself into a given area and produces Commands from events.
+#[allow(dead_code)]
 pub trait Panel {
     /// Render the panel into the given area.
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool);
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx);
 
-    /// Handle a UI event. Returns EventOutcome::Quit to exit the app.
-    fn handle_event(&mut self, _event: &Event, _state: &mut AppState) -> EventOutcome {
-        EventOutcome::Continue
+    /// Handle a UI event. Returns a list of Commands to execute on AppState.
+    fn handle_event(&mut self, _event: &Event, _state: &AppState) -> Vec<Command> {
+        Vec::new()
     }
 
     /// Keyboard shortcuts shown in the help bar.

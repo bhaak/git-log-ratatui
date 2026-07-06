@@ -52,33 +52,33 @@ pub fn render(
     frame.render_widget(paragraph, area);
 }
 
+use crate::app::commands::Command;
 use crate::app::state::AppState;
-use crate::ui::panel::{EventOutcome, Panel};
+use crate::ui::panel::Panel;
+use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the scope indicator.
 pub struct ScopePanel;
 
 impl Panel for ScopePanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
         render(
             frame,
             area,
             state.branch.branch_scope,
-            is_focused,
-            None,
-            &state.theme,
+            ctx.is_focused(crate::models::Panel::Scope),
+            ctx.debug_label,
+            ctx.theme,
         );
     }
 
-    fn handle_event(&mut self, event: &Event, _state: &mut AppState) -> EventOutcome {
-        // Scope cycling requires worker access, handled in App-level dispatch.
-        // Here we just consume Enter/Space to prevent them from doing nothing.
+    fn handle_event(&mut self, event: &Event, _state: &AppState) -> Vec<Command> {
         if let Event::Key(key) = event {
             if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
-                // Action handled externally via cycle_scope in input.rs
+                return vec![Command::CycleScope];
             }
         }
-        EventOutcome::Continue
+        Vec::new()
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

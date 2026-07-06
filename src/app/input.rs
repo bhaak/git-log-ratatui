@@ -1,3 +1,4 @@
+use crate::app::commands::Command;
 use crate::clipboard;
 use crate::error::AppError;
 use crate::models::Panel as PanelEnum;
@@ -45,7 +46,14 @@ pub(crate) fn handle_event(app: &mut App) -> Result<EventOutcome, AppError> {
     match ev {
         Event::Key(key) if key.kind == KeyEventKind::Press => {
             app.state.ui.dirty = true;
-            handle_key(app, key)
+            let commands = handle_key(app, key);
+            let should_quit = commands.iter().any(|c| matches!(c, Command::Quit));
+            for cmd in commands {
+                execute_command(app, cmd);
+            }
+            if should_quit {
+                return Ok(EventOutcome::Quit);
+            }
         }
         Event::Mouse(mouse) => {
             if let MouseEventKind::Moved = mouse.kind {
@@ -59,57 +67,175 @@ pub(crate) fn handle_event(app: &mut App) -> Result<EventOutcome, AppError> {
                 app.state.ui.dragging = None;
             }
             handle_mouse(app, mouse);
-            Ok(EventOutcome::Continue)
         }
         Event::Resize(w, h) => {
             app.state.ui.dirty = true;
             app.state.ui.last_size = Some((w, h));
-            Ok(EventOutcome::Continue)
-        }
-        _ => Ok(EventOutcome::Continue),
-    }
-}
-
-pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, AppError> {
-    match key.code {
-        KeyCode::Char('q') => return Ok(EventOutcome::Quit),
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            return Ok(EventOutcome::Quit)
-        }
-        KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            suspend(app);
-            return Ok(EventOutcome::Continue);
         }
         _ => {}
     }
 
-    // Global keys — work regardless of focus
+    Ok(EventOutcome::Continue)
+}
+
+pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
+    // --- Global quit keys ---
+    match key.code {
+        KeyCode::Char('q') => return vec![Command::Quit],
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            return vec![Command::Quit]
+        }
+        KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            suspend(app);
+            return Vec::new();
+        }
+        _ => {}
+    }
+
+    // --- Global keys — work regardless of focus ---
     match key.code {
         KeyCode::Tab => {
-            app.state.ui.focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                app.state.ui.focus.prev()
+            return vec![if key.modifiers.contains(KeyModifiers::SHIFT) {
+                Command::FocusPrev
             } else {
-                app.state.ui.focus.next()
-            };
-            return Ok(EventOutcome::Continue);
+                Command::FocusNext
+            }];
         }
-        KeyCode::BackTab => {
-            app.state.ui.focus = app.state.ui.focus.prev();
-            return Ok(EventOutcome::Continue);
-        }
-        KeyCode::Char('l') => {
-            app.state.ui.focus = app.state.ui.focus.next();
-            return Ok(EventOutcome::Continue);
-        }
-        KeyCode::Char('h') => {
-            app.state.ui.focus = app.state.ui.focus.prev();
-            return Ok(EventOutcome::Continue);
-        }
+        KeyCode::BackTab => return vec![Command::FocusPrev],
+        KeyCode::Char('l') => return vec![Command::FocusNext],
+        KeyCode::Char('h') => return vec![Command::FocusPrev],
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            cycle_scope(app);
-            return Ok(EventOutcome::Continue);
+            return vec![Command::CycleScope];
         }
-        KeyCode::Char('y') => {
+        KeyCode::Char('y') => return vec![Command::CopyHashShort],
+        KeyCode::Char('Y') => return vec![Command::CopyHashFull],
+        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let Some(text) = clipboard::get_clipboard_text() {
+                return vec![Command::PasteSearch(text)];
+            }
+            return Vec::new();
+        }
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if app.state.ui.focus == PanelEnum::Search {
+                return vec![Command::SetSearch(app.state.search.search_query.clone(), 0)];
+            } else {
+                return vec![
+                    Command::SetFocus(PanelEnum::Search),
+                    Command::SetSearch(app.state.search.search_query.clone(), 0),
+                ];
+            }
+        }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let len = app.state.search.search_query.len();
+            if app.state.ui.focus == PanelEnum::Search {
+                return vec![Command::SetSearch(
+                    app.state.search.search_query.clone(),
+                    len,
+                )];
+            } else {
+                return vec![
+                    Command::SetFocus(PanelEnum::Search),
+                    Command::SetSearch(app.state.search.search_query.clone(), len),
+                ];
+            }
+        }
+        KeyCode::Esc => {
+            if app.state.ui.focus == PanelEnum::Search {
+                return vec![Command::ClearSearch];
+            }
+            return Vec::new();
+        }
+        KeyCode::Char('g')
+            if key.modifiers.is_empty() && app.state.ui.focus == PanelEnum::Commits =>
+        {
+            return vec![Command::ToggleGraph];
+        }
+        _ => {}
+    }
+
+    // --- Vim navigation keys (global alternative for up/down) ---
+    match key.code {
+        KeyCode::Char('j') => return vec![Command::MoveDown],
+        KeyCode::Char('k') => return vec![Command::MoveUp],
+        _ => {}
+    }
+
+    // --- Dispatch to the focused panel ---
+    match app.state.ui.focus {
+        PanelEnum::Branches => {
+            let mut panel = BranchPanel;
+            panel.handle_event(&Event::Key(key), &app.state)
+        }
+        PanelEnum::Search => {
+            let mut panel = SearchPanel;
+            panel.handle_event(&Event::Key(key), &app.state)
+        }
+        PanelEnum::Scope => {
+            let mut panel = ScopePanel;
+            panel.handle_event(&Event::Key(key), &app.state)
+        }
+        PanelEnum::Commits => {
+            let mut panel = CommitPanel::new();
+            panel.handle_event(&Event::Key(key), &app.state)
+        }
+        PanelEnum::Diff => {
+            let mut panel = DiffPanel;
+            panel.handle_event(&Event::Key(key), &app.state)
+        }
+    }
+}
+
+// --- Command execution ---
+
+fn execute_command(app: &mut App, cmd: Command) {
+    use Command::*;
+
+    match cmd {
+        SetSearch(query, cursor) => {
+            app.state.search.search_query = query;
+            app.state.search.cursor_pos = cursor;
+            search::apply_search_filter(&mut app.state);
+        }
+        ClearSearch => {
+            app.state.search.search_query.clear();
+            app.state.search.cursor_pos = 0;
+            search::apply_search_filter(&mut app.state);
+        }
+        MoveUp => move_up(app),
+        MoveDown => move_down(app),
+        PageUp => page_up(app),
+        PageDown => page_down(app),
+        SetFocus(panel) => {
+            app.state.ui.focus = panel;
+        }
+        FocusNext => {
+            app.state.ui.focus = app.state.ui.focus.next();
+        }
+        FocusPrev => {
+            app.state.ui.focus = app.state.ui.focus.prev();
+        }
+        SelectBranch(name) => {
+            app.request_commits(Some(name));
+            app.state.ui.focus = PanelEnum::Commits;
+        }
+        ToggleBranchNode { key, expanded } => {
+            app.state.branch.expanded_nodes.insert(key, expanded);
+            branches::rebuild_branch_tree(&mut app.state);
+        }
+        CycleScope => {
+            app.state.branch.branch_scope = app.state.branch.branch_scope.next();
+            app.state.branch.branch_index = 0;
+            app.state.branch.expanded_nodes.clear();
+            app.state.search.search_query.clear();
+            app.state.search.cursor_pos = 0;
+            app.state.branch.selected_branch = None;
+            app.request_branches();
+            app.request_commits(None);
+        }
+        ToggleGraph => {
+            app.toggle_simplified_graph();
+        }
+        CopyHashShort => {
             if search::visible_count(&app.state) > 0 {
                 let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
                 if let Some(c) = app
@@ -128,9 +254,8 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, A
                     let _ = clipboard::copy_to_clipboard(short);
                 }
             }
-            return Ok(EventOutcome::Continue);
         }
-        KeyCode::Char('Y') => {
+        CopyHashFull => {
             if search::visible_count(&app.state) > 0 {
                 let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
                 if let Some(c) = app
@@ -144,108 +269,84 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, A
                     let _ = clipboard::copy_to_clipboard(&c.hash);
                 }
             }
-            return Ok(EventOutcome::Continue);
         }
-        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            handle_paste(app);
-            return Ok(EventOutcome::Continue);
+        PasteSearch(text) => {
+            app.state.search.search_query = text;
+            app.state.search.cursor_pos = app.state.search.search_query.len();
+            search::apply_search_filter(&mut app.state);
+            app.state.ui.focus = PanelEnum::Search;
         }
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.state.ui.focus == PanelEnum::Search {
-                app.state.search.cursor_pos = 0;
+        ScrollDiff(delta) => {
+            if delta > 0 {
+                app.state.diff.diff_scroll += delta as usize;
             } else {
-                app.state.ui.focus = PanelEnum::Search;
-                app.state.search.cursor_pos = 0;
+                app.state.diff.diff_scroll =
+                    app.state.diff.diff_scroll.saturating_sub((-delta) as usize);
             }
-            return Ok(EventOutcome::Continue);
         }
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.state.ui.focus == PanelEnum::Search {
-                app.state.search.cursor_pos = app.state.search.search_query.len();
-            } else {
-                app.state.ui.focus = PanelEnum::Search;
-                app.state.search.cursor_pos = app.state.search.search_query.len();
+        JumpToDiffFile(index) => {
+            let offset = ui::diff_panel::diff_line_offset(
+                app.state.diff.commit_info.as_ref(),
+                &app.state.diff.file_entries,
+                &app.state.theme,
+            );
+            if let Some(entry) = app.state.diff.file_entries.get(index) {
+                app.state.diff.diff_scroll = entry.diff_line + offset;
             }
-            return Ok(EventOutcome::Continue);
         }
-        KeyCode::Esc => {
-            if app.state.ui.focus == PanelEnum::Search {
-                app.state.search.search_query.clear();
-                app.state.search.cursor_pos = 0;
-                search::apply_search_filter(&mut app.state);
-            }
-            return Ok(EventOutcome::Continue);
-        }
-        KeyCode::Char('g')
-            if key.modifiers.is_empty() && app.state.ui.focus == PanelEnum::Commits =>
-        {
-            app.toggle_simplified_graph();
-            return Ok(EventOutcome::Continue);
-        }
-        _ => {}
-    }
-
-    // Vim navigation keys (global alternative for up/down)
-    match key.code {
-        KeyCode::Char('j') => {
-            move_down(app);
-            return Ok(EventOutcome::Continue);
-        }
-        KeyCode::Char('k') => {
-            move_up(app);
-            return Ok(EventOutcome::Continue);
-        }
-        _ => {}
-    }
-
-    // Panel-specific key dispatch via Panel trait.
-    match app.state.ui.focus {
-        PanelEnum::Branches if key.code == KeyCode::Enter => {
-            if let Some(item) = app
-                .state
-                .branch
-                .branch_tree
-                .get(app.state.branch.branch_index)
-            {
-                if item.is_branch {
-                    app.request_commits(Some(item.full_path.clone()));
-                    app.state.ui.focus = PanelEnum::Commits;
-                    return Ok(EventOutcome::Continue);
+        SelectNextFile => {
+            if !app.state.diff.file_entries.is_empty() {
+                app.state.diff.selected_file_index =
+                    (app.state.diff.selected_file_index + 1) % app.state.diff.file_entries.len();
+                let offset = ui::diff_panel::diff_line_offset(
+                    app.state.diff.commit_info.as_ref(),
+                    &app.state.diff.file_entries,
+                    &app.state.theme,
+                );
+                if let Some(entry) = app
+                    .state
+                    .diff
+                    .file_entries
+                    .get(app.state.diff.selected_file_index)
+                {
+                    app.state.diff.diff_scroll = entry.diff_line + offset;
                 }
             }
         }
-        PanelEnum::Scope if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) => {
-            cycle_scope(app);
-            return Ok(EventOutcome::Continue);
+        SelectPrevFile => {
+            if !app.state.diff.file_entries.is_empty() {
+                if app.state.diff.selected_file_index > 0 {
+                    app.state.diff.selected_file_index -= 1;
+                    let offset = ui::diff_panel::diff_line_offset(
+                        app.state.diff.commit_info.as_ref(),
+                        &app.state.diff.file_entries,
+                        &app.state.theme,
+                    );
+                    if let Some(entry) = app
+                        .state
+                        .diff
+                        .file_entries
+                        .get(app.state.diff.selected_file_index)
+                    {
+                        app.state.diff.diff_scroll = entry.diff_line + offset;
+                    }
+                } else {
+                    app.state.diff.diff_scroll = 0;
+                    app.state.diff.selected_file_index = 0;
+                }
+            }
         }
-        _ => {}
+        JumpToTop => {
+            app.state.diff.diff_scroll = 0;
+        }
+        JumpToBottom => {
+            app.state.diff.diff_scroll = usize::MAX;
+        }
+        ShowCommitDiff => {
+            app.state.ui.focus = PanelEnum::Diff;
+        }
+        Quit => {} // handled outside
     }
-
-    // Dispatch to the focused panel via the Panel trait.
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            let mut panel = BranchPanel;
-            panel.handle_event(&Event::Key(key), &mut app.state);
-        }
-        PanelEnum::Search => {
-            let mut panel = SearchPanel;
-            panel.handle_event(&Event::Key(key), &mut app.state);
-        }
-        PanelEnum::Scope => {
-            let mut panel = ScopePanel;
-            panel.handle_event(&Event::Key(key), &mut app.state);
-        }
-        PanelEnum::Commits => {
-            let mut panel = CommitPanel::new();
-            panel.handle_event(&Event::Key(key), &mut app.state);
-        }
-        PanelEnum::Diff => {
-            let mut panel = DiffPanel;
-            panel.handle_event(&Event::Key(key), &mut app.state);
-        }
-    }
-
-    Ok(EventOutcome::Continue)
 }
 
 fn move_down(app: &mut App) {
@@ -296,23 +397,46 @@ fn move_up(app: &mut App) {
     }
 }
 
-fn cycle_scope(app: &mut App) {
-    app.state.branch.branch_scope = app.state.branch.branch_scope.next();
-    app.state.branch.branch_index = 0;
-    app.state.branch.expanded_nodes.clear();
-    app.state.search.search_query.clear();
-    app.state.search.cursor_pos = 0;
-    app.state.branch.selected_branch = None;
-    app.request_branches();
-    app.request_commits(None);
+fn page_up(app: &mut App) {
+    match app.state.ui.focus {
+        PanelEnum::Branches => {
+            app.state.branch.branch_index = app
+                .state
+                .branch
+                .branch_index
+                .saturating_sub(super::PAGE_SIZE);
+        }
+        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
+            app.state.commit.selected_index = app
+                .state
+                .commit
+                .selected_index
+                .saturating_sub(super::PAGE_SIZE);
+            search::clamp_selection(&mut app.state);
+        }
+        PanelEnum::Diff => {
+            let page = app.state.ui.diff_scrollbar.viewport_length().max(1);
+            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(page);
+        }
+        _ => {}
+    }
 }
 
-fn handle_paste(app: &mut App) {
-    if let Some(text) = clipboard::get_clipboard_text() {
-        app.state.search.search_query = text;
-        app.state.search.cursor_pos = app.state.search.search_query.len();
-        search::apply_search_filter(&mut app.state);
-        app.state.ui.focus = PanelEnum::Search;
+fn page_down(app: &mut App) {
+    match app.state.ui.focus {
+        PanelEnum::Branches => {
+            app.state.branch.branch_index = (app.state.branch.branch_index + super::PAGE_SIZE)
+                .min(app.state.branch.branch_tree.len().saturating_sub(1));
+        }
+        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
+            app.state.commit.selected_index = (app.state.commit.selected_index + super::PAGE_SIZE)
+                .min(search::visible_count(&app.state).saturating_sub(1));
+        }
+        PanelEnum::Diff => {
+            let page = app.state.ui.diff_scrollbar.viewport_length().max(1);
+            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_add(page);
+        }
+        _ => {}
     }
 }
 
@@ -439,7 +563,14 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
         }
     } else if ui::layout::rect_contains(&areas.scope, click_pos) {
         app.state.ui.focus = PanelEnum::Scope;
-        cycle_scope(app);
+        app.state.branch.branch_scope = app.state.branch.branch_scope.next();
+        app.state.branch.branch_index = 0;
+        app.state.branch.expanded_nodes.clear();
+        app.state.search.search_query.clear();
+        app.state.search.cursor_pos = 0;
+        app.state.branch.selected_branch = None;
+        app.request_branches();
+        app.request_commits(None);
     } else if ui::layout::rect_contains(&areas.search, click_pos) {
         app.state.ui.focus = PanelEnum::Search;
     } else if ui::layout::rect_contains_interior(&areas.table, click_pos) {
@@ -608,50 +739,5 @@ fn handle_scroll_at(app: &mut App, col: u16, row: u16, direction: i32) {
         } else {
             app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(1);
         }
-    }
-}
-
-#[allow(dead_code)]
-fn handle_scroll_down(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            if app.state.branch.branch_index + 1 < app.state.branch.branch_tree.len() {
-                app.state.branch.branch_index += 1;
-            } else {
-                app.state.branch.branch_index = 0;
-            }
-        }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            app.state.commit.selected_index =
-                (app.state.commit.selected_index + 1) % search::visible_count(&app.state);
-        }
-        PanelEnum::Diff => {
-            app.state.diff.diff_scroll += 1;
-        }
-        _ => {}
-    }
-}
-
-#[allow(dead_code)]
-fn handle_scroll_up(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            if app.state.branch.branch_index > 0 {
-                app.state.branch.branch_index -= 1;
-            } else if !app.state.branch.branch_tree.is_empty() {
-                app.state.branch.branch_index = app.state.branch.branch_tree.len() - 1;
-            }
-        }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            if app.state.commit.selected_index > 0 {
-                app.state.commit.selected_index -= 1;
-            } else {
-                app.state.commit.selected_index = search::visible_count(&app.state) - 1;
-            }
-        }
-        PanelEnum::Diff => {
-            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(1);
-        }
-        _ => {}
     }
 }

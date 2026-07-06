@@ -9,14 +9,14 @@ use ratatui::{
 
 use std::cell::RefCell;
 
-use crate::app::search;
+use crate::app::commands::Command;
 use crate::app::state::AppState;
-use crate::app::PAGE_SIZE;
 use crate::models::*;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
 use crate::ui::layout::TABLE_OVERHEAD;
-use crate::ui::panel::{EventOutcome, Panel as PanelTrait};
+use crate::ui::panel::Panel as PanelTrait;
+use crate::ui::render_ctx::RenderCtx;
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
@@ -618,56 +618,38 @@ impl Default for CommitPanel {
 }
 
 impl PanelTrait for CommitPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
         let commits = state
             .commit
             .filtered_commits
             .as_deref()
             .unwrap_or(&state.commit.all_commits);
-        let ctx = CommitTableCtx {
+        let table_ctx = CommitTableCtx {
             commits,
             visible_index: state.commit.selected_index,
-            is_focused,
+            is_focused: ctx.is_focused(Panel::Commits),
             visible_to_commit: &state.commit.visible_to_commit,
             total_loaded: state.commit.all_commits.len(),
             search_active: !state.search.search_query.is_empty(),
             simplified_graph: state.commit.simplified_graph,
-            debug_label: None,
-            theme: &state.theme,
+            debug_label: ctx.debug_label,
+            theme: ctx.theme,
         };
-        render(frame, area, &ctx, &mut self.table_state.borrow_mut());
+        render(frame, area, &table_ctx, &mut self.table_state.borrow_mut());
     }
 
-    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+    fn handle_event(&mut self, event: &Event, _state: &AppState) -> Vec<Command> {
         let Event::Key(key) = event else {
-            return EventOutcome::Continue;
+            return Vec::new();
         };
         match key.code {
-            KeyCode::Up if search::visible_count(state) > 0 => {
-                if state.commit.selected_index > 0 {
-                    state.commit.selected_index -= 1;
-                } else {
-                    state.commit.selected_index = search::visible_count(state) - 1;
-                }
-            }
-            KeyCode::Down if search::visible_count(state) > 0 => {
-                state.commit.selected_index =
-                    (state.commit.selected_index + 1) % search::visible_count(state);
-            }
-            KeyCode::Enter => {
-                state.ui.focus = Panel::Diff;
-            }
-            KeyCode::PageUp => {
-                state.commit.selected_index = state.commit.selected_index.saturating_sub(PAGE_SIZE);
-                search::clamp_selection(state);
-            }
-            KeyCode::PageDown if search::visible_count(state) > 0 => {
-                state.commit.selected_index = (state.commit.selected_index + PAGE_SIZE)
-                    .min(search::visible_count(state).saturating_sub(1));
-            }
-            _ => {}
+            KeyCode::Up => vec![Command::MoveUp],
+            KeyCode::Down => vec![Command::MoveDown],
+            KeyCode::Enter => vec![Command::ShowCommitDiff],
+            KeyCode::PageUp => vec![Command::PageUp],
+            KeyCode::PageDown => vec![Command::PageDown],
+            _ => Vec::new(),
         }
-        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {

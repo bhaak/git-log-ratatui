@@ -14,6 +14,7 @@ use crate::workers::{
 use state::AppState;
 
 pub mod branches;
+pub mod commands;
 mod input;
 mod render;
 pub mod search;

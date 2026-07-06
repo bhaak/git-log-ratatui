@@ -4,6 +4,7 @@ pub mod diff_panel;
 pub mod help_bar;
 pub mod layout;
 pub mod panel;
+pub mod render_ctx;
 pub mod scope_panel;
 pub mod scrollbar_view;
 pub mod search_panel;

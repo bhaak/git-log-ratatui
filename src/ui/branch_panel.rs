@@ -6,104 +6,86 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::branches;
+use crate::app::commands::Command;
 use crate::app::state::AppState;
-use crate::app::PAGE_SIZE;
 use crate::models::*;
 use crate::theme::Theme;
-use crate::ui::panel::{self as panel_mod, EventOutcome};
+use crate::ui::panel::Panel;
+use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the branch tree view.
 pub struct BranchPanel;
 
-impl panel_mod::Panel for BranchPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
+impl Panel for BranchPanel {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
         let _ = render(
             frame,
             area,
             &state.branch.branch_tree,
             state.branch.branch_index,
-            is_focused,
-            None,
-            &state.theme,
+            ctx.is_focused(crate::models::Panel::Branches),
+            ctx.debug_label,
+            ctx.theme,
         );
     }
 
-    fn handle_event(&mut self, event: &Event, state: &mut AppState) -> EventOutcome {
+    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
         let Event::Key(key) = event else {
-            return EventOutcome::Continue;
+            return Vec::new();
         };
         match key.code {
-            KeyCode::Up => {
-                state.branch.branch_index = state.branch.branch_index.saturating_sub(1);
-            }
-            KeyCode::Down if state.branch.branch_index + 1 < state.branch.branch_tree.len() => {
-                state.branch.branch_index += 1;
-            }
+            KeyCode::Up => vec![Command::MoveUp],
+            KeyCode::Down => vec![Command::MoveDown],
             KeyCode::Right => {
-                let action = state
-                    .branch
-                    .branch_tree
-                    .get(state.branch.branch_index)
-                    .filter(|item| item.expandable && !item.expanded)
-                    .map(|item| item.key.clone());
-                if let Some(k) = action {
-                    state.branch.expanded_nodes.insert(k, true);
-                    branches::rebuild_branch_tree(state);
+                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                    if item.expandable && !item.expanded {
+                        return vec![Command::ToggleBranchNode {
+                            key: item.key.clone(),
+                            expanded: true,
+                        }];
+                    }
                 }
+                Vec::new()
             }
             KeyCode::Left => {
-                let action = state
-                    .branch
-                    .branch_tree
-                    .get(state.branch.branch_index)
-                    .filter(|item| item.expandable && item.expanded)
-                    .map(|item| item.key.clone());
-                if let Some(k) = action {
-                    state.branch.expanded_nodes.insert(k, false);
-                    branches::rebuild_branch_tree(state);
+                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                    if item.expandable && item.expanded {
+                        return vec![Command::ToggleBranchNode {
+                            key: item.key.clone(),
+                            expanded: false,
+                        }];
+                    }
                 }
+                Vec::new()
             }
             KeyCode::Char(' ') => {
-                let action = state
-                    .branch
-                    .branch_tree
-                    .get(state.branch.branch_index)
-                    .filter(|item| item.expandable)
-                    .map(|item| (item.key.clone(), !item.expanded));
-                if let Some((k, new_state)) = action {
-                    state.branch.expanded_nodes.insert(k, new_state);
-                    branches::rebuild_branch_tree(state);
+                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                    if item.expandable {
+                        return vec![Command::ToggleBranchNode {
+                            key: item.key.clone(),
+                            expanded: !item.expanded,
+                        }];
+                    }
                 }
+                Vec::new()
             }
-            // Enter is handled at the App level (requires worker access)
             KeyCode::Enter => {
-                let action = state
-                    .branch
-                    .branch_tree
-                    .get(state.branch.branch_index)
-                    .map(|item| {
-                        if item.expandable {
-                            Some((item.key.clone(), !item.expanded))
-                        } else {
-                            None
-                        }
-                    });
-                if let Some(Some((k, new_state))) = action {
-                    state.branch.expanded_nodes.insert(k, new_state);
-                    branches::rebuild_branch_tree(state);
+                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                    if item.is_branch {
+                        return vec![Command::SelectBranch(item.full_path.clone())];
+                    } else if item.expandable {
+                        return vec![Command::ToggleBranchNode {
+                            key: item.key.clone(),
+                            expanded: !item.expanded,
+                        }];
+                    }
                 }
+                Vec::new()
             }
-            KeyCode::PageUp => {
-                state.branch.branch_index = state.branch.branch_index.saturating_sub(PAGE_SIZE);
-            }
-            KeyCode::PageDown => {
-                state.branch.branch_index = (state.branch.branch_index + PAGE_SIZE)
-                    .min(state.branch.branch_tree.len().saturating_sub(1));
-            }
-            _ => {}
+            KeyCode::PageUp => vec![Command::PageUp],
+            KeyCode::PageDown => vec![Command::PageDown],
+            _ => Vec::new(),
         }
-        EventOutcome::Continue
     }
 
     fn help_keys(&self) -> &[(&str, &str)] {
