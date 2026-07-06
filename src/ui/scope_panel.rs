@@ -63,7 +63,7 @@ impl Panel for ScopePanel {
         render(
             frame,
             area,
-            state.branch_scope,
+            state.branch.branch_scope,
             is_focused,
             None,
             &state.theme,

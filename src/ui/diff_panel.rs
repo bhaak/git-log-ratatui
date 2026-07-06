@@ -505,15 +505,15 @@ pub struct DiffPanel;
 
 impl panel_mod::Panel for DiffPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
-        let short_hash = state.commit_info.as_ref().map(|info| {
+        let short_hash = state.diff.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
         });
         let ctx = DiffPanelCtx {
-            commit_info: state.commit_info.as_ref(),
-            diff_lines: &state.diff_lines,
-            file_entries: &state.file_entries,
-            selected_file_index: state.selected_file_index,
-            diff_scroll: state.diff_scroll,
+            commit_info: state.diff.commit_info.as_ref(),
+            diff_lines: &state.diff.diff_lines,
+            file_entries: &state.diff.file_entries,
+            selected_file_index: state.diff.selected_file_index,
+            diff_scroll: state.diff.diff_scroll,
             is_focused,
             short_hash,
             debug_label: None,
@@ -527,81 +527,83 @@ impl panel_mod::Panel for DiffPanel {
             return EventOutcome::Continue;
         };
         let file_section_end = diff_line_offset(
-            state.commit_info.as_ref(),
-            &state.file_entries,
+            state.diff.commit_info.as_ref(),
+            &state.diff.file_entries,
             &state.theme,
         );
-        let past_meta = state.diff_scroll >= file_section_end || state.file_entries.is_empty();
+        let past_meta =
+            state.diff.diff_scroll >= file_section_end || state.diff.file_entries.is_empty();
 
         match key.code {
             KeyCode::Up => {
                 if past_meta {
-                    state.diff_scroll = state.diff_scroll.saturating_sub(1);
-                } else if state.selected_file_index > 0 {
-                    state.selected_file_index -= 1;
+                    state.diff.diff_scroll = state.diff.diff_scroll.saturating_sub(1);
+                } else if state.diff.selected_file_index > 0 {
+                    state.diff.selected_file_index -= 1;
                 } else {
-                    state.selected_file_index = state.file_entries.len() - 1;
+                    state.diff.selected_file_index = state.diff.file_entries.len() - 1;
                 }
             }
             KeyCode::Down => {
                 if past_meta {
-                    state.diff_scroll += 1;
+                    state.diff.diff_scroll += 1;
                 } else {
-                    state.selected_file_index =
-                        (state.selected_file_index + 1) % state.file_entries.len();
+                    state.diff.selected_file_index =
+                        (state.diff.selected_file_index + 1) % state.diff.file_entries.len();
                 }
             }
             KeyCode::Enter => {
-                if let Some(entry) = state.file_entries.get(state.selected_file_index) {
+                if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index) {
                     let offset = diff_line_offset(
-                        state.commit_info.as_ref(),
-                        &state.file_entries,
+                        state.diff.commit_info.as_ref(),
+                        &state.diff.file_entries,
                         &state.theme,
                     );
-                    state.diff_scroll = entry.diff_line + offset;
+                    state.diff.diff_scroll = entry.diff_line + offset;
                 }
             }
-            KeyCode::Char('n') if !state.file_entries.is_empty() => {
-                state.selected_file_index =
-                    (state.selected_file_index + 1) % state.file_entries.len();
+            KeyCode::Char('n') if !state.diff.file_entries.is_empty() => {
+                state.diff.selected_file_index =
+                    (state.diff.selected_file_index + 1) % state.diff.file_entries.len();
                 let offset = diff_line_offset(
-                    state.commit_info.as_ref(),
-                    &state.file_entries,
+                    state.diff.commit_info.as_ref(),
+                    &state.diff.file_entries,
                     &state.theme,
                 );
-                if let Some(entry) = state.file_entries.get(state.selected_file_index) {
-                    state.diff_scroll = entry.diff_line + offset;
+                if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index) {
+                    state.diff.diff_scroll = entry.diff_line + offset;
                 }
             }
-            KeyCode::Char('p') if !state.file_entries.is_empty() => {
-                if state.selected_file_index > 0 {
-                    state.selected_file_index -= 1;
+            KeyCode::Char('p') if !state.diff.file_entries.is_empty() => {
+                if state.diff.selected_file_index > 0 {
+                    state.diff.selected_file_index -= 1;
                     let offset = diff_line_offset(
-                        state.commit_info.as_ref(),
-                        &state.file_entries,
+                        state.diff.commit_info.as_ref(),
+                        &state.diff.file_entries,
                         &state.theme,
                     );
-                    if let Some(entry) = state.file_entries.get(state.selected_file_index) {
-                        state.diff_scroll = entry.diff_line + offset;
+                    if let Some(entry) = state.diff.file_entries.get(state.diff.selected_file_index)
+                    {
+                        state.diff.diff_scroll = entry.diff_line + offset;
                     }
                 } else {
-                    state.diff_scroll = 0;
-                    state.selected_file_index = 0;
+                    state.diff.diff_scroll = 0;
+                    state.diff.selected_file_index = 0;
                 }
             }
             KeyCode::Home => {
-                state.diff_scroll = 0;
+                state.diff.diff_scroll = 0;
             }
             KeyCode::End => {
-                state.diff_scroll = usize::MAX;
+                state.diff.diff_scroll = usize::MAX;
             }
             KeyCode::PageUp => {
-                let page = state.diff_scrollbar.viewport_length().max(1);
-                state.diff_scroll = state.diff_scroll.saturating_sub(page);
+                let page = state.ui.diff_scrollbar.viewport_length().max(1);
+                state.diff.diff_scroll = state.diff.diff_scroll.saturating_sub(page);
             }
             KeyCode::PageDown => {
-                let page = state.diff_scrollbar.viewport_length().max(1);
-                state.diff_scroll = state.diff_scroll.saturating_add(page);
+                let page = state.ui.diff_scrollbar.viewport_length().max(1);
+                state.diff.diff_scroll = state.diff.diff_scroll.saturating_add(page);
             }
             _ => {}
         }

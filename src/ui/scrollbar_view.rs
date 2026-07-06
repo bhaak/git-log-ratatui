@@ -122,6 +122,12 @@ impl ScrollbarView {
     }
 }
 
+impl Default for ScrollbarView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

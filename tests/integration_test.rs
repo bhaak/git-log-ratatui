@@ -31,13 +31,13 @@ fn commit(hash: &str, subject: &str, graph_only: bool) -> Commit {
 fn test_initial_state_values() {
     let state = test_state();
 
-    assert_eq!(state.focus, Panel::Commits);
-    assert_eq!(state.branch_scope, BranchScope::All);
-    assert!(state.search_query.is_empty());
-    assert_eq!(state.selected_index, 0);
-    assert!(state.all_commits.is_empty());
-    assert!(state.filtered_commits.is_none());
-    assert_eq!(state.cursor_pos, 0);
+    assert_eq!(state.ui.focus, Panel::Commits);
+    assert_eq!(state.branch.branch_scope, BranchScope::All);
+    assert!(state.search.search_query.is_empty());
+    assert_eq!(state.commit.selected_index, 0);
+    assert!(state.commit.all_commits.is_empty());
+    assert!(state.commit.filtered_commits.is_none());
+    assert_eq!(state.search.cursor_pos, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -47,34 +47,34 @@ fn test_initial_state_values() {
 fn test_search_filters_commits() {
     let mut state = test_state();
 
-    state.all_commits = vec![
+    state.commit.all_commits = vec![
         commit("aaa", "fix login bug", false),
         commit("bbb", "add feature X", false),
         commit("ccc", "update README", true), // graph_only
         commit("ddd", "Bump version", false),
     ];
     // No filter initially
-    assert!(state.filtered_commits.is_none());
+    assert!(state.commit.filtered_commits.is_none());
 
     // Search for "login"
-    state.search_query = "login".to_string();
+    state.search.search_query = "login".to_string();
     search::apply_search_filter(&mut state);
 
-    assert!(state.filtered_commits.is_some());
-    let filtered = state.filtered_commits.as_ref().unwrap();
+    assert!(state.commit.filtered_commits.is_some());
+    let filtered = state.commit.filtered_commits.as_ref().unwrap();
     assert_eq!(filtered.iter().filter(|c| !c.graph_only).count(), 1);
     assert!(filtered.iter().any(|c| c.subject.contains("login")));
 
     // Search for "Bump" -> case-insensitive
-    state.search_query = "bump".to_string();
+    state.search.search_query = "bump".to_string();
     search::apply_search_filter(&mut state);
-    let filtered = state.filtered_commits.as_ref().unwrap();
+    let filtered = state.commit.filtered_commits.as_ref().unwrap();
     assert!(filtered.iter().any(|c| c.subject.contains("Bump")));
 
     // Clear search -> back to all commits
-    state.search_query.clear();
+    state.search.search_query.clear();
     search::apply_search_filter(&mut state);
-    assert!(state.filtered_commits.is_none());
+    assert!(state.commit.filtered_commits.is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -84,16 +84,16 @@ fn test_search_filters_commits() {
 fn test_branch_scope_cycle() {
     let mut state = test_state();
 
-    assert_eq!(state.branch_scope, BranchScope::All);
+    assert_eq!(state.branch.branch_scope, BranchScope::All);
 
-    state.branch_scope = state.branch_scope.next();
-    assert_eq!(state.branch_scope, BranchScope::Local);
+    state.branch.branch_scope = state.branch.branch_scope.next();
+    assert_eq!(state.branch.branch_scope, BranchScope::Local);
 
-    state.branch_scope = state.branch_scope.next();
-    assert_eq!(state.branch_scope, BranchScope::Remote);
+    state.branch.branch_scope = state.branch.branch_scope.next();
+    assert_eq!(state.branch.branch_scope, BranchScope::Remote);
 
-    state.branch_scope = state.branch_scope.next();
-    assert_eq!(state.branch_scope, BranchScope::All);
+    state.branch.branch_scope = state.branch.branch_scope.next();
+    assert_eq!(state.branch.branch_scope, BranchScope::All);
 
     // Labels
     assert_eq!(BranchScope::All.label(), "all");
@@ -108,31 +108,31 @@ fn test_branch_scope_cycle() {
 fn test_panel_focus_cycle() {
     let mut state = test_state();
 
-    assert_eq!(state.focus, Panel::Commits);
+    assert_eq!(state.ui.focus, Panel::Commits);
 
     // Forward
-    state.focus = state.focus.next();
-    assert_eq!(state.focus, Panel::Diff);
-    state.focus = state.focus.next();
-    assert_eq!(state.focus, Panel::Branches);
-    state.focus = state.focus.next();
-    assert_eq!(state.focus, Panel::Search);
-    state.focus = state.focus.next();
-    assert_eq!(state.focus, Panel::Scope);
-    state.focus = state.focus.next();
-    assert_eq!(state.focus, Panel::Commits); // wraps around
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Diff);
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Branches);
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Search);
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Scope);
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Commits); // wraps around
 
     // Backward
-    state.focus = state.focus.prev();
-    assert_eq!(state.focus, Panel::Scope);
-    state.focus = state.focus.prev();
-    assert_eq!(state.focus, Panel::Search);
-    state.focus = state.focus.prev();
-    assert_eq!(state.focus, Panel::Branches);
-    state.focus = state.focus.prev();
-    assert_eq!(state.focus, Panel::Diff);
-    state.focus = state.focus.prev();
-    assert_eq!(state.focus, Panel::Commits);
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Scope);
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Search);
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Branches);
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Diff);
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Commits);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,12 +143,15 @@ fn test_select_branch_updates_state() {
     let mut state = test_state();
 
     // Simulate selecting a branch
-    state.selected_branch = Some("feature/login".to_string());
-    assert_eq!(state.selected_branch.as_deref(), Some("feature/login"));
+    state.branch.selected_branch = Some("feature/login".to_string());
+    assert_eq!(
+        state.branch.selected_branch.as_deref(),
+        Some("feature/login")
+    );
 
     // Simulate selecting "all branches" (None)
-    state.selected_branch = None;
-    assert_eq!(state.selected_branch, None);
+    state.branch.selected_branch = None;
+    assert_eq!(state.branch.selected_branch, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,13 +162,13 @@ fn test_commit_limit_starts_at_batch_size() {
     let state = test_state();
 
     // commit_limit initialised from Config::default().behavior.commit_batch_size
-    assert!(state.commit_limit > 0);
+    assert!(state.commit.commit_limit > 0);
     assert_eq!(
-        state.commit_limit,
+        state.commit.commit_limit,
         Config::default().behavior.commit_batch_size
     );
-    assert!(!state.all_commits_loaded);
-    assert!(!state.loading_more);
+    assert!(!state.commit.all_commits_loaded);
+    assert!(!state.commit.loading_more);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,15 +177,15 @@ fn test_commit_limit_starts_at_batch_size() {
 #[test]
 fn test_simplified_graph_initial_and_toggle_aware() {
     let state = test_state();
-    assert!(!state.simplified_graph);
+    assert!(!state.commit.simplified_graph);
 
     // With simplified_graph enabled via config
     let state_simple = AppState::new(".".to_string(), &Config::default(), true, false);
-    assert!(state_simple.simplified_graph);
+    assert!(state_simple.commit.simplified_graph);
 
     // Caches start empty
-    assert!(state_simple.full_commits_cache.is_none());
-    assert!(state_simple.simplified_commits_cache.is_none());
+    assert!(state_simple.commit.full_commits_cache.is_none());
+    assert!(state_simple.commit.simplified_commits_cache.is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +195,7 @@ fn test_simplified_graph_initial_and_toggle_aware() {
 fn test_visible_mapping_integration() {
     let mut state = test_state();
 
-    state.all_commits = vec![
+    state.commit.all_commits = vec![
         commit("aaa", "first", false),
         commit("bbb", "second", true), // graph_only
         commit("ccc", "third", false),
@@ -216,14 +219,14 @@ fn test_visible_mapping_integration() {
 fn test_clamp_selection_integration() {
     let mut state = test_state();
 
-    state.selected_index = 42;
+    state.commit.selected_index = 42;
     search::clamp_selection(&mut state);
-    assert_eq!(state.selected_index, 0);
+    assert_eq!(state.commit.selected_index, 0);
 
-    state.all_commits = vec![commit("a", "one", false), commit("b", "two", false)];
+    state.commit.all_commits = vec![commit("a", "one", false), commit("b", "two", false)];
     search::apply_search_filter(&mut state);
 
-    state.selected_index = 10;
+    state.commit.selected_index = 10;
     search::clamp_selection(&mut state);
-    assert_eq!(state.selected_index, 1);
+    assert_eq!(state.commit.selected_index, 1);
 }

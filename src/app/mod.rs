@@ -1,4 +1,3 @@
-use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use ratatui::widgets::TableState;
@@ -22,9 +21,7 @@ pub mod state;
 mod viewport;
 
 pub(crate) const PAGE_SIZE: usize = 10;
-/// Number of commits loaded at startup. Keeps first paint fast on large repos.
 const INITIAL_COMMIT_LIMIT: usize = 5000;
-/// How many additional commits to load when scrolling near the end.
 pub(crate) const COMMIT_LIMIT_INCREMENT: usize = 5000;
 pub(crate) const POLL_INTERVAL_DEFAULT: u8 = 10;
 pub(crate) const POLL_INTERVAL_MAX: u8 = 200;
@@ -35,20 +32,6 @@ pub struct App {
     branch_worker: BranchWorker,
     commit_worker: CommitWorker,
     diff_worker: DiffWorker,
-}
-
-impl Deref for App {
-    type Target = AppState;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
-    }
-}
-
-impl DerefMut for App {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.state
-    }
 }
 
 impl App {
@@ -81,23 +64,23 @@ impl App {
         self.request_commits(None);
 
         loop {
-            let frame_start = if self.debug {
+            let frame_start = if self.state.debug {
                 Some(Instant::now())
             } else {
                 None
             };
             if self.process_git_results() {
-                self.dirty = true;
+                self.state.ui.dirty = true;
             }
-            if self.dirty {
+            if self.state.ui.dirty {
                 let draw_result = terminal.draw(|frame| render::render(self, frame));
                 if let Err(e) = draw_result {
                     return Err(format!("Render error: {}", e).into());
                 }
                 if let Some(start) = frame_start {
-                    self.last_frame_time_ms = start.elapsed().as_millis() as u64;
+                    self.state.last_frame_time_ms = start.elapsed().as_millis() as u64;
                 }
-                self.dirty = false;
+                self.state.ui.dirty = false;
             }
             match input::handle_event(self)? {
                 input::EventOutcome::Quit => break,
@@ -121,7 +104,7 @@ impl App {
             self.request_branches();
             match self.branch_worker.recv() {
                 Some(BranchResult::Branches(branches)) => {
-                    self.all_branches = branches;
+                    self.state.branch.all_branches = branches;
                 }
                 Some(BranchResult::Error(e)) => return Err(e),
                 None => return Err("Branch worker disconnected".into()),
@@ -133,7 +116,7 @@ impl App {
             self.request_commits(None);
             match self.commit_worker.recv() {
                 Some(CommitResult::Commits(commits)) => {
-                    self.all_commits = commits;
+                    self.state.commit.all_commits = commits;
                 }
                 Some(CommitResult::Error(e)) => return Err(e),
                 None => return Err("Commit worker disconnected".into()),
@@ -141,7 +124,12 @@ impl App {
             commit_total += t0.elapsed().as_millis();
 
             // Phase 3: Load diff for first commit (if any)
-            let first_hash = self.all_commits.first().map(|c| c.hash.clone());
+            let first_hash = self
+                .state
+                .commit
+                .all_commits
+                .first()
+                .map(|c| c.hash.clone());
             if let Some(hash) = first_hash {
                 let t0 = Instant::now();
                 self.request_diff(&hash);
@@ -151,9 +139,9 @@ impl App {
                         diff_lines,
                         file_entries,
                     }) => {
-                        self.commit_info = Some(*commit_info);
-                        self.diff_lines = diff_lines;
-                        self.file_entries = file_entries;
+                        self.state.diff.commit_info = Some(*commit_info);
+                        self.state.diff.diff_lines = diff_lines;
+                        self.state.diff.file_entries = file_entries;
                     }
                     Some(DiffResult::Error(e)) => return Err(e),
                     None => return Err("Diff worker disconnected".into()),
@@ -162,8 +150,11 @@ impl App {
             }
 
             if i == 0 {
-                println!("Total branches: {}", self.all_branches.entries.len());
-                println!("Total commits:  {}", self.all_commits.len());
+                println!(
+                    "Total branches: {}",
+                    self.state.branch.all_branches.entries.len()
+                );
+                println!("Total commits:  {}", self.state.commit.all_commits.len());
             }
         }
 
@@ -183,81 +174,79 @@ impl App {
     // --- Worker communication (per-window threads) ---
 
     fn request_branches(&mut self) {
-        debug!("Requesting branches (scope={:?})", self.branch_scope);
-        self.branches_loaded = false;
+        debug!(
+            "Requesting branches (scope={:?})",
+            self.state.branch.branch_scope
+        );
+        self.state.branch.branches_loaded = false;
         self.branch_worker.send(BranchCommand::FetchBranches {
-            scope: self.branch_scope,
+            scope: self.state.branch.branch_scope,
         });
     }
 
     fn request_commits(&mut self, branch: Option<String>) {
         debug!("Requesting commits (branch={:?})", branch);
-        self.commits_loaded = false;
-        // Clear stale commit data immediately so the old branch's commits are
-        // not shown while the new branch's data is loading. Also reset
-        // selection to the first commit (tip of the branch) and clear diff
-        // data so the old branch's metadata isn't shown.
-        self.all_commits.clear();
-        self.filtered_commits = None;
-        self.visible_to_commit.clear();
-        self.selected_index = 0;
-        self.commit_info = None;
-        self.diff_lines = Vec::new();
-        self.file_entries = Vec::new();
-        self.last_selected_hash = None;
-        self.table_state = TableState::default();
-        // Fresh load (startup, branch change, scope change): reset the window.
-        self.commit_limit = INITIAL_COMMIT_LIMIT;
-        self.all_commits_loaded = false;
-        self.loading_more = false;
-        self.selected_branch = branch.clone();
-        self.status_message = Some("Loading commits...".to_string());
-        // Branch / scope changed: the other mode's cache is now stale.
-        self.full_commits_cache = None;
-        self.simplified_commits_cache = None;
+        self.state.commit.commits_loaded = false;
+        self.state.commit.all_commits.clear();
+        self.state.commit.filtered_commits = None;
+        self.state.commit.visible_to_commit.clear();
+        self.state.commit.selected_index = 0;
+        self.state.diff.commit_info = None;
+        self.state.diff.diff_lines = Vec::new();
+        self.state.diff.file_entries = Vec::new();
+        self.state.diff.last_selected_hash = None;
+        self.state.commit.table_state = TableState::default();
+        self.state.commit.commit_limit = INITIAL_COMMIT_LIMIT;
+        self.state.commit.all_commits_loaded = false;
+        self.state.commit.loading_more = false;
+        self.state.branch.selected_branch = branch.clone();
+        self.state.ui.status_message = Some("Loading commits...".to_string());
+        self.state.commit.full_commits_cache = None;
+        self.state.commit.simplified_commits_cache = None;
         if !self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
-            scope: self.branch_scope,
-            limit: Some(self.commit_limit),
-            simplified: self.simplified_graph,
+            scope: self.state.branch.branch_scope,
+            limit: Some(self.state.commit.commit_limit),
+            simplified: self.state.commit.simplified_graph,
         }) {
-            self.status_message = Some("Commit worker disconnected — restart required".to_string());
+            self.state.ui.status_message =
+                Some("Commit worker disconnected — restart required".to_string());
         }
     }
 
     /// Toggle between full (git-graph) and simplified (git2 revwalk) graphs.
     /// Saves the current commit list to a cache so re-toggling is instant.
     fn toggle_simplified_graph(&mut self) {
-        // Save current commits into the cache for the old mode.
-        if self.simplified_graph {
-            self.simplified_commits_cache = Some(self.all_commits.clone());
+        if self.state.commit.simplified_graph {
+            self.state.commit.simplified_commits_cache =
+                Some(self.state.commit.all_commits.clone());
         } else {
-            self.full_commits_cache = Some(self.all_commits.clone());
+            self.state.commit.full_commits_cache = Some(self.state.commit.all_commits.clone());
         }
 
-        self.simplified_graph = !self.simplified_graph;
+        self.state.commit.simplified_graph = !self.state.commit.simplified_graph;
 
-        // Restore from cache if the target mode was previously loaded.
-        if self.simplified_graph {
-            if let Some(cached) = self.simplified_commits_cache.take() {
-                self.all_commits = cached;
-                self.commits_loaded = true;
+        if self.state.commit.simplified_graph {
+            if let Some(cached) = self.state.commit.simplified_commits_cache.take() {
+                self.state.commit.all_commits = cached;
+                self.state.commit.commits_loaded = true;
                 search::apply_search_filter(&mut self.state);
                 return;
             }
-        } else if let Some(cached) = self.full_commits_cache.take() {
-            self.all_commits = cached;
-            self.commits_loaded = true;
+        } else if let Some(cached) = self.state.commit.full_commits_cache.take() {
+            self.state.commit.all_commits = cached;
+            self.state.commit.commits_loaded = true;
             search::apply_search_filter(&mut self.state);
             return;
         }
 
         // Cache miss: fetch from the worker thread.
-        self.request_commits(self.selected_branch.clone());
+        let branch = self.state.branch.selected_branch.clone();
+        self.request_commits(branch);
     }
 
     fn request_diff(&mut self, hash: &str) {
-        self.diff_pending = true;
+        self.state.diff.diff_pending = true;
         self.diff_worker.send(DiffCommand::FetchDiff {
             hash: hash.to_string(),
         });
@@ -273,13 +262,13 @@ impl App {
             changed = true;
             match result {
                 BranchResult::Branches(branches) => {
-                    self.all_branches = branches;
+                    self.state.branch.all_branches = branches;
                     branches::rebuild_branch_tree(&mut self.state);
-                    self.branches_loaded = true;
+                    self.state.branch.branches_loaded = true;
                 }
                 BranchResult::Error(err) => {
                     error!("Branch worker error: {}", err);
-                    self.status_message = Some(err.to_string());
+                    self.state.ui.status_message = Some(err.to_string());
                 }
             }
         }
@@ -289,35 +278,41 @@ impl App {
             changed = true;
             match result {
                 CommitResult::Commits(commits) => {
-                    let prev_len = self.all_commits.len();
-                    self.all_commits = commits;
-                    if self.loading_more {
-                        self.loading_more = false;
-                        if self.all_commits.len() <= prev_len {
-                            self.all_commits_loaded = true;
+                    let prev_len = self.state.commit.all_commits.len();
+                    self.state.commit.all_commits = commits;
+                    if self.state.commit.loading_more {
+                        self.state.commit.loading_more = false;
+                        if self.state.commit.all_commits.len() <= prev_len {
+                            self.state.commit.all_commits_loaded = true;
                         }
                         search::reapply_filter_preserving_selection(&mut self.state);
                     } else {
                         search::apply_search_filter(&mut self.state);
                     }
-                    self.commits_loaded = true;
-                    self.status_message = None;
-                    if self.simplified_graph {
-                        self.simplified_commits_cache = Some(self.all_commits.clone());
+                    self.state.commit.commits_loaded = true;
+                    self.state.ui.status_message = None;
+                    if self.state.commit.simplified_graph {
+                        self.state.commit.simplified_commits_cache =
+                            Some(self.state.commit.all_commits.clone());
                     } else {
-                        self.full_commits_cache = Some(self.all_commits.clone());
+                        self.state.commit.full_commits_cache =
+                            Some(self.state.commit.all_commits.clone());
                     }
                     if !self
+                        .state
+                        .commit
                         .filtered_commits
                         .as_deref()
-                        .unwrap_or(&self.all_commits)
+                        .unwrap_or(&self.state.commit.all_commits)
                         .is_empty()
-                        && self.commit_info.is_none()
+                        && self.state.diff.commit_info.is_none()
                     {
                         let hash = self
+                            .state
+                            .commit
                             .filtered_commits
                             .as_deref()
-                            .unwrap_or(&self.all_commits)[0]
+                            .unwrap_or(&self.state.commit.all_commits)[0]
                             .hash
                             .clone();
                         if !hash.is_empty() {
@@ -327,7 +322,7 @@ impl App {
                 }
                 CommitResult::Error(err) => {
                     error!("Commit worker error: {}", err);
-                    self.status_message = Some(err.to_string());
+                    self.state.ui.status_message = Some(err.to_string());
                 }
             }
         }
@@ -341,26 +336,22 @@ impl App {
                     diff_lines,
                     file_entries,
                 } => {
-                    self.commit_info = Some(*commit_info);
-                    self.diff_lines = diff_lines;
-                    self.file_entries = file_entries;
-                    self.diff_scroll = 0;
-                    self.selected_file_index = 0;
-                    self.diff_pending = false;
+                    self.state.diff.commit_info = Some(*commit_info);
+                    self.state.diff.diff_lines = diff_lines;
+                    self.state.diff.file_entries = file_entries;
+                    self.state.diff.diff_scroll = 0;
+                    self.state.diff.selected_file_index = 0;
+                    self.state.diff.diff_pending = false;
                 }
                 DiffResult::Error(err) => {
                     error!("Diff worker error: {}", err);
-                    self.status_message = Some(err.to_string());
+                    self.state.ui.status_message = Some(err.to_string());
                 }
             }
         }
 
         changed
     }
-
-    // --- Branch tree ---
-
-    // --- Search ---
 }
 
 #[cfg(test)]
@@ -387,7 +378,7 @@ mod tests {
     #[test]
     fn test_search_filter_empty_query() {
         let mut app = test_app();
-        app.all_commits = vec![Commit {
+        app.state.commit.all_commits = vec![Commit {
             hash: "abc".into(),
             author: "alice".into(),
             date: "2024-01-01".into(),
@@ -399,12 +390,14 @@ mod tests {
             decorations: vec![],
             deco_line: 0,
         }];
-        app.search_query.clear();
+        app.state.search.search_query.clear();
         search::apply_search_filter(&mut app.state);
         assert_eq!(
-            app.filtered_commits
+            app.state
+                .commit
+                .filtered_commits
                 .as_deref()
-                .unwrap_or(&app.all_commits)
+                .unwrap_or(&app.state.commit.all_commits)
                 .len(),
             1
         );
@@ -413,7 +406,7 @@ mod tests {
     #[test]
     fn test_search_filter_by_subject() {
         let mut app = test_app();
-        app.all_commits = vec![
+        app.state.commit.all_commits = vec![
             Commit {
                 hash: "abc".into(),
                 author: "alice".into(),
@@ -439,16 +432,22 @@ mod tests {
                 deco_line: 0,
             },
         ];
-        app.search_query = "bug".into();
+        app.state.search.search_query = "bug".into();
         search::apply_search_filter(&mut app.state);
-        assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
-        assert_eq!(app.filtered_commits.as_deref().unwrap()[0].hash, "abc");
+        assert_eq!(
+            app.state.commit.filtered_commits.as_deref().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            app.state.commit.filtered_commits.as_deref().unwrap()[0].hash,
+            "abc"
+        );
     }
 
     #[test]
     fn test_search_filter_case_insensitive() {
         let mut app = test_app();
-        app.all_commits = vec![Commit {
+        app.state.commit.all_commits = vec![Commit {
             hash: "abc".into(),
             author: "ALICE".into(),
             date: "2024-01-01".into(),
@@ -460,15 +459,18 @@ mod tests {
             decorations: vec![],
             deco_line: 0,
         }];
-        app.search_query = "bug".into();
+        app.state.search.search_query = "bug".into();
         search::apply_search_filter(&mut app.state);
-        assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
+        assert_eq!(
+            app.state.commit.filtered_commits.as_deref().unwrap().len(),
+            1
+        );
     }
 
     #[test]
     fn test_visible_mapping_skips_graph_only() {
         let mut app = test_app();
-        app.filtered_commits = Some(vec![
+        app.state.commit.filtered_commits = Some(vec![
             Commit {
                 hash: "abc".into(),
                 author: "a".into(),
@@ -516,13 +518,13 @@ mod tests {
     fn test_clamp_selection_empty() {
         let mut app = test_app();
         search::clamp_selection(&mut app.state);
-        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.state.commit.selected_index, 0);
     }
 
     #[test]
     fn test_clamp_selection_in_range() {
         let mut app = test_app();
-        app.filtered_commits = Some(vec![Commit {
+        app.state.commit.filtered_commits = Some(vec![Commit {
             hash: "abc".into(),
             author: "a".into(),
             date: "d".into(),
@@ -535,18 +537,16 @@ mod tests {
             deco_line: 0,
         }]);
         search::build_visible_mapping(&mut app.state);
-        app.selected_index = 0;
+        app.state.commit.selected_index = 0;
         search::clamp_selection(&mut app.state);
-        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.state.commit.selected_index, 0);
     }
 
     #[test]
     fn test_branch_click_with_scroll_offset() {
         let mut app = test_app();
 
-        // Simulate a scrolled branch tree — the list widget offset is 20,
-        // meaning 20 items are scrolled off the top.
-        app.branch_tree = (0..50)
+        app.state.branch.branch_tree = (0..50)
             .map(|i| TreeItem {
                 name: format!("branch_{}", i),
                 key: format!("branch_{}", i),
@@ -558,29 +558,29 @@ mod tests {
                 tree_prefix: String::new(),
             })
             .collect();
-        app.branch_list_offset = 20;
+        app.state.branch.branch_list_offset = 20;
 
-        // Simulate a click at the 5th visible row (terminal row = panel_y + BORDER_OVERHEAD + 5).
-        // Panel is at y=0, BORDER_OVERHEAD=1, so clicking terminal row 6 should give
-        // rel_row=5, and actual_index = 5 + 20 = 25.
         let panel_y = 0u16;
-        let click_row = 6u16; // panel_y=0, BORDER_OVERHEAD=1 → rel_row = 6-0-1 = 5
+        let click_row = 6u16;
         let rel_row = (click_row
             .saturating_sub(panel_y)
             .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
-        let actual_index = rel_row + app.branch_list_offset;
+        let actual_index = rel_row + app.state.branch.branch_list_offset;
 
         assert_eq!(rel_row, 5);
         assert_eq!(actual_index, 25);
-        assert!(actual_index < app.branch_tree.len());
-        assert_eq!(app.branch_tree[actual_index].full_path, "branch_25");
+        assert!(actual_index < app.state.branch.branch_tree.len());
+        assert_eq!(
+            app.state.branch.branch_tree[actual_index].full_path,
+            "branch_25"
+        );
     }
 
     #[test]
     fn test_branch_click_without_scroll() {
         let mut app = test_app();
 
-        app.branch_tree = (0..10)
+        app.state.branch.branch_tree = (0..10)
             .map(|i| TreeItem {
                 name: format!("branch_{}", i),
                 key: format!("branch_{}", i),
@@ -592,18 +592,21 @@ mod tests {
                 tree_prefix: String::new(),
             })
             .collect();
-        app.branch_list_offset = 0;
+        app.state.branch.branch_list_offset = 0;
 
         let panel_y = 0u16;
-        let click_row = 3u16; // panel_y=0, BORDER_OVERHEAD=1 → rel_row = 3-0-1 = 2
+        let click_row = 3u16;
         let rel_row = (click_row
             .saturating_sub(panel_y)
             .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
-        let actual_index = rel_row + app.branch_list_offset;
+        let actual_index = rel_row + app.state.branch.branch_list_offset;
 
         assert_eq!(rel_row, 2);
         assert_eq!(actual_index, 2);
-        assert_eq!(app.branch_tree[actual_index].full_path, "branch_2");
+        assert_eq!(
+            app.state.branch.branch_tree[actual_index].full_path,
+            "branch_2"
+        );
     }
 
     #[test]
@@ -617,10 +620,8 @@ mod tests {
     fn test_scrollbar_click_does_not_change_selection() {
         let mut app = test_app();
 
-        // Use a 100-wide terminal. With DEFAULT_BRANCH_PCT=20, branch gets 20 cols.
-        // Scrollbar is at col=19 (rightmost column of branch area).
-        app.last_size = Some((100, 30));
-        app.branch_tree = (0..50)
+        app.state.ui.last_size = Some((100, 30));
+        app.state.branch.branch_tree = (0..50)
             .map(|i| TreeItem {
                 name: format!("branch_{}", i),
                 key: format!("branch_{}", i),
@@ -633,14 +634,12 @@ mod tests {
             })
             .collect();
 
-        // Simulate a prior render that set up the scrollbar state so
-        // click_to_index returns Some for scrollbar clicks.
         {
             use ratatui::{backend::TestBackend, Terminal};
             let mut terminal = Terminal::new(TestBackend::new(2, 10)).unwrap();
             terminal
                 .draw(|f| {
-                    app.branch_scrollbar.render(
+                    app.state.ui.branch_scrollbar.render(
                         f,
                         Rect::new(1, 0, 1, 10),
                         50,
@@ -652,21 +651,18 @@ mod tests {
                 .unwrap();
         }
 
-        let prev_branch_index = app.branch_index;
+        let prev_branch_index = app.state.branch.branch_index;
 
-        // Click on the branch panel scrollbar column (rightmost of 20-col area = col 19)
         input::handle_mouse_click(&mut app, 19, 5);
 
         assert_eq!(
-            app.branch_index, prev_branch_index,
+            app.state.branch.branch_index, prev_branch_index,
             "branch_index should NOT change on scrollbar click"
         );
 
-        // Click on content area (col=5, row=3) should change branch_index
         input::handle_mouse_click(&mut app, 5, 3);
-        // BORDER_OVERHEAD=1, branch area y=0 → rel_row = 3 - 0 - 1 = 2
         assert_eq!(
-            app.branch_index, 2,
+            app.state.branch.branch_index, 2,
             "branch_index should change on content click"
         );
     }

@@ -8,6 +8,7 @@ mod git;
 mod graph;
 mod lcs;
 mod models;
+mod state;
 mod text_utils;
 mod theme;
 mod time_format;

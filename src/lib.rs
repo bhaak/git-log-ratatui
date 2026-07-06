@@ -8,6 +8,7 @@ pub mod git;
 pub mod graph;
 pub mod lcs;
 pub mod models;
+pub mod state;
 pub mod text_utils;
 pub mod theme;
 pub mod time_format;

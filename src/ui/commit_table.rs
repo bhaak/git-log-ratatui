@@ -611,20 +611,27 @@ impl CommitPanel {
     }
 }
 
+impl Default for CommitPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PanelTrait for CommitPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
         let commits = state
+            .commit
             .filtered_commits
             .as_deref()
-            .unwrap_or(&state.all_commits);
+            .unwrap_or(&state.commit.all_commits);
         let ctx = CommitTableCtx {
             commits,
-            visible_index: state.selected_index,
+            visible_index: state.commit.selected_index,
             is_focused,
-            visible_to_commit: &state.visible_to_commit,
-            total_loaded: state.all_commits.len(),
-            search_active: !state.search_query.is_empty(),
-            simplified_graph: state.simplified_graph,
+            visible_to_commit: &state.commit.visible_to_commit,
+            total_loaded: state.commit.all_commits.len(),
+            search_active: !state.search.search_query.is_empty(),
+            simplified_graph: state.commit.simplified_graph,
             debug_label: None,
             theme: &state.theme,
         };
@@ -637,24 +644,25 @@ impl PanelTrait for CommitPanel {
         };
         match key.code {
             KeyCode::Up if search::visible_count(state) > 0 => {
-                if state.selected_index > 0 {
-                    state.selected_index -= 1;
+                if state.commit.selected_index > 0 {
+                    state.commit.selected_index -= 1;
                 } else {
-                    state.selected_index = search::visible_count(state) - 1;
+                    state.commit.selected_index = search::visible_count(state) - 1;
                 }
             }
             KeyCode::Down if search::visible_count(state) > 0 => {
-                state.selected_index = (state.selected_index + 1) % search::visible_count(state);
+                state.commit.selected_index =
+                    (state.commit.selected_index + 1) % search::visible_count(state);
             }
             KeyCode::Enter => {
-                state.focus = Panel::Diff;
+                state.ui.focus = Panel::Diff;
             }
             KeyCode::PageUp => {
-                state.selected_index = state.selected_index.saturating_sub(PAGE_SIZE);
+                state.commit.selected_index = state.commit.selected_index.saturating_sub(PAGE_SIZE);
                 search::clamp_selection(state);
             }
             KeyCode::PageDown if search::visible_count(state) > 0 => {
-                state.selected_index = (state.selected_index + PAGE_SIZE)
+                state.commit.selected_index = (state.commit.selected_index + PAGE_SIZE)
                     .min(search::visible_count(state).saturating_sub(1));
             }
             _ => {}

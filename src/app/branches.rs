@@ -7,11 +7,13 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     let remote_section_key = "__remote__";
 
     let local_expanded = state
+        .branch
         .expanded_nodes
         .get(local_section_key)
         .copied()
         .unwrap_or(true);
     let remote_expanded = state
+        .branch
         .expanded_nodes
         .get(remote_section_key)
         .copied()
@@ -41,6 +43,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
 
     // Separate local and remote branch names
     let local_names: Vec<String> = state
+        .branch
         .all_branches
         .entries
         .iter()
@@ -49,6 +52,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         .collect();
 
     let remote_names: Vec<String> = state
+        .branch
         .all_branches
         .entries
         .iter()
@@ -63,7 +67,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     tree::sort_tree(&mut local_root);
 
     // Move default branch to the front of local children
-    if let Some(ref default) = state.all_branches.default_branch {
+    if let Some(ref default) = state.branch.all_branches.default_branch {
         if let Some(pos) = local_root.children.iter().position(|c| c.name == *default) {
             let default_child = local_root.children.remove(pos);
             local_root.children.insert(0, default_child);
@@ -71,7 +75,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     }
 
     if local_expanded {
-        let branch_items = tree::flatten_tree(&local_root, 0, &state.expanded_nodes);
+        let branch_items = tree::flatten_tree(&local_root, 0, &state.branch.expanded_nodes);
         items.extend(branch_items);
     }
 
@@ -82,9 +86,9 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     tree::sort_tree(&mut remote_root);
 
     if remote_expanded {
-        let branch_items = tree::flatten_tree(&remote_root, 0, &state.expanded_nodes);
+        let branch_items = tree::flatten_tree(&remote_root, 0, &state.branch.expanded_nodes);
         items.extend(branch_items);
     }
 
-    state.branch_tree = items;
+    state.branch.branch_tree = items;
 }

@@ -127,13 +127,17 @@ pub struct SearchPanel;
 
 impl Panel for SearchPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
-        let branch_label = state.selected_branch.as_deref().unwrap_or("all branches");
+        let branch_label = state
+            .branch
+            .selected_branch
+            .as_deref()
+            .unwrap_or("all branches");
         let title = format!("Git Log - {} [{}]", state.repo_path, branch_label);
         render(
             frame,
             area,
-            &state.search_query,
-            state.cursor_pos,
+            &state.search.search_query,
+            state.search.cursor_pos,
             branch_label,
             &title,
             is_focused,
@@ -148,49 +152,60 @@ impl Panel for SearchPanel {
         };
         match key.code {
             KeyCode::Esc => {
-                state.search_query.clear();
-                state.cursor_pos = 0;
+                state.search.search_query.clear();
+                state.search.cursor_pos = 0;
                 search::apply_search_filter(state);
             }
-            KeyCode::Backspace if state.cursor_pos > 0 => {
-                let prev = text_utils::prev_char_boundary(&state.search_query, state.cursor_pos);
-                state.search_query.remove(prev);
-                state.cursor_pos = prev;
+            KeyCode::Backspace if state.search.cursor_pos > 0 => {
+                let prev = text_utils::prev_char_boundary(
+                    &state.search.search_query,
+                    state.search.cursor_pos,
+                );
+                state.search.search_query.remove(prev);
+                state.search.cursor_pos = prev;
                 search::apply_search_filter(state);
             }
-            KeyCode::Delete if state.cursor_pos < state.search_query.len() => {
-                let pos = state.cursor_pos;
-                state.search_query.remove(pos);
+            KeyCode::Delete if state.search.cursor_pos < state.search.search_query.len() => {
+                let pos = state.search.cursor_pos;
+                state.search.search_query.remove(pos);
                 search::apply_search_filter(state);
             }
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    state.cursor_pos =
-                        text_utils::prev_word_boundary(&state.search_query, state.cursor_pos);
+                    state.search.cursor_pos = text_utils::prev_word_boundary(
+                        &state.search.search_query,
+                        state.search.cursor_pos,
+                    );
                 } else {
-                    state.cursor_pos =
-                        text_utils::prev_char_boundary(&state.search_query, state.cursor_pos);
+                    state.search.cursor_pos = text_utils::prev_char_boundary(
+                        &state.search.search_query,
+                        state.search.cursor_pos,
+                    );
                 }
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    state.cursor_pos =
-                        text_utils::next_word_boundary(&state.search_query, state.cursor_pos);
+                    state.search.cursor_pos = text_utils::next_word_boundary(
+                        &state.search.search_query,
+                        state.search.cursor_pos,
+                    );
                 } else {
-                    state.cursor_pos =
-                        text_utils::next_char_boundary(&state.search_query, state.cursor_pos);
+                    state.search.cursor_pos = text_utils::next_char_boundary(
+                        &state.search.search_query,
+                        state.search.cursor_pos,
+                    );
                 }
             }
             KeyCode::Home => {
-                state.cursor_pos = 0;
+                state.search.cursor_pos = 0;
             }
             KeyCode::End => {
-                state.cursor_pos = state.search_query.len();
+                state.search.cursor_pos = state.search.search_query.len();
             }
             KeyCode::Char(ch) => {
-                let pos = state.cursor_pos;
-                state.search_query.insert(pos, ch);
-                state.cursor_pos += ch.len_utf8();
+                let pos = state.search.cursor_pos;
+                state.search.search_query.insert(pos, ch);
+                state.search.cursor_pos += ch.len_utf8();
                 search::apply_search_filter(state);
             }
             _ => {}

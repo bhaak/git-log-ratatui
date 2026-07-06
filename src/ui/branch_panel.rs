@@ -21,8 +21,8 @@ impl panel_mod::Panel for BranchPanel {
         let _ = render(
             frame,
             area,
-            &state.branch_tree,
-            state.branch_index,
+            &state.branch.branch_tree,
+            state.branch.branch_index,
             is_focused,
             None,
             &state.theme,
@@ -35,64 +35,71 @@ impl panel_mod::Panel for BranchPanel {
         };
         match key.code {
             KeyCode::Up => {
-                state.branch_index = state.branch_index.saturating_sub(1);
+                state.branch.branch_index = state.branch.branch_index.saturating_sub(1);
             }
-            KeyCode::Down if state.branch_index + 1 < state.branch_tree.len() => {
-                state.branch_index += 1;
+            KeyCode::Down if state.branch.branch_index + 1 < state.branch.branch_tree.len() => {
+                state.branch.branch_index += 1;
             }
             KeyCode::Right => {
                 let action = state
+                    .branch
                     .branch_tree
-                    .get(state.branch_index)
+                    .get(state.branch.branch_index)
                     .filter(|item| item.expandable && !item.expanded)
                     .map(|item| item.key.clone());
                 if let Some(k) = action {
-                    state.expanded_nodes.insert(k, true);
+                    state.branch.expanded_nodes.insert(k, true);
                     branches::rebuild_branch_tree(state);
                 }
             }
             KeyCode::Left => {
                 let action = state
+                    .branch
                     .branch_tree
-                    .get(state.branch_index)
+                    .get(state.branch.branch_index)
                     .filter(|item| item.expandable && item.expanded)
                     .map(|item| item.key.clone());
                 if let Some(k) = action {
-                    state.expanded_nodes.insert(k, false);
+                    state.branch.expanded_nodes.insert(k, false);
                     branches::rebuild_branch_tree(state);
                 }
             }
             KeyCode::Char(' ') => {
                 let action = state
+                    .branch
                     .branch_tree
-                    .get(state.branch_index)
+                    .get(state.branch.branch_index)
                     .filter(|item| item.expandable)
                     .map(|item| (item.key.clone(), !item.expanded));
                 if let Some((k, new_state)) = action {
-                    state.expanded_nodes.insert(k, new_state);
+                    state.branch.expanded_nodes.insert(k, new_state);
                     branches::rebuild_branch_tree(state);
                 }
             }
             // Enter is handled at the App level (requires worker access)
             KeyCode::Enter => {
-                let action = state.branch_tree.get(state.branch_index).map(|item| {
-                    if item.expandable {
-                        Some((item.key.clone(), !item.expanded))
-                    } else {
-                        None
-                    }
-                });
+                let action = state
+                    .branch
+                    .branch_tree
+                    .get(state.branch.branch_index)
+                    .map(|item| {
+                        if item.expandable {
+                            Some((item.key.clone(), !item.expanded))
+                        } else {
+                            None
+                        }
+                    });
                 if let Some(Some((k, new_state))) = action {
-                    state.expanded_nodes.insert(k, new_state);
+                    state.branch.expanded_nodes.insert(k, new_state);
                     branches::rebuild_branch_tree(state);
                 }
             }
             KeyCode::PageUp => {
-                state.branch_index = state.branch_index.saturating_sub(PAGE_SIZE);
+                state.branch.branch_index = state.branch.branch_index.saturating_sub(PAGE_SIZE);
             }
             KeyCode::PageDown => {
-                state.branch_index =
-                    (state.branch_index + PAGE_SIZE).min(state.branch_tree.len().saturating_sub(1));
+                state.branch.branch_index = (state.branch.branch_index + PAGE_SIZE)
+                    .min(state.branch.branch_tree.len().saturating_sub(1));
             }
             _ => {}
         }
