@@ -25,6 +25,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
+use tracing_subscriber::EnvFilter;
 
 use crate::error::AppError;
 
@@ -49,6 +50,16 @@ struct Cli {
 }
 
 fn main() -> Result<(), AppError> {
+    // Initialize tracing: logs to /tmp/git-log-ratatui.log.
+    // Set RUST_LOG to control verbosity (default: info).
+    let file = std::fs::File::create("/tmp/git-log-ratatui.log");
+    if let Ok(f) = file {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+            .with_writer(f)
+            .try_init();
+    }
+
     let cli = Cli::parse();
     let path = cli.path.unwrap_or_else(|| ".".to_string());
 

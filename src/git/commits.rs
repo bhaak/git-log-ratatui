@@ -3,6 +3,7 @@ use std::path::Path;
 
 use git_graph::graph::GitGraph;
 use rayon::prelude::*;
+use tracing::{debug, debug_span};
 
 use crate::error::AppError;
 use crate::graph::create_graph_settings;
@@ -22,6 +23,7 @@ impl GitRepository {
         scope: BranchScope,
         limit: Option<usize>,
     ) -> Result<Vec<Commit>, AppError> {
+        let _span = debug_span!("fetch_commits", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
 
         let settings = create_graph_settings(scope);
@@ -34,6 +36,7 @@ impl GitRepository {
 
         let mut commits = build_commits_from_graph(&graph);
         self.enrich_commits(&mut commits, &decoration_map);
+        debug!("Fetched {} commits (git-graph)", commits.len());
         Ok(commits)
     }
 
@@ -46,6 +49,7 @@ impl GitRepository {
         scope: BranchScope,
         limit: Option<usize>,
     ) -> Result<Vec<Commit>, AppError> {
+        let _span = debug_span!("fetch_commits_simplified", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
         let branch_tip_colors = self.build_branch_tip_colors(scope, &Theme::default())?;
 
@@ -99,6 +103,7 @@ impl GitRepository {
         }
 
         self.enrich_commits(&mut commits, &decoration_map);
+        debug!("Fetched {} commits (simplified)", commits.len());
         Ok(commits)
     }
 

@@ -6,6 +6,8 @@ pub mod graph_conv;
 
 use std::path::Path;
 
+use tracing::info;
+
 use crate::error::AppError;
 
 /// Wrapper around git2 for core git operations with git-graph integration.
@@ -18,6 +20,7 @@ impl GitRepository {
     /// Open a git repository at the given path.
     pub fn open(path: &str) -> Result<Self, AppError> {
         let repo = git2::Repository::open(Path::new(path))?;
+        info!("Repository opened at {}", path);
         Ok(GitRepository {
             repo,
             repo_path: path.to_string(),

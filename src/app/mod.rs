@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use ratatui::widgets::TableState;
+use tracing::{debug, error};
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -182,6 +183,7 @@ impl App {
     // --- Worker communication (per-window threads) ---
 
     fn request_branches(&mut self) {
+        debug!("Requesting branches (scope={:?})", self.branch_scope);
         self.branches_loaded = false;
         self.branch_worker.send(BranchCommand::FetchBranches {
             scope: self.branch_scope,
@@ -189,6 +191,7 @@ impl App {
     }
 
     fn request_commits(&mut self, branch: Option<String>) {
+        debug!("Requesting commits (branch={:?})", branch);
         self.commits_loaded = false;
         // Clear stale commit data immediately so the old branch's commits are
         // not shown while the new branch's data is loading. Also reset
@@ -275,6 +278,7 @@ impl App {
                     self.branches_loaded = true;
                 }
                 BranchResult::Error(err) => {
+                    error!("Branch worker error: {}", err);
                     self.status_message = Some(err.to_string());
                 }
             }
@@ -322,6 +326,7 @@ impl App {
                     }
                 }
                 CommitResult::Error(err) => {
+                    error!("Commit worker error: {}", err);
                     self.status_message = Some(err.to_string());
                 }
             }
@@ -344,6 +349,7 @@ impl App {
                     self.diff_pending = false;
                 }
                 DiffResult::Error(err) => {
+                    error!("Diff worker error: {}", err);
                     self.status_message = Some(err.to_string());
                 }
             }

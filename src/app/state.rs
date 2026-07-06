@@ -87,12 +87,7 @@ pub struct AppState {
 impl AppState {
     /// Create default application state.
     /// Does not spawn workers -- that happens in App::new().
-    pub fn new(
-        repo_path: String,
-        config: &Config,
-        simplified_graph: bool,
-        debug: bool,
-    ) -> Self {
+    pub fn new(repo_path: String, config: &Config, simplified_graph: bool, debug: bool) -> Self {
         AppState {
             repo_path,
             all_branches: BranchData {
