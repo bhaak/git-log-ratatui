@@ -1,6 +1,6 @@
 use crate::app::state::AppState;
 
-pub(crate) fn apply_search_filter(state: &mut AppState) {
+pub fn apply_search_filter(state: &mut AppState) {
     if state.search_query.is_empty() {
         state.filtered_commits = None;
     } else {
@@ -25,14 +25,14 @@ pub(crate) fn apply_search_filter(state: &mut AppState) {
     clamp_selection(state);
 }
 
-pub(crate) fn reapply_filter_preserving_selection(state: &mut AppState) {
+pub fn reapply_filter_preserving_selection(state: &mut AppState) {
     let prev = state.selected_index;
     apply_search_filter(state);
     state.selected_index = prev;
     clamp_selection(state);
 }
 
-pub(crate) fn build_visible_mapping(state: &mut AppState) {
+pub fn build_visible_mapping(state: &mut AppState) {
     let commits = state
         .filtered_commits
         .as_deref()
@@ -42,11 +42,11 @@ pub(crate) fn build_visible_mapping(state: &mut AppState) {
         .collect();
 }
 
-pub(crate) fn visible_count(state: &AppState) -> usize {
+pub fn visible_count(state: &AppState) -> usize {
     state.visible_to_commit.len()
 }
 
-pub(crate) fn visible_to_filtered(state: &AppState, visible_idx: usize) -> usize {
+pub fn visible_to_filtered(state: &AppState, visible_idx: usize) -> usize {
     state
         .visible_to_commit
         .get(visible_idx)
@@ -54,14 +54,14 @@ pub(crate) fn visible_to_filtered(state: &AppState, visible_idx: usize) -> usize
         .unwrap_or(0)
 }
 
-pub(crate) fn filtered_to_visible(state: &AppState, filtered_idx: usize) -> Option<usize> {
+pub fn filtered_to_visible(state: &AppState, filtered_idx: usize) -> Option<usize> {
     state
         .visible_to_commit
         .iter()
         .position(|&i| i == filtered_idx)
 }
 
-pub(crate) fn clamp_selection(state: &mut AppState) {
+pub fn clamp_selection(state: &mut AppState) {
     if visible_count(state) > 0 {
         state.selected_index = state
             .selected_index

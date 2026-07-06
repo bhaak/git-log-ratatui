@@ -1,5 +1,5 @@
 /// A commit entry produced by the git-graph crate, enriched with git2 metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Commit {
     pub hash: String,
     pub author: String,
@@ -21,7 +21,7 @@ pub struct Commit {
 }
 
 /// A single decoration on a commit (HEAD, branch, tag).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decoration {
     pub label: String,
     pub kind: DecorationKind,

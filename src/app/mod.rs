@@ -14,11 +14,11 @@ use crate::workers::{
 };
 use state::AppState;
 
-pub(crate) mod branches;
+pub mod branches;
 mod input;
 mod render;
-pub(crate) mod search;
-pub(crate) mod state;
+pub mod search;
+pub mod state;
 mod viewport;
 
 pub(crate) const PAGE_SIZE: usize = 10;
