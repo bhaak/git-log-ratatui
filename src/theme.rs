@@ -1,113 +1,190 @@
 use ratatui::style::Color;
+use serde::Deserialize;
 
 /// Customizable color theme for the application.
 #[derive(Clone)]
 pub struct Theme {
-    /// Focused panel border color (overall app accent).
     pub focused_border: Color,
-    /// Unfocused panel border color.
     pub unfocused_border: Color,
-    /// Selected item background (lists, tables).
     pub selected_bg: Color,
-    /// Unselected item background (lists, tables).
     pub unselected_bg: Color,
-    /// Commit graph lane colors (8 colors distributed across hue spectrum).
     pub graph_colors: [Color; 8],
-    /// Merge commit marker color.
     pub commit_merge: Color,
-    /// Default commit text color.
     pub commit_default: Color,
-    /// Second commit text color.
     pub commit_secondary: Color,
-    /// Decoration tag color (tags like v1.0).
     pub decoration_tag: Color,
-    /// Decoration local branch color.
     pub decoration_local: Color,
-    /// Decoration remote branch color.
     pub decoration_remote: Color,
-    /// Decoration HEAD color.
     pub decoration_head: Color,
-    /// Diff added lines color.
     pub diff_added: Color,
-    /// Diff added word-highlight background.
     pub diff_added_bg: Color,
-    /// Diff removed lines color.
     pub diff_removed: Color,
-    /// Diff removed word-highlight background.
     pub diff_removed_bg: Color,
-    /// Diff modified file indicator color.
     pub diff_modified: Color,
-    /// Diff renamed file indicator color.
     pub diff_renamed: Color,
-    /// Diff hunk header color.
     pub diff_hunk_header: Color,
-    /// Diff file header color.
     pub diff_file_header: Color,
-    /// Diff context line color (unchanged lines).
     pub diff_context: Color,
-    /// Diff selected file background.
     pub diff_selected_file_bg: Color,
-    /// Diff selected file text.
     pub diff_selected_file_fg: Color,
-    /// Diff selected file border.
     pub diff_selected_file_border: Color,
-    /// Search input cursor foreground color.
     pub search_cursor_fg: Color,
-    /// Search input cursor background color.
     pub search_cursor_bg: Color,
-    /// Help bar title color.
     pub help_title: Color,
-    /// Scrollbar thumb (active indicator) color.
     pub scrollbar_thumb: Color,
-    /// Scrollbar track (background) color.
     #[allow(dead_code)]
     pub scrollbar_track: Color,
-    /// Scope indicator text color.
     pub scope_text: Color,
+}
+
+/// Deserializable theme configuration with hex color strings.
+/// Each field defaults to the built-in palette when omitted.
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct ThemeConfig {
+    pub focused_border: String,
+    pub unfocused_border: String,
+    pub selected_bg: String,
+    pub unselected_bg: String,
+    pub graph_color_0: String,
+    pub graph_color_1: String,
+    pub graph_color_2: String,
+    pub graph_color_3: String,
+    pub graph_color_4: String,
+    pub graph_color_5: String,
+    pub graph_color_6: String,
+    pub graph_color_7: String,
+    pub commit_merge: String,
+    pub commit_default: String,
+    pub commit_secondary: String,
+    pub decoration_tag: String,
+    pub decoration_local: String,
+    pub decoration_remote: String,
+    pub decoration_head: String,
+    pub diff_added: String,
+    pub diff_added_bg: String,
+    pub diff_removed: String,
+    pub diff_removed_bg: String,
+    pub diff_modified: String,
+    pub diff_renamed: String,
+    pub diff_hunk_header: String,
+    pub diff_file_header: String,
+    pub diff_context: String,
+    pub diff_selected_file_bg: String,
+    pub diff_selected_file_fg: String,
+    pub diff_selected_file_border: String,
+    pub search_cursor_fg: String,
+    pub search_cursor_bg: String,
+    pub help_title: String,
+    pub scrollbar_thumb: String,
+    pub scrollbar_track: String,
+    pub scope_text: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        ThemeConfig {
+            focused_border: "#B48CFF".into(),
+            unfocused_border: "#808080".into(),
+            selected_bg: "#503C78".into(),
+            unselected_bg: "#404040".into(),
+            graph_color_0: "#CC664D".into(),
+            graph_color_1: "#CC994D".into(),
+            graph_color_2: "#CCCC4D".into(),
+            graph_color_3: "#4DCC66".into(),
+            graph_color_4: "#4DCCCC".into(),
+            graph_color_5: "#4D99CC".into(),
+            graph_color_6: "#994DCC".into(),
+            graph_color_7: "#CC4D99".into(),
+            commit_merge: "#FFFF00".into(),
+            commit_default: "#FFFFFF".into(),
+            commit_secondary: "#808080".into(),
+            decoration_tag: "#FFFF00".into(),
+            decoration_local: "#008000".into(),
+            decoration_remote: "#FF0000".into(),
+            decoration_head: "#90EE90".into(),
+            diff_added: "#008000".into(),
+            diff_added_bg: "#003200".into(),
+            diff_removed: "#FF0000".into(),
+            diff_removed_bg: "#320000".into(),
+            diff_modified: "#FFFF00".into(),
+            diff_renamed: "#0000FF".into(),
+            diff_hunk_header: "#00FFFF".into(),
+            diff_file_header: "#FFFF00".into(),
+            diff_context: "#808080".into(),
+            diff_selected_file_bg: "#FFFFFF".into(),
+            diff_selected_file_fg: "#000000".into(),
+            diff_selected_file_border: "#6496FF".into(),
+            search_cursor_fg: "#000000".into(),
+            search_cursor_bg: "#B48CFF".into(),
+            help_title: "#FFFF00".into(),
+            scrollbar_thumb: "#C89664".into(),
+            scrollbar_track: "#404040".into(),
+            scope_text: "#FFFF00".into(),
+        }
+    }
+}
+
+impl ThemeConfig {
+    /// Convert hex string configuration into a runtime Theme.
+    pub fn into_theme(self) -> Theme {
+        Theme {
+            focused_border: parse_hex(&self.focused_border),
+            unfocused_border: parse_hex(&self.unfocused_border),
+            selected_bg: parse_hex(&self.selected_bg),
+            unselected_bg: parse_hex(&self.unselected_bg),
+            graph_colors: [
+                parse_hex(&self.graph_color_0),
+                parse_hex(&self.graph_color_1),
+                parse_hex(&self.graph_color_2),
+                parse_hex(&self.graph_color_3),
+                parse_hex(&self.graph_color_4),
+                parse_hex(&self.graph_color_5),
+                parse_hex(&self.graph_color_6),
+                parse_hex(&self.graph_color_7),
+            ],
+            commit_merge: parse_hex(&self.commit_merge),
+            commit_default: parse_hex(&self.commit_default),
+            commit_secondary: parse_hex(&self.commit_secondary),
+            decoration_tag: parse_hex(&self.decoration_tag),
+            decoration_local: parse_hex(&self.decoration_local),
+            decoration_remote: parse_hex(&self.decoration_remote),
+            decoration_head: parse_hex(&self.decoration_head),
+            diff_added: parse_hex(&self.diff_added),
+            diff_added_bg: parse_hex(&self.diff_added_bg),
+            diff_removed: parse_hex(&self.diff_removed),
+            diff_removed_bg: parse_hex(&self.diff_removed_bg),
+            diff_modified: parse_hex(&self.diff_modified),
+            diff_renamed: parse_hex(&self.diff_renamed),
+            diff_hunk_header: parse_hex(&self.diff_hunk_header),
+            diff_file_header: parse_hex(&self.diff_file_header),
+            diff_context: parse_hex(&self.diff_context),
+            diff_selected_file_bg: parse_hex(&self.diff_selected_file_bg),
+            diff_selected_file_fg: parse_hex(&self.diff_selected_file_fg),
+            diff_selected_file_border: parse_hex(&self.diff_selected_file_border),
+            search_cursor_fg: parse_hex(&self.search_cursor_fg),
+            search_cursor_bg: parse_hex(&self.search_cursor_bg),
+            help_title: parse_hex(&self.help_title),
+            scrollbar_thumb: parse_hex(&self.scrollbar_thumb),
+            scrollbar_track: parse_hex(&self.scrollbar_track),
+            scope_text: parse_hex(&self.scope_text),
+        }
+    }
+}
+
+fn parse_hex(hex: &str) -> Color {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return Color::Rgb(128, 128, 128);
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(128);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(128);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(128);
+    Color::Rgb(r, g, b)
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Theme {
-            focused_border: Color::Rgb(180, 140, 255),
-            unfocused_border: Color::Gray,
-            selected_bg: Color::Rgb(80, 60, 120),
-            unselected_bg: Color::DarkGray,
-            graph_colors: [
-                Color::Rgb(0xCC, 0x66, 0x4D),
-                Color::Rgb(0xCC, 0x99, 0x4D),
-                Color::Rgb(0xCC, 0xCC, 0x4D),
-                Color::Rgb(0x4D, 0xCC, 0x66),
-                Color::Rgb(0x4D, 0xCC, 0xCC),
-                Color::Rgb(0x4D, 0x99, 0xCC),
-                Color::Rgb(0x99, 0x4D, 0xCC),
-                Color::Rgb(0xCC, 0x4D, 0x99),
-            ],
-            commit_merge: Color::Yellow,
-            commit_default: Color::White,
-            commit_secondary: Color::DarkGray,
-            decoration_tag: Color::Yellow,
-            decoration_local: Color::Green,
-            decoration_remote: Color::Red,
-            decoration_head: Color::LightGreen,
-            diff_added: Color::Green,
-            diff_added_bg: Color::Rgb(0, 50, 0),
-            diff_removed: Color::Red,
-            diff_removed_bg: Color::Rgb(50, 0, 0),
-            diff_modified: Color::Yellow,
-            diff_renamed: Color::Blue,
-            diff_hunk_header: Color::Cyan,
-            diff_file_header: Color::Yellow,
-            diff_context: Color::Gray,
-            diff_selected_file_bg: Color::White,
-            diff_selected_file_fg: Color::Black,
-            diff_selected_file_border: Color::Rgb(100, 150, 255),
-            search_cursor_fg: Color::Black,
-            search_cursor_bg: Color::Rgb(180, 140, 255),
-            help_title: Color::Yellow,
-            scrollbar_thumb: Color::Rgb(200, 150, 100),
-            scrollbar_track: Color::DarkGray,
-            scope_text: Color::Yellow,
-        }
+        ThemeConfig::default().into_theme()
     }
 }

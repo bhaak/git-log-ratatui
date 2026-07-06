@@ -26,7 +26,7 @@ impl AppState {
             repo_path,
             debug,
             last_frame_time_ms: 0,
-            theme: Arc::new(Theme::default()),
+            theme: Arc::clone(&config.theme),
             branch: BranchState::new(),
             commit: CommitTableState::new(simplified_graph, config.behavior.commit_batch_size),
             diff: DiffState::new(),
