@@ -3,7 +3,7 @@ mod clipboard;
 mod diff_format;
 mod diff_pairing;
 mod error;
-mod git_repository;
+mod git;
 mod graph;
 mod lcs;
 mod models;

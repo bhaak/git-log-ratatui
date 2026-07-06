@@ -2,7 +2,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use crate::error::AppError;
-use crate::git_repository::GitRepository;
+use crate::git::GitRepository;
 use crate::models::*;
 
 // --- Branch worker ---
