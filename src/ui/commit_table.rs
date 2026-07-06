@@ -565,7 +565,9 @@ mod tests {
 }
 
 /// Wrapper struct implementing the Panel trait for the commit table.
+#[allow(clippy::items_after_test_module)]
 pub struct CommitPanel {
+    #[allow(dead_code)]
     table_state: RefCell<TableState>,
 }
 

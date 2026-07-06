@@ -5,6 +5,7 @@ use ratatui::Frame;
 use crate::app::state::AppState;
 
 /// Outcome of a panel event handler.
+#[allow(dead_code)]
 pub enum EventOutcome {
     Continue,
     Quit,
@@ -13,6 +14,7 @@ pub enum EventOutcome {
 /// Unified interface for UI panels.
 ///
 /// Each panel renders itself into a given area and handles keyboard/mouse events.
+#[allow(unused)]
 pub trait Panel {
     /// Render the panel into the given area.
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool);

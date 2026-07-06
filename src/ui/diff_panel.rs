@@ -474,6 +474,7 @@ use crate::app::state::AppState;
 use crate::ui::panel::{self as panel_mod, EventOutcome};
 
 /// Wrapper struct implementing the Panel trait for the diff view.
+#[allow(clippy::items_after_test_module)]
 pub struct DiffPanel;
 
 impl panel_mod::Panel for DiffPanel {
