@@ -17,6 +17,7 @@ use ratatui::{
 };
 
 use crate::clipboard;
+use crate::error::AppError;
 use crate::models::*;
 use crate::text_utils;
 use crate::tree;
@@ -111,7 +112,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Result<Self, String> {
+    pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Result<Self, AppError> {
         let branch_worker = BranchWorker::new(&repo_path)?;
         let commit_worker = CommitWorker::new(&repo_path)?;
         let diff_worker = DiffWorker::new(&repo_path)?;
@@ -174,7 +175,7 @@ impl App {
     pub fn run(
         &mut self,
         terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>,
-    ) -> Result<(), String> {
+    ) -> Result<(), AppError> {
         self.request_branches();
         self.request_commits(None);
 
@@ -190,7 +191,7 @@ impl App {
             if self.dirty {
                 let draw_result = terminal.draw(|frame| self.render(frame));
                 if let Err(e) = draw_result {
-                    return Err(format!("Render error: {}", e));
+                    return Err(format!("Render error: {}", e).into());
                 }
                 if let Some(start) = frame_start {
                     self.last_frame_time_ms = start.elapsed().as_millis() as u64;
@@ -206,7 +207,7 @@ impl App {
     }
 
     /// Non-interactive profiling mode: load branches, commits, and diff repeatedly, print timings.
-    pub fn run_profile(&mut self, iterations: u32) -> Result<(), String> {
+    pub fn run_profile(&mut self, iterations: u32) -> Result<(), AppError> {
         let total = Instant::now();
         let mut branch_total = 0u128;
         let mut commit_total = 0u128;
@@ -398,7 +399,7 @@ impl App {
                     self.branches_loaded = true;
                 }
                 BranchResult::Error(err) => {
-                    self.status_message = Some(err);
+                    self.status_message = Some(err.to_string());
                 }
             }
         }
@@ -445,7 +446,7 @@ impl App {
                     }
                 }
                 CommitResult::Error(err) => {
-                    self.status_message = Some(err);
+                    self.status_message = Some(err.to_string());
                 }
             }
         }
@@ -467,7 +468,7 @@ impl App {
                     self.diff_pending = false;
                 }
                 DiffResult::Error(err) => {
-                    self.status_message = Some(err);
+                    self.status_message = Some(err.to_string());
                 }
             }
         }
@@ -629,9 +630,9 @@ impl App {
 
     // --- Events ---
 
-    fn handle_event(&mut self) -> Result<bool, String> {
+    fn handle_event(&mut self) -> Result<bool, AppError> {
         let interval = std::time::Duration::from_millis(self.poll_interval_ms as u64);
-        if !event::poll(interval).map_err(|e| format!("Poll error: {}", e))? {
+        if !event::poll(interval)? {
             // No event received, back off slowly.
             self.poll_interval_ms =
                 (self.poll_interval_ms + POLL_BACKOFF_STEP).min(POLL_INTERVAL_MAX);
@@ -640,7 +641,7 @@ impl App {
 
         // Event received, reset polling interval.
         self.poll_interval_ms = POLL_INTERVAL_DEFAULT;
-        let ev = event::read().map_err(|e| format!("Event error: {}", e))?;
+        let ev = event::read()?;
 
         match ev {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -671,7 +672,7 @@ impl App {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> Result<bool, String> {
+    fn handle_key(&mut self, key: KeyEvent) -> Result<bool, AppError> {
         // Quit
         match key.code {
             KeyCode::Char('q') => return Ok(false),

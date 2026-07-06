@@ -2,6 +2,7 @@ mod app;
 mod clipboard;
 mod diff_format;
 mod diff_pairing;
+mod error;
 mod git_repository;
 mod graph;
 mod lcs;
@@ -21,6 +22,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
+
+use crate::error::AppError;
 
 /// A TUI for browsing git log with ratatui.
 #[derive(Parser)]
@@ -42,7 +45,7 @@ struct Cli {
     debug: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
     let path = cli.path.unwrap_or_else(|| ".".to_string());
 
@@ -60,9 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.profile {
         let mut app = app::App::new(repo_path, cli.simplified_graph, cli.debug)?;
-        return app
-            .run_profile(cli.profile_iterations)
-            .map_err(|e| e.into());
+        return app.run_profile(cli.profile_iterations);
     }
 
     // Setup terminal

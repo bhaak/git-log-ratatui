@@ -5,6 +5,7 @@ use git_graph::graph::GitGraph;
 use rayon::prelude::*;
 
 use crate::diff_format::append_diff_line;
+use crate::error::AppError;
 use crate::graph::{build_commits_from_graph, create_graph_settings};
 use crate::models::*;
 use crate::time_format::{time_to_string, time_to_string_with_seconds};
@@ -17,9 +18,8 @@ pub struct GitRepository {
 
 impl GitRepository {
     /// Open a git repository at the given path.
-    pub fn open(path: &str) -> Result<Self, String> {
-        let repo = git2::Repository::open(Path::new(path))
-            .map_err(|e| format!("Failed to open repository: {}", e))?;
+    pub fn open(path: &str) -> Result<Self, AppError> {
+        let repo = git2::Repository::open(Path::new(path))?;
         Ok(GitRepository {
             repo,
             repo_path: path.to_string(),
@@ -48,7 +48,7 @@ impl GitRepository {
     }
 
     /// Fetch all branch entries for the given scope, including branch type info.
-    pub fn fetch_branches(&self, scope: BranchScope) -> Result<BranchData, String> {
+    pub fn fetch_branches(&self, scope: BranchScope) -> Result<BranchData, AppError> {
         let default_branch = self.detect_default_branch();
         let mut entries = Vec::new();
 
@@ -93,16 +93,12 @@ impl GitRepository {
         })
     }
 
-    fn list_branches(&self, filter: Option<git2::BranchType>) -> Result<Vec<String>, String> {
+    fn list_branches(&self, filter: Option<git2::BranchType>) -> Result<Vec<String>, AppError> {
         let mut branches = Vec::new();
-        let iter = self
-            .repo
-            .branches(filter)
-            .map_err(|e| format!("Failed to list branches: {}", e))?;
+        let iter = self.repo.branches(filter)?;
 
         for branch_result in iter {
-            let (branch, _branch_type) =
-                branch_result.map_err(|e| format!("Branch iteration error: {}", e))?;
+            let (branch, _branch_type) = branch_result?;
             if let Ok(Some(name)) = branch.name() {
                 let name = name.to_string();
                 if !name.contains("HEAD") {
@@ -114,13 +110,9 @@ impl GitRepository {
     }
 
     /// Fetch structured commit metadata using git2.
-    pub fn fetch_commit_info(&self, hash: &str) -> Result<CommitInfo, String> {
-        let oid = git2::Oid::from_str(hash)
-            .map_err(|e| format!("Invalid commit hash '{}': {}", hash, e))?;
-        let commit = self
-            .repo
-            .find_commit(oid)
-            .map_err(|e| format!("Commit not found: {}", e))?;
+    pub fn fetch_commit_info(&self, hash: &str) -> Result<CommitInfo, AppError> {
+        let oid = git2::Oid::from_str(hash)?;
+        let commit = self.repo.find_commit(oid)?;
 
         let time = commit.time();
         let author_date = time_to_string_with_seconds(time);
@@ -151,16 +143,10 @@ impl GitRepository {
     }
 
     /// Fetch diff for a commit using git2.
-    pub fn fetch_diff(&self, hash: &str) -> Result<(Vec<String>, Vec<FileEntry>), String> {
-        let oid = git2::Oid::from_str(hash)
-            .map_err(|e| format!("Invalid commit hash '{}': {}", hash, e))?;
-        let commit = self
-            .repo
-            .find_commit(oid)
-            .map_err(|e| format!("Commit not found: {}", e))?;
-        let tree = commit
-            .tree()
-            .map_err(|e| format!("Failed to get tree: {}", e))?;
+    pub fn fetch_diff(&self, hash: &str) -> Result<(Vec<String>, Vec<FileEntry>), AppError> {
+        let oid = git2::Oid::from_str(hash)?;
+        let commit = self.repo.find_commit(oid)?;
+        let tree = commit.tree()?;
 
         let parent_tree = if commit.parent_count() > 0 {
             commit.parent(0).ok().and_then(|p| p.tree().ok())
@@ -169,15 +155,13 @@ impl GitRepository {
         };
 
         let mut diff_opts = git2::DiffOptions::new();
-        let mut diff = self
-            .repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))
-            .map_err(|e| format!("Diff error: {}", e))?;
+        let mut diff =
+            self.repo
+                .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))?;
 
         let mut find_opts = git2::DiffFindOptions::new();
         find_opts.renames(true);
-        diff.find_similar(Some(&mut find_opts))
-            .map_err(|e| format!("Rename detection error: {}", e))?;
+        diff.find_similar(Some(&mut find_opts))?;
 
         let mut diff_lines = Vec::new();
         let mut file_entries = Vec::new();
@@ -218,8 +202,7 @@ impl GitRepository {
                 &String::from_utf8_lossy(line.content()),
             );
             true
-        })
-        .map_err(|e| format!("Diff print error: {}", e))?;
+        })?;
 
         Ok((diff_lines, file_entries))
     }
@@ -231,7 +214,7 @@ impl GitRepository {
         branch: Option<&str>,
         scope: BranchScope,
         limit: Option<usize>,
-    ) -> Result<Vec<Commit>, String> {
+    ) -> Result<Vec<Commit>, AppError> {
         let decoration_map = self.build_decoration_map()?;
 
         let settings = create_graph_settings(scope);
@@ -239,14 +222,12 @@ impl GitRepository {
         let start_point = branch.map(|b| b.to_string());
 
         // GitGraph::new() takes ownership of Repository, so open a fresh handle
-        let repo = git2::Repository::open(Path::new(&self.repo_path))
-            .map_err(|e| format!("Failed to open repository for git-graph: {}", e))?;
+        let repo = git2::Repository::open(Path::new(&self.repo_path))?;
 
         // `limit` caps the revwalk to the newest N commits. Because the walk is
         // topological + time sorted, the first N commits are stable as N grows,
         // so raising the limit only appends older commits.
-        let graph = GitGraph::new(repo, settings, start_point, limit)
-            .map_err(|e| format!("git-graph error: {}", e))?;
+        let graph = GitGraph::new(repo, settings, start_point, limit)?;
 
         let mut commits = build_commits_from_graph(&graph);
         self.enrich_commits(&mut commits, &decoration_map);
@@ -261,33 +242,26 @@ impl GitRepository {
         branch: Option<&str>,
         scope: BranchScope,
         limit: Option<usize>,
-    ) -> Result<Vec<Commit>, String> {
+    ) -> Result<Vec<Commit>, AppError> {
         let decoration_map = self.build_decoration_map()?;
         let branch_tip_colors = self.build_branch_tip_colors(scope)?;
 
-        let mut revwalk = self
-            .repo
-            .revwalk()
-            .map_err(|e| format!("Failed to create revwalk: {}", e))?;
+        let mut revwalk = self.repo.revwalk()?;
 
-        revwalk
-            .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
-            .map_err(|e| format!("Failed to set revwalk sorting: {}", e))?;
+        revwalk.set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)?;
 
         if let Some(b) = branch {
             let refname = self
                 .resolve_branch_ref_name(b)
                 .unwrap_or_else(|| format!("refs/heads/{}", b));
-            revwalk
-                .push_ref(&refname)
-                .map_err(|e| format!("Failed to push branch ref '{}': {}", b, e))?;
+            revwalk.push_ref(&refname)?;
         } else {
             self.push_scope_refs(&mut revwalk, scope)?;
         }
 
         let mut commits: Vec<Commit> = Vec::new();
         for oid_result in revwalk {
-            let oid = oid_result.map_err(|e| format!("Revwalk error: {}", e))?;
+            let oid = oid_result?;
             if let Some(max) = limit {
                 if commits.len() >= max {
                     break;
@@ -352,14 +326,11 @@ impl GitRepository {
         &self,
         revwalk: &mut git2::Revwalk,
         scope: BranchScope,
-    ) -> Result<(), String> {
-        let refs = self
-            .repo
-            .references()
-            .map_err(|e| format!("Failed to list references: {}", e))?;
+    ) -> Result<(), AppError> {
+        let refs = self.repo.references()?;
 
         for r in refs {
-            let r = r.map_err(|e| format!("Ref error: {}", e))?;
+            let r = r?;
             if !r.is_branch() && !r.is_tag() {
                 continue;
             }
@@ -373,9 +344,7 @@ impl GitRepository {
                 continue; // skip tags for commit walk
             }
             if let Some(name) = r.name() {
-                revwalk
-                    .push_ref(name)
-                    .map_err(|e| format!("Failed to push ref '{}': {}", name, e))?;
+                revwalk.push_ref(name)?;
             }
         }
         Ok(())
@@ -386,18 +355,15 @@ impl GitRepository {
     fn build_branch_tip_colors(
         &self,
         scope: BranchScope,
-    ) -> Result<HashMap<git2::Oid, u8>, String> {
+    ) -> Result<HashMap<git2::Oid, u8>, AppError> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
         let mut tips: HashMap<git2::Oid, u8> = HashMap::new();
-        let refs = self
-            .repo
-            .references()
-            .map_err(|e| format!("Failed to list references: {}", e))?;
+        let refs = self.repo.references()?;
 
         for r in refs {
-            let r = r.map_err(|e| format!("Ref error: {}", e))?;
+            let r = r?;
             if !r.is_branch() {
                 continue;
             }
@@ -429,12 +395,9 @@ impl GitRepository {
     }
 
     /// Build a map from commit Oid to decorations by iterating all references.
-    fn build_decoration_map(&self) -> Result<HashMap<git2::Oid, Vec<Decoration>>, String> {
+    fn build_decoration_map(&self) -> Result<HashMap<git2::Oid, Vec<Decoration>>, AppError> {
         let mut map: HashMap<git2::Oid, Vec<Decoration>> = HashMap::new();
-        let refs = self
-            .repo
-            .references()
-            .map_err(|e| format!("Failed to list references: {}", e))?;
+        let refs = self.repo.references()?;
 
         for r in refs {
             let r = match r {

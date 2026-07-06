@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
 
+use crate::error::AppError;
 use crate::git_repository::GitRepository;
 use crate::models::*;
 
@@ -15,7 +16,7 @@ pub enum BranchCommand {
 /// Results returned from the branch worker thread.
 pub enum BranchResult {
     Branches(BranchData),
-    Error(String),
+    Error(AppError),
 }
 
 /// Worker thread for branch panel data.
@@ -27,7 +28,7 @@ pub struct BranchWorker {
 
 impl BranchWorker {
     /// Spawn a new branch worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, String> {
+    pub fn new(repo_path: &str) -> Result<Self, AppError> {
         let repo = GitRepository::open(repo_path)?;
         let (cmd_tx, cmd_rx) = mpsc::channel::<BranchCommand>();
         let (result_tx, result_rx) = mpsc::channel::<BranchResult>();
@@ -83,7 +84,7 @@ pub enum CommitCommand {
 /// Results returned from the commit worker thread.
 pub enum CommitResult {
     Commits(Vec<Commit>),
-    Error(String),
+    Error(AppError),
 }
 
 /// Worker thread for commit table data.
@@ -95,7 +96,7 @@ pub struct CommitWorker {
 
 impl CommitWorker {
     /// Spawn a new commit worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, String> {
+    pub fn new(repo_path: &str) -> Result<Self, AppError> {
         let repo = GitRepository::open(repo_path)?;
         let (cmd_tx, cmd_rx) = mpsc::channel::<CommitCommand>();
         let (result_tx, result_rx) = mpsc::channel::<CommitResult>();
@@ -160,7 +161,7 @@ pub enum DiffResult {
         diff_lines: Vec<String>,
         file_entries: Vec<FileEntry>,
     },
-    Error(String),
+    Error(AppError),
 }
 
 /// Worker thread for diff panel data.
@@ -172,7 +173,7 @@ pub struct DiffWorker {
 
 impl DiffWorker {
     /// Spawn a new diff worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, String> {
+    pub fn new(repo_path: &str) -> Result<Self, AppError> {
         let repo = GitRepository::open(repo_path)?;
         let (cmd_tx, cmd_rx) = mpsc::channel::<DiffCommand>();
         let (result_tx, result_rx) = mpsc::channel::<DiffResult>();
