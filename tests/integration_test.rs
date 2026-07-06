@@ -184,8 +184,7 @@ fn test_simplified_graph_initial_and_toggle_aware() {
     assert!(state_simple.commit.simplified_graph);
 
     // Caches start empty
-    assert!(state_simple.commit.full_commits_cache.is_none());
-    assert!(state_simple.commit.simplified_commits_cache.is_none());
+    assert!(state_simple.commit.cache.is_empty());
 }
 
 // ---------------------------------------------------------------------------

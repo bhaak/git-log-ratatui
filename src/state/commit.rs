@@ -1,5 +1,6 @@
 use ratatui::widgets::TableState;
 
+use crate::app::cache::CommitCache;
 use crate::models::Commit;
 
 /// Commit table state — all commit data, filtering, selection, graph mode, and lazy loading.
@@ -10,8 +11,7 @@ pub struct CommitTableState {
     pub visible_to_commit: Vec<usize>,
     pub table_state: TableState,
     pub simplified_graph: bool,
-    pub full_commits_cache: Option<Vec<Commit>>,
-    pub simplified_commits_cache: Option<Vec<Commit>>,
+    pub cache: CommitCache,
     pub commits_loaded: bool,
     pub commit_limit: usize,
     pub all_commits_loaded: bool,
@@ -27,8 +27,7 @@ impl CommitTableState {
             visible_to_commit: Vec::new(),
             table_state: TableState::default(),
             simplified_graph,
-            full_commits_cache: None,
-            simplified_commits_cache: None,
+            cache: CommitCache::new(),
             commits_loaded: false,
             commit_limit,
             all_commits_loaded: false,

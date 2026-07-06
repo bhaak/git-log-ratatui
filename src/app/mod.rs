@@ -14,6 +14,7 @@ use crate::workers::{
 use state::AppState;
 
 pub mod branches;
+pub mod cache;
 pub mod commands;
 mod input;
 mod render;
@@ -202,8 +203,7 @@ impl App {
         self.state.commit.loading_more = false;
         self.state.branch.selected_branch = branch.clone();
         self.state.ui.status_message = Some("Loading commits...".to_string());
-        self.state.commit.full_commits_cache = None;
-        self.state.commit.simplified_commits_cache = None;
+        self.state.commit.cache.invalidate();
         if !self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.state.branch.branch_scope,
@@ -219,22 +219,25 @@ impl App {
     /// Saves the current commit list to a cache so re-toggling is instant.
     fn toggle_simplified_graph(&mut self) {
         if self.state.commit.simplified_graph {
-            self.state.commit.simplified_commits_cache =
-                Some(self.state.commit.all_commits.clone());
+            self.state
+                .commit
+                .cache
+                .set(true, self.state.commit.all_commits.clone());
         } else {
-            self.state.commit.full_commits_cache = Some(self.state.commit.all_commits.clone());
+            self.state
+                .commit
+                .cache
+                .set(false, self.state.commit.all_commits.clone());
         }
 
         self.state.commit.simplified_graph = !self.state.commit.simplified_graph;
 
-        if self.state.commit.simplified_graph {
-            if let Some(cached) = self.state.commit.simplified_commits_cache.take() {
-                self.state.commit.all_commits = cached;
-                self.state.commit.commits_loaded = true;
-                search::apply_search_filter(&mut self.state);
-                return;
-            }
-        } else if let Some(cached) = self.state.commit.full_commits_cache.take() {
+        if let Some(cached) = self
+            .state
+            .commit
+            .cache
+            .get(self.state.commit.simplified_graph)
+        {
             self.state.commit.all_commits = cached;
             self.state.commit.commits_loaded = true;
             search::apply_search_filter(&mut self.state);
@@ -301,13 +304,10 @@ impl App {
                     }
                     self.state.commit.commits_loaded = true;
                     self.state.ui.status_message = None;
-                    if self.state.commit.simplified_graph {
-                        self.state.commit.simplified_commits_cache =
-                            Some(self.state.commit.all_commits.clone());
-                    } else {
-                        self.state.commit.full_commits_cache =
-                            Some(self.state.commit.all_commits.clone());
-                    }
+                    self.state.commit.cache.set(
+                        self.state.commit.simplified_graph,
+                        self.state.commit.all_commits.clone(),
+                    );
                     if !self
                         .state
                         .commit
