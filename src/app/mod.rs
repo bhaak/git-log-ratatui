@@ -1,16 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
-use ratatui::{
-    layout::Rect,
-    style::Style,
-    widgets::TableState,
-};
+use ratatui::widgets::TableState;
 
 use crate::error::AppError;
 use crate::models::*;
 use crate::tree;
-use crate::ui;
 use crate::workers;
 use crate::workers::{
     BranchCommand, BranchResult, BranchWorker, CommitCommand, CommitResult, CommitWorker,
@@ -527,6 +522,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::layout::Rect;
+    use ratatui::style::Style;
+
+    use crate::ui;
 
     /// Helper to build a minimal App for testing pure logic functions.
     fn test_app() -> App {
