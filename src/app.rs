@@ -41,7 +41,7 @@ pub struct App {
     commit_worker: CommitWorker,
     diff_worker: DiffWorker,
 
-    all_branches: Vec<String>,
+    all_branches: BranchData,
     branch_tree: Vec<TreeItem>,
     expanded_nodes: BTreeMap<String, bool>,
     branch_index: usize,
@@ -121,7 +121,10 @@ impl App {
             branch_worker,
             commit_worker,
             diff_worker,
-            all_branches: Vec::new(),
+            all_branches: BranchData {
+                default_branch: None,
+                entries: Vec::new(),
+            },
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),
             branch_index: 0,
@@ -256,7 +259,7 @@ impl App {
             }
 
             if i == 0 {
-                println!("Total branches: {}", self.all_branches.len());
+                println!("Total branches: {}", self.all_branches.entries.len());
                 println!("Total commits:  {}", self.all_commits.len());
             }
         }
@@ -475,26 +478,88 @@ impl App {
     // --- Branch tree ---
 
     fn rebuild_branch_tree(&mut self) {
-        // Build tree, inserting "All Branches" as a virtual root item
-        let all_item = TreeItem {
-            name: "All Branches".to_string(),
+        let local_section_key = "__local__";
+        let remote_section_key = "__remote__";
+
+        let local_expanded = self
+            .expanded_nodes
+            .get(local_section_key)
+            .copied()
+            .unwrap_or(true);
+        let remote_expanded = self
+            .expanded_nodes
+            .get(remote_section_key)
+            .copied()
+            .unwrap_or(true);
+
+        let local_item = TreeItem {
+            name: "Local Branches".to_string(),
             depth: 0,
-            expandable: false,
-            expanded: false,
-            is_branch: true,
-            full_path: "__all__".to_string(),
+            expandable: true,
+            expanded: local_expanded,
+            is_branch: false,
+            full_path: String::new(),
             tree_prefix: String::new(),
-            key: "__all__".to_string(),
+            key: local_section_key.to_string(),
         };
 
-        let mut items = vec![all_item];
+        let remote_item = TreeItem {
+            name: "Remote Branches".to_string(),
+            depth: 0,
+            expandable: true,
+            expanded: remote_expanded,
+            is_branch: false,
+            full_path: String::new(),
+            tree_prefix: String::new(),
+            key: remote_section_key.to_string(),
+        };
 
-        let mut root = tree::build_branch_tree(&self.all_branches);
-        tree::sort_tree(&mut root);
+        // Separate local and remote branch names
+        let local_names: Vec<String> = self
+            .all_branches
+            .entries
+            .iter()
+            .filter(|e| !e.is_remote)
+            .map(|e| e.name.clone())
+            .collect();
 
-        // Flatten with depth starting at 0 so items have depth >= 1
-        let branch_items = tree::flatten_tree(&root, 0, &self.expanded_nodes);
-        items.extend(branch_items);
+        let remote_names: Vec<String> = self
+            .all_branches
+            .entries
+            .iter()
+            .filter(|e| e.is_remote)
+            .map(|e| e.name.clone())
+            .collect();
+
+        let mut items = vec![local_item];
+
+        // Build and sort local tree
+        let mut local_root = tree::build_branch_tree(&local_names);
+        tree::sort_tree(&mut local_root);
+
+        // Move default branch to the front of local children
+        if let Some(ref default) = self.all_branches.default_branch {
+            if let Some(pos) = local_root.children.iter().position(|c| c.name == *default) {
+                let default_child = local_root.children.remove(pos);
+                local_root.children.insert(0, default_child);
+            }
+        }
+
+        if local_expanded {
+            let branch_items = tree::flatten_tree(&local_root, 0, &self.expanded_nodes);
+            items.extend(branch_items);
+        }
+
+        items.push(remote_item);
+
+        // Build and sort remote tree
+        let mut remote_root = tree::build_branch_tree(&remote_names);
+        tree::sort_tree(&mut remote_root);
+
+        if remote_expanded {
+            let branch_items = tree::flatten_tree(&remote_root, 0, &self.expanded_nodes);
+            items.extend(branch_items);
+        }
 
         self.branch_tree = items;
     }
@@ -865,11 +930,7 @@ impl App {
             KeyCode::Enter => {
                 if let Some(item) = self.branch_tree.get(self.branch_index) {
                     if item.is_branch {
-                        if item.full_path == "__all__" {
-                            self.request_commits(None);
-                        } else {
-                            self.request_commits(Some(item.full_path.clone()));
-                        }
+                        self.request_commits(Some(item.full_path.clone()));
                         self.focus = Panel::Commits;
                     } else if item.expandable {
                         // Toggle expandable directory on Enter
@@ -1132,11 +1193,7 @@ impl App {
                 self.branch_index = actual_index;
                 if let Some(item) = self.branch_tree.get(actual_index) {
                     if item.is_branch {
-                        if item.full_path == "__all__" {
-                            self.request_commits(None);
-                        } else {
-                            self.request_commits(Some(item.full_path.clone()));
-                        }
+                        self.request_commits(Some(item.full_path.clone()));
                         self.focus = Panel::Commits;
                     } else if item.expandable {
                         let new_state = !item.expanded;
@@ -1564,7 +1621,10 @@ mod tests {
             branch_worker: BranchWorker::new(".").unwrap(),
             commit_worker: CommitWorker::new(".").unwrap(),
             diff_worker: DiffWorker::new(".").unwrap(),
-            all_branches: Vec::new(),
+            all_branches: BranchData {
+                default_branch: None,
+                entries: Vec::new(),
+            },
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),
             branch_index: 0,

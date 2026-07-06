@@ -94,6 +94,20 @@ pub enum BranchScope {
     Remote,
 }
 
+/// A single branch entry with its type information.
+#[derive(Debug, Clone)]
+pub struct BranchEntry {
+    pub name: String,
+    pub is_remote: bool,
+}
+
+/// Complete branch data returned from the git repository.
+#[derive(Debug, Clone)]
+pub struct BranchData {
+    pub default_branch: Option<String>,
+    pub entries: Vec<BranchEntry>,
+}
+
 impl BranchScope {
     pub fn next(self) -> Self {
         match self {

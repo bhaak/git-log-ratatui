@@ -14,7 +14,7 @@ pub enum BranchCommand {
 
 /// Results returned from the branch worker thread.
 pub enum BranchResult {
-    Branches(Vec<String>),
+    Branches(BranchData),
     Error(String),
 }
 

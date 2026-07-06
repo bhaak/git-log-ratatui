@@ -52,24 +52,10 @@ fn insert_into_tree(node: &mut BranchNode, parts: &[&str], full_path: &str) {
 }
 
 pub fn sort_tree(node: &mut BranchNode) {
-    node.children.sort_by(|a, b| {
-        let a_prio = priority_order(&a.name);
-        let b_prio = priority_order(&b.name);
-        a_prio
-            .cmp(&b_prio)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    node.children.sort_by_key(|a| a.name.to_lowercase());
 
     for child in &mut node.children {
         sort_tree(child);
-    }
-}
-
-fn priority_order(name: &str) -> u8 {
-    match name.to_lowercase().as_str() {
-        "main" => 0,
-        "master" => 1,
-        _ => 2,
     }
 }
 
@@ -176,10 +162,10 @@ mod tests {
         sort_tree(&mut root);
 
         assert_eq!(root.children.len(), 2);
-        assert_eq!(root.children[0].name, "main");
-        assert_eq!(root.children[1].name, "feature");
+        assert_eq!(root.children[0].name, "feature");
+        assert_eq!(root.children[1].name, "main");
 
-        let feature = &root.children[1];
+        let feature = &root.children[0];
         assert_eq!(feature.children.len(), 2);
     }
 
@@ -195,13 +181,13 @@ mod tests {
         let items = flatten_tree(&root, 0, &expanded);
 
         assert_eq!(items.len(), 2);
-        assert!(items[0].name.contains("main"));
-        assert!(!items[0].expandable);
         // "feature" directory node (no trailing slash in display)
-        assert!(!items[1].name.contains("feature/"));
-        assert!(items[1].name.contains("feature"));
-        assert!(items[1].expandable);
-        assert!(!items[1].expanded);
+        assert!(!items[0].name.contains("feature/"));
+        assert!(items[0].name.contains("feature"));
+        assert!(items[0].expandable);
+        assert!(!items[0].expanded);
+        assert!(items[1].name.contains("main"));
+        assert!(!items[1].expandable);
     }
 
     #[test]
@@ -214,13 +200,15 @@ mod tests {
         let items = flatten_tree(&root, 0, &expanded);
 
         assert_eq!(items.len(), 3);
-        assert!(items[0].name.contains("main"));
-        assert_eq!(items[2].depth, 2);
-        assert!(items[2].is_branch);
+        assert_eq!(items[0].depth, 1);
+        assert!(items[0].name.contains("feature"));
+        assert_eq!(items[1].depth, 2);
+        assert!(items[1].is_branch);
+        assert!(items[2].name.contains("main"));
     }
 
     #[test]
-    fn test_sort_tree_main_master_first() {
+    fn test_sort_tree_alphabetical() {
         let branches = vec![
             "develop".to_string(),
             "master".to_string(),
@@ -230,10 +218,10 @@ mod tests {
         let mut root = build_branch_tree(&branches);
         sort_tree(&mut root);
 
-        assert_eq!(root.children[0].name, "main");
-        assert_eq!(root.children[1].name, "master");
-        assert_eq!(root.children[2].name, "develop");
-        assert_eq!(root.children[3].name, "feature");
+        assert_eq!(root.children[0].name, "develop");
+        assert_eq!(root.children[1].name, "feature");
+        assert_eq!(root.children[2].name, "main");
+        assert_eq!(root.children[3].name, "master");
     }
 
     #[test]
