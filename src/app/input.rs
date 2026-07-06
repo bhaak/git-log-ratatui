@@ -352,19 +352,22 @@ fn execute_command(app: &mut App, cmd: Command) {
 fn move_down(app: &mut App) {
     match app.state.ui.focus {
         PanelEnum::Branches => {
-            if app.state.branch.branch_index + 1 < app.state.branch.branch_tree.len() {
-                app.state.branch.branch_index += 1;
-            } else {
-                app.state.branch.branch_index = 0;
-            }
+            app.state.branch.branch_index = cycle_forward(
+                app.state.branch.branch_index,
+                app.state.branch.branch_tree.len(),
+            );
         }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            app.state.commit.selected_index =
-                (app.state.commit.selected_index + 1) % search::visible_count(&app.state);
+        PanelEnum::Commits => {
+            app.state.commit.selected_index = cycle_forward(
+                app.state.commit.selected_index,
+                search::visible_count(&app.state),
+            );
         }
-        PanelEnum::Diff if !app.state.diff.file_entries.is_empty() => {
-            app.state.diff.selected_file_index =
-                (app.state.diff.selected_file_index + 1) % app.state.diff.file_entries.len();
+        PanelEnum::Diff => {
+            app.state.diff.selected_file_index = cycle_forward(
+                app.state.diff.selected_file_index,
+                app.state.diff.file_entries.len(),
+            );
         }
         _ => {}
     }
@@ -373,25 +376,22 @@ fn move_down(app: &mut App) {
 fn move_up(app: &mut App) {
     match app.state.ui.focus {
         PanelEnum::Branches => {
-            if app.state.branch.branch_index > 0 {
-                app.state.branch.branch_index -= 1;
-            } else if !app.state.branch.branch_tree.is_empty() {
-                app.state.branch.branch_index = app.state.branch.branch_tree.len() - 1;
-            }
+            app.state.branch.branch_index = cycle_backward(
+                app.state.branch.branch_index,
+                app.state.branch.branch_tree.len(),
+            );
         }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            if app.state.commit.selected_index > 0 {
-                app.state.commit.selected_index -= 1;
-            } else {
-                app.state.commit.selected_index = search::visible_count(&app.state) - 1;
-            }
+        PanelEnum::Commits => {
+            app.state.commit.selected_index = cycle_backward(
+                app.state.commit.selected_index,
+                search::visible_count(&app.state),
+            );
         }
-        PanelEnum::Diff if !app.state.diff.file_entries.is_empty() => {
-            if app.state.diff.selected_file_index > 0 {
-                app.state.diff.selected_file_index -= 1;
-            } else {
-                app.state.diff.selected_file_index = app.state.diff.file_entries.len() - 1;
-            }
+        PanelEnum::Diff => {
+            app.state.diff.selected_file_index = cycle_backward(
+                app.state.diff.selected_file_index,
+                app.state.diff.file_entries.len(),
+            );
         }
         _ => {}
     }
@@ -437,6 +437,26 @@ fn page_down(app: &mut App) {
             app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_add(page);
         }
         _ => {}
+    }
+}
+
+/// Cycle index forward with wrapping. Returns 0 if len is 0.
+fn cycle_forward(current: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else {
+        (current + 1) % len
+    }
+}
+
+/// Cycle index backward with wrapping. Returns 0 if len is 0.
+fn cycle_backward(current: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else if current > 0 {
+        current - 1
+    } else {
+        len - 1
     }
 }
 
@@ -707,31 +727,25 @@ fn handle_scroll_at(app: &mut App, col: u16, row: u16, direction: i32) {
     let pos = (col, row);
 
     if ui::layout::rect_contains(&areas.branch, pos) {
-        if direction > 0 {
-            if app.state.branch.branch_index + 1 < app.state.branch.branch_tree.len() {
-                app.state.branch.branch_index += 1;
-            } else {
-                app.state.branch.branch_index = 0;
-            }
+        app.state.branch.branch_index = if direction > 0 {
+            cycle_forward(
+                app.state.branch.branch_index,
+                app.state.branch.branch_tree.len(),
+            )
         } else {
-            if app.state.branch.branch_index > 0 {
-                app.state.branch.branch_index -= 1;
-            } else if !app.state.branch.branch_tree.is_empty() {
-                app.state.branch.branch_index = app.state.branch.branch_tree.len() - 1;
-            }
-        }
+            cycle_backward(
+                app.state.branch.branch_index,
+                app.state.branch.branch_tree.len(),
+            )
+        };
     } else if ui::layout::rect_contains(&areas.table, pos) {
-        if search::visible_count(&app.state) > 0 {
-            if direction > 0 {
-                app.state.commit.selected_index =
-                    (app.state.commit.selected_index + 1) % search::visible_count(&app.state);
+        let count = search::visible_count(&app.state);
+        if count > 0 {
+            app.state.commit.selected_index = if direction > 0 {
+                cycle_forward(app.state.commit.selected_index, count)
             } else {
-                if app.state.commit.selected_index > 0 {
-                    app.state.commit.selected_index -= 1;
-                } else {
-                    app.state.commit.selected_index = search::visible_count(&app.state) - 1;
-                }
-            }
+                cycle_backward(app.state.commit.selected_index, count)
+            };
         }
     } else if ui::layout::rect_contains(&areas.diff, pos) {
         if direction > 0 {
