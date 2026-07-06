@@ -11,6 +11,7 @@
 - [ ] handle text overflow in diff
 - [ ] if I click anywhere in the diff panel, it jumps around
 - [ ] PageUp/PageDown - 1 line
+- [ ] Tags for Remote/Local Branches
 
 *** Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
