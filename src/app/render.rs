@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ratatui::{layout::Rect, style::Style, Frame};
 
 use crate::app::PAGE_SIZE;
@@ -16,7 +18,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         return;
     }
 
-    let theme = app.state.theme.clone();
+    let theme = Arc::clone(&app.state.theme);
     let debug_label = if app.state.debug {
         Some(format!("{}ms", app.state.last_frame_time_ms))
     } else {

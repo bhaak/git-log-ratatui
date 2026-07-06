@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::state::*;
 use crate::theme::Theme;
@@ -8,7 +10,7 @@ pub struct AppState {
     pub repo_path: String,
     pub debug: bool,
     pub last_frame_time_ms: u64,
-    pub theme: Theme,
+    pub theme: Arc<Theme>,
     pub branch: BranchState,
     pub commit: CommitTableState,
     pub diff: DiffState,
@@ -24,7 +26,7 @@ impl AppState {
             repo_path,
             debug,
             last_frame_time_ms: 0,
-            theme: Theme::default(),
+            theme: Arc::new(Theme::default()),
             branch: BranchState::new(),
             commit: CommitTableState::new(simplified_graph, config.behavior.commit_batch_size),
             diff: DiffState::new(),
