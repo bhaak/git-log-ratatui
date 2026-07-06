@@ -4,21 +4,8 @@ use git_graph::print::format::CommitFormat;
 use git_graph::settings::{
     BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
 };
-use ratatui::style::Color;
 
 use crate::models::BranchScope;
-
-/// 8 lane colors distributed evenly across the hue spectrum (port from GitX's laneColors).
-pub const LANE_COLORS: [Color; 8] = [
-    Color::Rgb(0xCC, 0x66, 0x4D), // reddish
-    Color::Rgb(0xCC, 0x99, 0x4D), // orange
-    Color::Rgb(0xCC, 0xCC, 0x4D), // yellow
-    Color::Rgb(0x4D, 0xCC, 0x66), // green
-    Color::Rgb(0x4D, 0xCC, 0xCC), // cyan
-    Color::Rgb(0x4D, 0x99, 0xCC), // blue
-    Color::Rgb(0x99, 0x4D, 0xCC), // purple
-    Color::Rgb(0xCC, 0x4D, 0x99), // magenta
-];
 
 fn base_settings(include_remote: bool) -> Settings {
     Settings {

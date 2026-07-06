@@ -7,18 +7,19 @@ use ratatui::{
 };
 
 use crate::models::Panel;
+use crate::theme::Theme;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
-pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>) {
+pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>, theme: &Theme) {
     if area.width < 10 || area.height < 2 {
         return;
     }
 
     let key_style = Style::default()
-        .fg(Color::Yellow)
+        .fg(theme.help_title)
         .add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::White);
-    let bracket_style = Style::default().fg(Color::DarkGray);
+    let bracket_style = Style::default().fg(theme.unfocused_border);
 
     let common = [("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
 
@@ -71,7 +72,7 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>)
         Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray)),
+            .border_style(Style::default().fg(theme.unfocused_border)),
     );
 
     frame.render_widget(paragraph, area);

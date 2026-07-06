@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, List, ListState},
     Frame,
 };
@@ -10,6 +10,7 @@ use crate::app::branches;
 use crate::app::state::AppState;
 use crate::app::PAGE_SIZE;
 use crate::models::*;
+use crate::theme::Theme;
 use crate::ui::panel::{self as panel_mod, EventOutcome};
 
 /// Wrapper struct implementing the Panel trait for the branch tree view.
@@ -24,6 +25,7 @@ impl panel_mod::Panel for BranchPanel {
             state.branch_index,
             is_focused,
             None,
+            &state.theme,
         );
     }
 
@@ -119,15 +121,16 @@ pub fn render(
     selected_index: usize,
     is_focused: bool,
     debug_label: Option<&str>,
+    theme: &Theme,
 ) -> ListState {
     if area.width < 4 || area.height < 2 {
         return ListState::default();
     }
 
     let border_style = if is_focused {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
 
     let items: Vec<String> = tree_items
@@ -151,9 +154,9 @@ pub fn render(
         .highlight_style(
             Style::default()
                 .bg(if is_focused {
-                    Color::Rgb(80, 60, 120)
+                    theme.selected_bg
                 } else {
-                    Color::DarkGray
+                    theme.unselected_bg
                 })
                 .add_modifier(Modifier::BOLD),
         );

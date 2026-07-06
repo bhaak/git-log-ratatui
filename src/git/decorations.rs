@@ -2,17 +2,18 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::error::AppError;
-use crate::graph::LANE_COLORS;
 use crate::models::*;
+use crate::theme::Theme;
 
 use super::GitRepository;
 
 impl GitRepository {
     /// Build a mapping from branch tip OID to lane color index.
-    /// Each unique branch gets a color from LANE_COLORS based on its name hash.
+    /// Each unique branch gets a color from theme.graph_colors based on its name hash.
     pub fn build_branch_tip_colors(
         &self,
         scope: BranchScope,
+        theme: &Theme,
     ) -> Result<HashMap<git2::Oid, u8>, AppError> {
         let mut tips: HashMap<git2::Oid, u8> = HashMap::new();
         let refs = self.repo.references()?;
@@ -41,7 +42,7 @@ impl GitRepository {
 
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             name.hash(&mut hasher);
-            let color_idx = (hasher.finish() % LANE_COLORS.len() as u64) as u8;
+            let color_idx = (hasher.finish() % theme.graph_colors.len() as u64) as u8;
 
             tips.entry(target_oid).or_insert(color_idx);
         }

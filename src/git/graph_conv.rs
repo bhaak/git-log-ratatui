@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use git2::Oid;
 use git_graph::graph::GitGraph;
 
-use crate::graph::LANE_COLORS;
 use crate::models::Commit;
+use crate::theme::Theme;
 
 pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
     let mut commits = Vec::with_capacity(graph.commits.len());
@@ -118,7 +118,7 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             let is_fork_start = fork_start_cols.contains(&col);
 
             if is_active || is_merge_parent || is_fork_start {
-                let lane_color = (col % LANE_COLORS.len()) as u8;
+                let lane_color = (col % Theme::default().graph_colors.len()) as u8;
                 if col == current_col {
                     line.push(if info.is_merge {
                         '\u{25CB}'

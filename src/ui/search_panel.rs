@@ -7,6 +7,8 @@ use ratatui::{
     Frame,
 };
 
+use crate::theme::Theme;
+
 /// Render the search panel with search input and cursor.
 #[allow(clippy::too_many_arguments)]
 pub fn render(
@@ -18,15 +20,16 @@ pub fn render(
     title: &str,
     is_focused: bool,
     debug_label: Option<&str>,
+    theme: &Theme,
 ) {
     if area.width < 4 || area.height < 2 {
         return;
     }
 
     let border_style = if is_focused {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
 
     let full_title = if let Some(label) = debug_label {
@@ -67,14 +70,17 @@ pub fn render(
             .count();
         let cursor_rel = cursor_char_pos.saturating_sub(char_start);
 
-        let mut spans = vec![Span::styled(prefix, Style::default().fg(Color::DarkGray))];
+        let mut spans = vec![Span::styled(
+            prefix,
+            Style::default().fg(theme.unfocused_border),
+        )];
         for (i, ch) in visible.chars().enumerate() {
             if i == cursor_rel {
                 spans.push(Span::styled(
                     ch.to_string(),
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Rgb(180, 140, 255)),
+                        .fg(theme.search_cursor_fg)
+                        .bg(theme.search_cursor_bg),
                 ));
             } else {
                 spans.push(Span::styled(
@@ -87,8 +93,8 @@ pub fn render(
             spans.push(Span::styled(
                 " ",
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Rgb(180, 140, 255)),
+                    .fg(theme.search_cursor_fg)
+                    .bg(theme.search_cursor_bg),
             ));
         }
         spans
@@ -96,7 +102,7 @@ pub fn render(
         if search_query.is_empty() {
             vec![Span::styled(
                 format!("{}<{}>", prefix, branch_label),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.unfocused_border),
             )]
         } else {
             vec![Span::styled(
@@ -132,6 +138,7 @@ impl Panel for SearchPanel {
             &title,
             is_focused,
             None,
+            &state.theme,
         );
     }
 

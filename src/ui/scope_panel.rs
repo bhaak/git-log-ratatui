@@ -1,12 +1,13 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
 use crate::models::BranchScope;
+use crate::theme::Theme;
 
 /// Render the scope panel showing the current branch scope.
 pub fn render(
@@ -15,15 +16,16 @@ pub fn render(
     scope: BranchScope,
     is_focused: bool,
     debug_label: Option<&str>,
+    theme: &Theme,
 ) {
     if area.width < 3 || area.height < 2 {
         return;
     }
 
     let border_style = if is_focused {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
 
     let text = format!(" {}", scope.label());
@@ -43,7 +45,7 @@ pub fn render(
         )
         .style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.scope_text)
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -58,7 +60,14 @@ pub struct ScopePanel;
 
 impl Panel for ScopePanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, is_focused: bool) {
-        render(frame, area, state.branch_scope, is_focused, None);
+        render(
+            frame,
+            area,
+            state.branch_scope,
+            is_focused,
+            None,
+            &state.theme,
+        );
     }
 
     fn handle_event(&mut self, event: &Event, _state: &mut AppState) -> EventOutcome {

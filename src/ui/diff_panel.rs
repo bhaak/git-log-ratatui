@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -12,6 +12,7 @@ use crate::diff_pairing::{
 };
 use crate::lcs;
 use crate::models::*;
+use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
 
 /// Render context for the diff panel.
@@ -25,6 +26,8 @@ pub struct DiffPanelCtx<'a> {
     pub short_hash: Option<&'a str>,
     /// Optional debug frame timing label shown in the panel title.
     pub debug_label: Option<&'a str>,
+    /// Color theme.
+    pub theme: &'a Theme,
 }
 
 /// Render the diff panel with commit metadata, changed files, and colored diff.
@@ -35,9 +38,9 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     }
 
     let border_style = if ctx.is_focused {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(ctx.theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(ctx.theme.unfocused_border)
     };
 
     let all_lines = build_all_lines(
@@ -45,6 +48,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
         ctx.diff_lines,
         ctx.file_entries,
         ctx.selected_file_index,
+        ctx.theme,
     );
     let total = all_lines.len();
     let visible = area.height.saturating_sub(PANEL_BORDER_H) as usize;
@@ -88,6 +92,7 @@ fn build_all_lines<'a>(
     diff_lines: &'a [String],
     file_entries: &'a [FileEntry],
     selected_file_index: usize,
+    theme: &Theme,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
@@ -95,12 +100,12 @@ fn build_all_lines<'a>(
         if commit_info.is_some() {
             lines.push(Line::from(Span::styled(
                 "No changes in this commit.",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.commit_secondary),
             )));
         } else {
             lines.push(Line::from(Span::styled(
                 "Select a commit to view diff.",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.commit_secondary),
             )));
         }
         return lines;
@@ -108,7 +113,7 @@ fn build_all_lines<'a>(
 
     // Commit metadata
     if let Some(info) = commit_info {
-        lines.extend(build_metadata_lines(info));
+        lines.extend(build_metadata_lines(info, theme));
     }
 
     let metadata_len = lines.len();
@@ -118,23 +123,25 @@ fn build_all_lines<'a>(
         lines.push(Line::from(Span::styled(
             "Changed files:",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.diff_hunk_header)
                 .add_modifier(Modifier::BOLD),
         )));
 
         for (i, entry) in file_entries.iter().enumerate() {
             let selected = i == selected_file_index;
             let status_color = match entry.status {
-                '+' => Color::Green,
-                '-' => Color::Red,
-                '~' => Color::Yellow,
-                '→' => Color::Blue,
-                _ => Color::Gray,
+                '+' => theme.diff_added,
+                '-' => theme.diff_removed,
+                '~' => theme.diff_modified,
+                '→' => theme.diff_renamed,
+                _ => theme.diff_context,
             };
             let name_style = if selected {
-                Style::default().bg(Color::White).fg(Color::Black)
+                Style::default()
+                    .bg(theme.diff_selected_file_bg)
+                    .fg(theme.diff_selected_file_fg)
             } else {
-                Style::default().fg(Color::Rgb(100, 150, 255))
+                Style::default().fg(theme.diff_selected_file_border)
             };
             let status_style = Style::default().fg(status_color);
             let display_name = if let Some(ref old) = entry.old_name {
@@ -161,7 +168,7 @@ fn build_all_lines<'a>(
         if line.starts_with("@@") {
             lines.push(Line::from(Span::styled(
                 line.clone(),
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(theme.diff_hunk_header),
             )));
         } else if line.starts_with("diff --git")
             || line.starts_with("index ")
@@ -170,7 +177,7 @@ fn build_all_lines<'a>(
         {
             lines.push(Line::from(Span::styled(
                 line.clone(),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.diff_file_header),
             )));
         } else if let Some(content) = line.strip_prefix('+') {
             let prev_removed = find_prev_removed_line(diff_lines, line_idx, &pair_maps);
@@ -181,20 +188,22 @@ fn build_all_lines<'a>(
                     if t.changed {
                         Span::styled(
                             t.text,
-                            Style::default().fg(Color::Green).bg(Color::Rgb(0, 50, 0)),
+                            Style::default()
+                                .fg(theme.diff_added)
+                                .bg(theme.diff_added_bg),
                         )
                     } else {
-                        Span::styled(t.text, Style::default().fg(Color::Green))
+                        Span::styled(t.text, Style::default().fg(theme.diff_added))
                     }
                 })
                 .collect();
             if spans.is_empty() {
                 lines.push(Line::from(Span::styled(
                     "+",
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(theme.diff_added),
                 )));
             } else {
-                let mut combined = vec![Span::styled("+", Style::default().fg(Color::Green))];
+                let mut combined = vec![Span::styled("+", Style::default().fg(theme.diff_added))];
                 combined.extend(spans);
                 lines.push(Line::from(combined));
             }
@@ -207,27 +216,29 @@ fn build_all_lines<'a>(
                     if t.changed {
                         Span::styled(
                             t.text,
-                            Style::default().fg(Color::Red).bg(Color::Rgb(50, 0, 0)),
+                            Style::default()
+                                .fg(theme.diff_removed)
+                                .bg(theme.diff_removed_bg),
                         )
                     } else {
-                        Span::styled(t.text, Style::default().fg(Color::Red))
+                        Span::styled(t.text, Style::default().fg(theme.diff_removed))
                     }
                 })
                 .collect();
             if spans.is_empty() {
                 lines.push(Line::from(Span::styled(
                     "-",
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(theme.diff_removed),
                 )));
             } else {
-                let mut combined = vec![Span::styled("-", Style::default().fg(Color::Red))];
+                let mut combined = vec![Span::styled("-", Style::default().fg(theme.diff_removed))];
                 combined.extend(spans);
                 lines.push(Line::from(combined));
             }
         } else {
             lines.push(Line::from(Span::styled(
                 line.clone(),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(theme.diff_context),
             )));
         }
     }
@@ -236,13 +247,13 @@ fn build_all_lines<'a>(
 }
 
 /// Build the metadata display lines for a commit.
-pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
+pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let label_style = Style::default()
-        .fg(Color::DarkGray)
+        .fg(theme.commit_secondary)
         .add_modifier(Modifier::BOLD);
     let subject_style = Style::default()
-        .fg(Color::White)
+        .fg(theme.commit_default)
         .add_modifier(Modifier::BOLD);
     let value_style = Style::default();
 
@@ -312,10 +323,14 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo) -> Vec<Line<'a>> {
 
 /// Calculate the offset of the first diff line in the rendered output
 /// (metadata lines + file header lines + separator).
-pub fn diff_line_offset(commit_info: Option<&CommitInfo>, file_entries: &[FileEntry]) -> usize {
+pub fn diff_line_offset(
+    commit_info: Option<&CommitInfo>,
+    file_entries: &[FileEntry],
+    theme: &Theme,
+) -> usize {
     let mut offset = 0;
     if let Some(info) = commit_info {
-        offset += build_metadata_lines(info).len();
+        offset += build_metadata_lines(info, theme).len();
     }
     if !file_entries.is_empty() {
         offset += 1; // "Changed files:" header
@@ -328,6 +343,10 @@ pub fn diff_line_offset(commit_info: Option<&CommitInfo>, file_entries: &[FileEn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_theme() -> Theme {
+        Theme::default()
+    }
 
     fn make_info(subject: &str, hash: &str) -> CommitInfo {
         CommitInfo {
@@ -361,8 +380,9 @@ mod tests {
 
     #[test]
     fn test_build_metadata_lines_basic() {
+        let theme = make_theme();
         let info = make_info("Hello world", "abc123");
-        let lines = build_metadata_lines(&info);
+        let lines = build_metadata_lines(&info, &theme);
 
         // Should have: subject, hash, parents (—), author, author date, blank line = 6 lines
         assert_eq!(lines.len(), 6);
@@ -386,8 +406,9 @@ mod tests {
 
     #[test]
     fn test_build_metadata_lines_with_committer() {
+        let theme = make_theme();
         let info = make_info_with_committer();
-        let lines = build_metadata_lines(&info);
+        let lines = build_metadata_lines(&info, &theme);
 
         // Should include committer info (different from author)
         assert!(lines.len() >= 8);
@@ -410,8 +431,9 @@ mod tests {
 
     #[test]
     fn test_build_metadata_lines_no_committer_when_same() {
+        let theme = make_theme();
         let info = make_info("test", "hash");
-        let lines = build_metadata_lines(&info);
+        let lines = build_metadata_lines(&info, &theme);
         // Author and committer are the same, committer date is empty — no extra lines
         let has_committer = lines
             .iter()
@@ -426,18 +448,21 @@ mod tests {
 
     #[test]
     fn test_diff_line_offset_no_info_no_files() {
-        assert_eq!(diff_line_offset(None, &[]), 0);
+        let theme = make_theme();
+        assert_eq!(diff_line_offset(None, &[], &theme), 0);
     }
 
     #[test]
     fn test_diff_line_offset_with_info_only() {
+        let theme = make_theme();
         let info = make_info("test", "hash");
-        let expected = build_metadata_lines(&info).len();
-        assert_eq!(diff_line_offset(Some(&info), &[]), expected);
+        let expected = build_metadata_lines(&info, &theme).len();
+        assert_eq!(diff_line_offset(Some(&info), &[], &theme), expected);
     }
 
     #[test]
     fn test_diff_line_offset_with_files() {
+        let theme = make_theme();
         let info = make_info("test", "hash");
         let files = &[
             FileEntry {
@@ -453,20 +478,21 @@ mod tests {
                 old_name: None,
             },
         ];
-        let metadata_len = build_metadata_lines(&info).len();
+        let metadata_len = build_metadata_lines(&info, &theme).len();
         let expected = metadata_len + 1 + 2 + 1; // header + 2 files + blank
-        assert_eq!(diff_line_offset(Some(&info), files), expected);
+        assert_eq!(diff_line_offset(Some(&info), files, &theme), expected);
     }
 
     #[test]
     fn test_diff_line_offset_files_only() {
+        let theme = make_theme();
         let files = &[FileEntry {
             name: "a.rs".to_string(),
             diff_line: 0,
             status: '~',
             old_name: None,
         }];
-        assert_eq!(diff_line_offset(None, files), 3); // header + 1 file + blank
+        assert_eq!(diff_line_offset(None, files, &theme), 3); // header + 1 file + blank
     }
 }
 
@@ -491,6 +517,7 @@ impl panel_mod::Panel for DiffPanel {
             is_focused,
             short_hash,
             debug_label: None,
+            theme: &state.theme,
         };
         let _ = render(frame, area, &ctx);
     }
@@ -499,7 +526,11 @@ impl panel_mod::Panel for DiffPanel {
         let Event::Key(key) = event else {
             return EventOutcome::Continue;
         };
-        let file_section_end = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+        let file_section_end = diff_line_offset(
+            state.commit_info.as_ref(),
+            &state.file_entries,
+            &state.theme,
+        );
         let past_meta = state.diff_scroll >= file_section_end || state.file_entries.is_empty();
 
         match key.code {
@@ -522,14 +553,22 @@ impl panel_mod::Panel for DiffPanel {
             }
             KeyCode::Enter => {
                 if let Some(entry) = state.file_entries.get(state.selected_file_index) {
-                    let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                    let offset = diff_line_offset(
+                        state.commit_info.as_ref(),
+                        &state.file_entries,
+                        &state.theme,
+                    );
                     state.diff_scroll = entry.diff_line + offset;
                 }
             }
             KeyCode::Char('n') if !state.file_entries.is_empty() => {
                 state.selected_file_index =
                     (state.selected_file_index + 1) % state.file_entries.len();
-                let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                let offset = diff_line_offset(
+                    state.commit_info.as_ref(),
+                    &state.file_entries,
+                    &state.theme,
+                );
                 if let Some(entry) = state.file_entries.get(state.selected_file_index) {
                     state.diff_scroll = entry.diff_line + offset;
                 }
@@ -537,7 +576,11 @@ impl panel_mod::Panel for DiffPanel {
             KeyCode::Char('p') if !state.file_entries.is_empty() => {
                 if state.selected_file_index > 0 {
                     state.selected_file_index -= 1;
-                    let offset = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+                    let offset = diff_line_offset(
+                        state.commit_info.as_ref(),
+                        &state.file_entries,
+                        &state.theme,
+                    );
                     if let Some(entry) = state.file_entries.get(state.selected_file_index) {
                         state.diff_scroll = entry.diff_line + offset;
                     }

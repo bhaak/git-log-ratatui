@@ -446,7 +446,7 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
             .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
         // Check if clicking on a file entry after metadata
         let meta_offset = if let Some(ref info) = app.commit_info {
-            ui::diff_panel::build_metadata_lines(info).len()
+            ui::diff_panel::build_metadata_lines(info, &app.theme).len()
         } else {
             0
         };
@@ -455,8 +455,11 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
             if file_idx < app.file_entries.len() {
                 app.selected_file_index = file_idx;
                 // Scroll to the file's diff section
-                let offset =
-                    ui::diff_panel::diff_line_offset(app.commit_info.as_ref(), &app.file_entries);
+                let offset = ui::diff_panel::diff_line_offset(
+                    app.commit_info.as_ref(),
+                    &app.file_entries,
+                    &app.theme,
+                );
                 if let Some(entry) = app.file_entries.get(file_idx) {
                     app.diff_scroll = entry.diff_line + offset;
                 }

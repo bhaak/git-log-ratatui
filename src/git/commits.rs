@@ -7,6 +7,7 @@ use rayon::prelude::*;
 use crate::error::AppError;
 use crate::graph::create_graph_settings;
 use crate::models::*;
+use crate::theme::Theme;
 use crate::time_format::time_to_string;
 
 use super::graph_conv::build_commits_from_graph;
@@ -46,7 +47,7 @@ impl GitRepository {
         limit: Option<usize>,
     ) -> Result<Vec<Commit>, AppError> {
         let decoration_map = self.build_decoration_map()?;
-        let branch_tip_colors = self.build_branch_tip_colors(scope)?;
+        let branch_tip_colors = self.build_branch_tip_colors(scope, &Theme::default())?;
 
         let mut revwalk = self.repo.revwalk()?;
 

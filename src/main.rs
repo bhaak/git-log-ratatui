@@ -8,6 +8,7 @@ mod graph;
 mod lcs;
 mod models;
 mod text_utils;
+mod theme;
 mod time_format;
 mod tree;
 mod ui;

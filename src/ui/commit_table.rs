@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::{Constraint, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table, TableState},
     Frame,
@@ -12,9 +12,9 @@ use std::cell::RefCell;
 use crate::app::search;
 use crate::app::state::AppState;
 use crate::app::PAGE_SIZE;
-use crate::graph::LANE_COLORS;
 use crate::models::*;
 use crate::text_utils::{format_commit_count_info, truncate};
+use crate::theme::Theme;
 use crate::ui::layout::TABLE_OVERHEAD;
 use crate::ui::panel::{EventOutcome, Panel as PanelTrait};
 
@@ -39,15 +39,17 @@ pub struct CommitTableCtx<'a> {
     pub simplified_graph: bool,
     /// Optional debug frame timing label shown in the panel title.
     pub debug_label: Option<&'a str>,
+    /// Color theme.
+    pub theme: &'a Theme,
 }
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
 /// Column order matches Ruby: Graph | Hash | Subject | Author | Date
 pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut TableState) {
     let border_style = if ctx.is_focused {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(ctx.theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(ctx.theme.unfocused_border)
     };
 
     // Guard against zero-size area
@@ -75,8 +77,11 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         frame.render_widget(block, area);
 
         if inner.width > 4 && inner.height > 1 {
-            let p = Paragraph::new(Span::styled(msg, Style::default().fg(Color::DarkGray)))
-                .block(Block::default());
+            let p = Paragraph::new(Span::styled(
+                msg,
+                Style::default().fg(ctx.theme.commit_secondary),
+            ))
+            .block(Block::default());
             let centered = Rect::new(
                 inner.x + inner.width.saturating_sub(msg.len() as u16) / 2,
                 inner.y + inner.height / 2,
@@ -89,7 +94,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     }
 
     let header_style = Style::default()
-        .fg(Color::Yellow)
+        .fg(ctx.theme.commit_merge)
         .add_modifier(Modifier::BOLD);
 
     let header = Row::new(vec!["Graph", "Hash", "Subject", "Author", "Date"])
@@ -98,9 +103,9 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
 
     let highlight_style = Style::default()
         .bg(if ctx.is_focused {
-            Color::Rgb(80, 60, 120)
+            ctx.theme.selected_bg
         } else {
-            Color::DarkGray
+            ctx.theme.unselected_bg
         })
         .add_modifier(Modifier::BOLD);
 
@@ -173,13 +178,14 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     let rows: Vec<Row> = window
         .iter()
         .map(|commit| {
-            let graph_span = build_graph_span(commit, col_graph as usize, ctx.simplified_graph);
-            let hash_span = build_hash_span(commit);
+            let graph_span =
+                build_graph_span(commit, col_graph as usize, ctx.simplified_graph, ctx.theme);
+            let hash_span = build_hash_span(commit, ctx.theme);
 
             let subject_span = if commit.graph_only {
                 Line::from(Span::styled(
                     graph_only_decorations(commit),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(ctx.theme.commit_secondary),
                 ))
             } else {
                 let mut spans: Vec<Span> = Vec::new();
@@ -191,7 +197,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
                         }
                         spans.push(Span::styled(
                             deco.label.clone(),
-                            decoration_style(&deco.kind),
+                            decoration_style(&deco.kind, ctx.theme),
                         ));
                     }
                     spans.push(Span::raw(") "));
@@ -199,9 +205,9 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
                 spans.push(Span::styled(
                     truncate(&commit.subject, subject_width as usize),
                     if commit.merge {
-                        Style::default().fg(Color::Yellow)
+                        Style::default().fg(ctx.theme.commit_merge)
                     } else {
-                        Style::default().fg(Color::White)
+                        Style::default().fg(ctx.theme.commit_default)
                     },
                 ));
                 Line::from(spans)
@@ -209,11 +215,11 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
 
             let author_span = Line::from(Span::styled(
                 truncate(&commit.author, COL_AUTHOR as usize),
-                Style::default().fg(Color::White),
+                Style::default().fg(ctx.theme.commit_default),
             ));
             let date_span = Line::from(Span::styled(
                 &commit.date,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(ctx.theme.commit_secondary),
             ));
 
             Row::new(vec![
@@ -262,9 +268,14 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     frame.render_stateful_widget(table, area, &mut local_state);
 }
 
-fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Line<'static> {
+fn build_graph_span(
+    commit: &Commit,
+    graph_width: usize,
+    simplified: bool,
+    theme: &Theme,
+) -> Line<'static> {
     if simplified {
-        return build_simplified_graph(commit);
+        return build_simplified_graph(commit, theme);
     }
 
     if commit.graph.is_empty() || commit.graph_colors.len() != commit.graph.chars().count() {
@@ -273,9 +284,9 @@ fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Li
         return Line::from(Span::styled(
             padded,
             if commit.merge {
-                Style::default().fg(Color::Yellow)
+                Style::default().fg(theme.commit_merge)
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(theme.commit_secondary)
             },
         ));
     }
@@ -285,9 +296,9 @@ fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Li
 
     for (i, &ch) in chars.iter().enumerate() {
         let color = if i < commit.graph_colors.len() && commit.graph_colors[i] != 255 {
-            LANE_COLORS[(commit.graph_colors[i] as usize) % LANE_COLORS.len()]
+            theme.graph_colors[(commit.graph_colors[i] as usize) % theme.graph_colors.len()]
         } else {
-            Color::DarkGray
+            theme.commit_secondary
         };
         spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
     }
@@ -303,22 +314,22 @@ fn build_graph_span(commit: &Commit, graph_width: usize, simplified: bool) -> Li
 
 /// Simplified graph: a colored bullet (●), or ○ for merges, no connecting lines.
 /// Bullets are colored by branch lane; commits not on a known branch tip render in gray.
-fn build_simplified_graph(commit: &Commit) -> Line<'static> {
+fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     let lane = commit.graph_colors.iter().find(|&&c| c != 255).copied();
 
     let ch = if commit.merge { '○' } else { '●' };
     let color = if commit.merge {
-        Color::Yellow
+        theme.commit_merge
     } else if let Some(l) = lane {
-        LANE_COLORS[(l as usize) % LANE_COLORS.len()]
+        theme.graph_colors[(l as usize) % theme.graph_colors.len()]
     } else {
-        Color::DarkGray
+        theme.commit_secondary
     };
 
     Line::from(Span::styled(ch.to_string(), Style::default().fg(color)))
 }
 
-fn build_hash_span(commit: &Commit) -> Line<'static> {
+fn build_hash_span(commit: &Commit, theme: &Theme) -> Line<'static> {
     let short_hash = if commit.hash.len() > SHORT_HASH_LEN {
         &commit.hash[..SHORT_HASH_LEN]
     } else {
@@ -329,10 +340,10 @@ fn build_hash_span(commit: &Commit) -> Line<'static> {
         short_hash.to_string(),
         if commit.merge {
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.commit_merge)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Rgb(200, 150, 100))
+            Style::default().fg(theme.scrollbar_thumb)
         },
     ))
 }
@@ -351,18 +362,23 @@ fn graph_only_decorations(commit: &Commit) -> String {
     }
 }
 
-fn decoration_style(kind: &DecorationKind) -> Style {
+fn decoration_style(kind: &DecorationKind, theme: &Theme) -> Style {
     match kind {
-        DecorationKind::Tag => Style::default().fg(Color::Yellow),
-        DecorationKind::LocalBranch => Style::default().fg(Color::Green),
-        DecorationKind::RemoteBranch => Style::default().fg(Color::Red),
-        DecorationKind::Head => Style::default().fg(Color::LightGreen),
+        DecorationKind::Tag => Style::default().fg(theme.decoration_tag),
+        DecorationKind::LocalBranch => Style::default().fg(theme.decoration_local),
+        DecorationKind::RemoteBranch => Style::default().fg(theme.decoration_remote),
+        DecorationKind::Head => Style::default().fg(theme.decoration_head),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::Theme;
+
+    fn make_theme() -> Theme {
+        Theme::default()
+    }
 
     fn make_commit(hash: &str, graph: &str, merge: bool, decorations: Vec<Decoration>) -> Commit {
         Commit {
@@ -383,35 +399,38 @@ mod tests {
 
     #[test]
     fn test_build_hash_span_long_hash() {
+        let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", false, vec![]);
-        let span = build_hash_span(&c);
+        let span = build_hash_span(&c, &theme);
         // Should be truncated to SHORT_HASH_LEN (7)
         let expected = Span::styled(
             "abc1234".to_string(),
-            Style::default().fg(Color::Rgb(200, 150, 100)),
+            Style::default().fg(theme.scrollbar_thumb),
         );
         assert_eq!(span, Line::from(expected));
     }
 
     #[test]
     fn test_build_hash_span_short_hash() {
+        let theme = make_theme();
         let c = make_commit("abc", "", false, vec![]);
-        let span = build_hash_span(&c);
+        let span = build_hash_span(&c, &theme);
         let expected = Span::styled(
             "abc".to_string(),
-            Style::default().fg(Color::Rgb(200, 150, 100)),
+            Style::default().fg(theme.scrollbar_thumb),
         );
         assert_eq!(span, Line::from(expected));
     }
 
     #[test]
     fn test_build_hash_span_merge() {
+        let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", true, vec![]);
-        let span = build_hash_span(&c);
+        let span = build_hash_span(&c, &theme);
         let expected = Span::styled(
             "abc1234".to_string(),
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.commit_merge)
                 .add_modifier(Modifier::BOLD),
         );
         assert_eq!(span, Line::from(expected));
@@ -421,35 +440,42 @@ mod tests {
 
     #[test]
     fn test_build_graph_span_normal() {
+        let theme = make_theme();
         let c = make_commit("", "●", false, vec![]);
-        let span = build_graph_span(&c, 2, false);
-        let expected = Span::styled("● ".to_string(), Style::default().fg(Color::DarkGray));
+        let span = build_graph_span(&c, 2, false, &theme);
+        let expected = Span::styled(
+            "● ".to_string(),
+            Style::default().fg(theme.commit_secondary),
+        );
         assert_eq!(span, Line::from(expected));
     }
 
     #[test]
     fn test_build_graph_span_merge() {
+        let theme = make_theme();
         let c = make_commit("", "○", true, vec![]);
-        let span = build_graph_span(&c, 1, false);
-        let expected = Span::styled("○".to_string(), Style::default().fg(Color::Yellow));
+        let span = build_graph_span(&c, 1, false, &theme);
+        let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
         assert_eq!(span, Line::from(expected));
     }
 
     #[test]
     fn test_build_simplified_graph_regular() {
+        let theme = make_theme();
         let mut c = make_commit("", "●", false, vec![]);
         c.graph_colors = vec![2]; // lane 2 → cyan
-        let span = build_simplified_graph(&c);
-        let expected = Span::styled("●".to_string(), Style::default().fg(LANE_COLORS[2]));
+        let span = build_simplified_graph(&c, &theme);
+        let expected = Span::styled("●".to_string(), Style::default().fg(theme.graph_colors[2]));
         assert_eq!(span, Line::from(expected));
     }
 
     #[test]
     fn test_build_simplified_graph_merge() {
+        let theme = make_theme();
         let mut c = make_commit("", "○", true, vec![]);
         c.graph_colors = vec![0];
-        let span = build_simplified_graph(&c);
-        let expected = Span::styled("○".to_string(), Style::default().fg(Color::Yellow));
+        let span = build_simplified_graph(&c, &theme);
+        let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
         assert_eq!(span, Line::from(expected));
     }
 
@@ -485,26 +511,30 @@ mod tests {
 
     #[test]
     fn test_decoration_style_tag() {
-        let style = decoration_style(&DecorationKind::Tag);
-        assert_eq!(style, Style::default().fg(Color::Yellow));
+        let theme = make_theme();
+        let style = decoration_style(&DecorationKind::Tag, &theme);
+        assert_eq!(style, Style::default().fg(theme.decoration_tag));
     }
 
     #[test]
     fn test_decoration_style_local_branch() {
-        let style = decoration_style(&DecorationKind::LocalBranch);
-        assert_eq!(style, Style::default().fg(Color::Green));
+        let theme = make_theme();
+        let style = decoration_style(&DecorationKind::LocalBranch, &theme);
+        assert_eq!(style, Style::default().fg(theme.decoration_local));
     }
 
     #[test]
     fn test_decoration_style_remote_branch() {
-        let style = decoration_style(&DecorationKind::RemoteBranch);
-        assert_eq!(style, Style::default().fg(Color::Red));
+        let theme = make_theme();
+        let style = decoration_style(&DecorationKind::RemoteBranch, &theme);
+        assert_eq!(style, Style::default().fg(theme.decoration_remote));
     }
 
     #[test]
     fn test_decoration_style_head() {
-        let style = decoration_style(&DecorationKind::Head);
-        assert_eq!(style, Style::default().fg(Color::LightGreen));
+        let theme = make_theme();
+        let style = decoration_style(&DecorationKind::Head, &theme);
+        assert_eq!(style, Style::default().fg(theme.decoration_head));
     }
 
     // --- viewport windowing (performance regression guard) ---
@@ -512,6 +542,7 @@ mod tests {
     fn render_with(commit_count: usize, visible_index: usize, height: u16) -> TableState {
         use ratatui::{backend::TestBackend, Terminal};
 
+        let theme = make_theme();
         let commits: Vec<Commit> = (0..commit_count)
             .map(|i| make_commit(&format!("{:040x}", i), "*", false, vec![]))
             .collect();
@@ -525,6 +556,7 @@ mod tests {
             search_active: false,
             simplified_graph: false,
             debug_label: None,
+            theme: &theme,
         };
         let mut state = TableState::default();
         let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
@@ -594,6 +626,7 @@ impl PanelTrait for CommitPanel {
             search_active: !state.search_query.is_empty(),
             simplified_graph: state.simplified_graph,
             debug_label: None,
+            theme: &state.theme,
         };
         render(frame, area, &ctx, &mut self.table_state.borrow_mut());
     }

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use ratatui::widgets::TableState;
 
 use crate::models::*;
+use crate::theme::Theme;
 use crate::ui;
 
 /// Pure application state -- all data fields without workers or rendering logic.
@@ -77,6 +78,9 @@ pub struct AppState {
 
     /// Set true when state changes; cleared after each render.
     pub dirty: bool,
+
+    /// Color theme (customizable via config).
+    pub theme: Theme,
 }
 
 impl AppState {
@@ -132,6 +136,7 @@ impl AppState {
             debug,
             last_frame_time_ms: 0,
             dirty: true,
+            theme: Theme::default(),
         }
     }
 }

@@ -1,8 +1,4 @@
-use ratatui::{
-    layout::Rect,
-    style::{Color, Style},
-    Frame,
-};
+use ratatui::{layout::Rect, style::Style, Frame};
 
 use crate::app::PAGE_SIZE;
 use crate::models::*;
@@ -21,6 +17,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         return;
     }
 
+    let theme = app.state.theme.clone();
     let debug_label = if app.debug {
         Some(format!("{}ms", app.last_frame_time_ms))
     } else {
@@ -70,14 +67,15 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         app.branch_index,
         app.focus == Panel::Branches,
         debug_label,
+        &theme,
     );
 
     app.branch_list_offset = branch_list_state.offset();
 
     let branch_focus_style = if app.focus == Panel::Branches {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
     let branch_visible = (branch_content_area
         .height
@@ -106,6 +104,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         &title,
         app.focus == Panel::Search,
         debug_label,
+        &theme,
     );
 
     ui::scope_panel::render(
@@ -114,6 +113,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         app.branch_scope,
         app.focus == Panel::Scope,
         debug_label,
+        &theme,
     );
 
     // --- Commit table (content + scrollbar) ---
@@ -133,6 +133,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         search_active: !state.search_query.is_empty(),
         simplified_graph: state.simplified_graph,
         debug_label,
+        theme: &theme,
     };
     ui::commit_table::render(
         frame,
@@ -142,9 +143,9 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     );
 
     let table_focus_style = if app.focus == Panel::Commits {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
     let table_visible = (table_content_area
         .height
@@ -182,13 +183,14 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         is_focused: app.focus == Panel::Diff,
         short_hash,
         debug_label,
+        theme: &theme,
     };
     let diff_total_lines = ui::diff_panel::render(frame, diff_content_area, &diff_ctx);
 
     let diff_focus_style = if app.focus == Panel::Diff {
-        Style::default().fg(Color::Rgb(180, 140, 255))
+        Style::default().fg(theme.focused_border)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(theme.unfocused_border)
     };
     let diff_visible = (diff_content_area
         .height
@@ -203,7 +205,13 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         diff_focus_style,
     );
 
-    ui::help_bar::render(frame, help_area, app.focus, app.status_message.as_deref());
+    ui::help_bar::render(
+        frame,
+        help_area,
+        app.focus,
+        app.status_message.as_deref(),
+        &theme,
+    );
 
     // Trigger diff load on selection change
     let current_hash = if search::visible_count(&app.state) > 0 {
