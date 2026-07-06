@@ -1,5 +1,6 @@
 mod app;
 mod clipboard;
+mod config;
 mod diff_format;
 mod diff_pairing;
 mod error;
@@ -64,7 +65,8 @@ fn main() -> Result<(), AppError> {
     }
 
     if cli.profile {
-        let mut app = app::App::new(repo_path, cli.simplified_graph, cli.debug)?;
+        let config = config::Config::load();
+        let mut app = app::App::new(repo_path, &config, cli.simplified_graph, cli.debug)?;
         return app.run_profile(cli.profile_iterations);
     }
 
@@ -77,8 +79,9 @@ fn main() -> Result<(), AppError> {
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
 
+    let config = config::Config::load();
     let result = {
-        let mut app = app::App::new(repo_path, cli.simplified_graph, cli.debug)?;
+        let mut app = app::App::new(repo_path, &config, cli.simplified_graph, cli.debug)?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(&mut terminal)))
     };
 

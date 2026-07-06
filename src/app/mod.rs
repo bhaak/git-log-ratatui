@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use ratatui::widgets::TableState;
 
+use crate::config::Config;
 use crate::error::AppError;
 
 use crate::workers;
@@ -50,13 +51,21 @@ impl DerefMut for App {
 }
 
 impl App {
-    pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Result<Self, AppError> {
+    pub fn new(
+        repo_path: String,
+        config: &Config,
+        cli_simplified: bool,
+        cli_debug: bool,
+    ) -> Result<Self, AppError> {
         let branch_worker = workers::new_branch_worker(&repo_path)?;
         let commit_worker = workers::new_commit_worker(&repo_path)?;
         let diff_worker = workers::new_diff_worker(&repo_path)?;
 
+        let simplified_graph = cli_simplified || config.behavior.simplified_graph_default;
+        let debug = cli_debug || config.behavior.debug_default;
+
         Ok(App {
-            state: AppState::new(repo_path, simplified_graph, debug),
+            state: AppState::new(repo_path, config, simplified_graph, debug),
             branch_worker,
             commit_worker,
             diff_worker,
@@ -360,8 +369,9 @@ mod tests {
 
     /// Helper to build a minimal App for testing pure logic functions.
     fn test_app() -> App {
+        let config = Config::default();
         App {
-            state: AppState::new(".".to_string(), false, false),
+            state: AppState::new(".".to_string(), &config, false, false),
             branch_worker: workers::new_branch_worker(".").unwrap(),
             commit_worker: workers::new_commit_worker(".").unwrap(),
             diff_worker: workers::new_diff_worker(".").unwrap(),
@@ -592,7 +602,8 @@ mod tests {
 
     #[test]
     fn test_app_new_returns_ok() {
-        let result = App::new(".".to_string(), false, false);
+        let config = Config::default();
+        let result = App::new(".".to_string(), &config, false, false);
         assert!(result.is_ok());
     }
 

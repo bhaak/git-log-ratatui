@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use ratatui::widgets::TableState;
 
+use crate::config::Config;
 use crate::models::*;
 use crate::theme::Theme;
 use crate::ui;
@@ -86,7 +87,12 @@ pub struct AppState {
 impl AppState {
     /// Create default application state.
     /// Does not spawn workers -- that happens in App::new().
-    pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Self {
+    pub fn new(
+        repo_path: String,
+        config: &Config,
+        simplified_graph: bool,
+        debug: bool,
+    ) -> Self {
         AppState {
             repo_path,
             all_branches: BranchData {
@@ -111,8 +117,8 @@ impl AppState {
             diff_scroll: 0,
             last_selected_hash: None,
             focus: Panel::Commits,
-            branch_width_pct: ui::layout::DEFAULT_BRANCH_PCT,
-            diff_height_pct: ui::layout::DEFAULT_DIFF_PCT,
+            branch_width_pct: config.layout.branch_width_pct,
+            diff_height_pct: config.layout.diff_height_pct,
             dragging: None,
             scrollbar_drag: None,
             last_size: None,
@@ -126,8 +132,8 @@ impl AppState {
             branches_loaded: false,
             commits_loaded: false,
             diff_pending: false,
-            poll_interval_ms: 10,
-            commit_limit: 5000,
+            poll_interval_ms: config.behavior.poll_min_ms,
+            commit_limit: config.behavior.commit_batch_size,
             all_commits_loaded: false,
             loading_more: false,
             simplified_graph,
