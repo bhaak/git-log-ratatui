@@ -23,7 +23,7 @@ use crate::text_utils;
 use crate::tree;
 use crate::ui;
 use crate::workers::{
-    BranchCommand, BranchResult, BranchWorker, CommitCommand, CommitResult, CommitWorker,
+    self, BranchCommand, BranchResult, BranchWorker, CommitCommand, CommitResult, CommitWorker,
     DiffCommand, DiffResult, DiffWorker,
 };
 
@@ -113,9 +113,9 @@ pub struct App {
 
 impl App {
     pub fn new(repo_path: String, simplified_graph: bool, debug: bool) -> Result<Self, AppError> {
-        let branch_worker = BranchWorker::new(&repo_path)?;
-        let commit_worker = CommitWorker::new(&repo_path)?;
-        let diff_worker = DiffWorker::new(&repo_path)?;
+        let branch_worker = workers::new_branch_worker(&repo_path)?;
+        let commit_worker = workers::new_commit_worker(&repo_path)?;
+        let diff_worker = workers::new_diff_worker(&repo_path)?;
 
         Ok(App {
             repo_path,
@@ -1619,9 +1619,9 @@ mod tests {
     fn test_app() -> App {
         App {
             repo_path: ".".to_string(),
-            branch_worker: BranchWorker::new(".").unwrap(),
-            commit_worker: CommitWorker::new(".").unwrap(),
-            diff_worker: DiffWorker::new(".").unwrap(),
+            branch_worker: workers::new_branch_worker(".").unwrap(),
+            commit_worker: workers::new_commit_worker(".").unwrap(),
+            diff_worker: workers::new_diff_worker(".").unwrap(),
             all_branches: BranchData {
                 default_branch: None,
                 entries: Vec::new(),

@@ -1,9 +1,7 @@
-use std::sync::mpsc;
-use std::thread;
-
 use crate::error::AppError;
 use crate::git::GitRepository;
 use crate::models::*;
+use crate::worker::BackgroundWorker;
 
 // --- Branch worker ---
 
@@ -19,21 +17,15 @@ pub enum BranchResult {
     Error(AppError),
 }
 
-/// Worker thread for branch panel data.
-/// Each window gets its own thread as required by AGENTS.md.
-pub struct BranchWorker {
-    cmd_tx: mpsc::Sender<BranchCommand>,
-    result_rx: mpsc::Receiver<BranchResult>,
-}
+/// Branch worker type alias.
+pub type BranchWorker = BackgroundWorker<BranchCommand, BranchResult>;
 
-impl BranchWorker {
-    /// Spawn a new branch worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, AppError> {
-        let repo = GitRepository::open(repo_path)?;
-        let (cmd_tx, cmd_rx) = mpsc::channel::<BranchCommand>();
-        let (result_tx, result_rx) = mpsc::channel::<BranchResult>();
-
-        thread::spawn(move || {
+/// Spawn a new branch worker thread with its own git repository.
+pub fn new_branch_worker(repo_path: &str) -> Result<BranchWorker, AppError> {
+    let repo = GitRepository::open(repo_path)?;
+    Ok(BackgroundWorker::spawn(
+        move |cmd_rx: std::sync::mpsc::Receiver<BranchCommand>,
+              result_tx: std::sync::mpsc::Sender<BranchResult>| {
             for cmd in cmd_rx {
                 let result = match cmd {
                     BranchCommand::FetchBranches { scope } => match repo.fetch_branches(scope) {
@@ -45,25 +37,8 @@ impl BranchWorker {
                     break;
                 }
             }
-        });
-
-        Ok(BranchWorker { cmd_tx, result_rx })
-    }
-
-    /// Send a command to the branch worker.
-    pub fn send(&self, cmd: BranchCommand) {
-        let _ = self.cmd_tx.send(cmd);
-    }
-
-    /// Try to receive a result (non-blocking).
-    pub fn try_recv(&self) -> Option<BranchResult> {
-        self.result_rx.try_recv().ok()
-    }
-
-    /// Receive a result (blocking).
-    pub fn recv(&self) -> Option<BranchResult> {
-        self.result_rx.recv().ok()
-    }
+        },
+    ))
 }
 
 // --- Commit worker ---
@@ -87,21 +62,15 @@ pub enum CommitResult {
     Error(AppError),
 }
 
-/// Worker thread for commit table data.
-/// Each window gets its own thread as required by AGENTS.md.
-pub struct CommitWorker {
-    cmd_tx: mpsc::Sender<CommitCommand>,
-    result_rx: mpsc::Receiver<CommitResult>,
-}
+/// Commit worker type alias.
+pub type CommitWorker = BackgroundWorker<CommitCommand, CommitResult>;
 
-impl CommitWorker {
-    /// Spawn a new commit worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, AppError> {
-        let repo = GitRepository::open(repo_path)?;
-        let (cmd_tx, cmd_rx) = mpsc::channel::<CommitCommand>();
-        let (result_tx, result_rx) = mpsc::channel::<CommitResult>();
-
-        thread::spawn(move || {
+/// Spawn a new commit worker thread with its own git repository.
+pub fn new_commit_worker(repo_path: &str) -> Result<CommitWorker, AppError> {
+    let repo = GitRepository::open(repo_path)?;
+    Ok(BackgroundWorker::spawn(
+        move |cmd_rx: std::sync::mpsc::Receiver<CommitCommand>,
+              result_tx: std::sync::mpsc::Sender<CommitResult>| {
             for cmd in cmd_rx {
                 let result = match cmd {
                     CommitCommand::FetchCommits {
@@ -125,25 +94,8 @@ impl CommitWorker {
                     break;
                 }
             }
-        });
-
-        Ok(CommitWorker { cmd_tx, result_rx })
-    }
-
-    /// Send a command to the commit worker. Returns false if the channel is closed.
-    pub fn send(&self, cmd: CommitCommand) -> bool {
-        self.cmd_tx.send(cmd).is_ok()
-    }
-
-    /// Try to receive a result (non-blocking).
-    pub fn try_recv(&self) -> Option<CommitResult> {
-        self.result_rx.try_recv().ok()
-    }
-
-    /// Receive a result (blocking).
-    pub fn recv(&self) -> Option<CommitResult> {
-        self.result_rx.recv().ok()
-    }
+        },
+    ))
 }
 
 // --- Diff worker ---
@@ -164,21 +116,17 @@ pub enum DiffResult {
     Error(AppError),
 }
 
-/// Worker thread for diff panel data.
-/// Each window gets its own thread as required by AGENTS.md.
-pub struct DiffWorker {
-    cmd_tx: mpsc::Sender<DiffCommand>,
-    result_rx: mpsc::Receiver<DiffResult>,
-}
+/// Diff worker type alias.
+pub type DiffWorker = BackgroundWorker<DiffCommand, DiffResult>;
 
-impl DiffWorker {
-    /// Spawn a new diff worker thread with its own git repository.
-    pub fn new(repo_path: &str) -> Result<Self, AppError> {
-        let repo = GitRepository::open(repo_path)?;
-        let (cmd_tx, cmd_rx) = mpsc::channel::<DiffCommand>();
-        let (result_tx, result_rx) = mpsc::channel::<DiffResult>();
-
-        thread::spawn(move || {
+/// Spawn a new diff worker thread with its own git repository.
+/// The diff worker drains all queued commands, keeping only the most recent one,
+/// to avoid backing up when rapidly scrolling through commits.
+pub fn new_diff_worker(repo_path: &str) -> Result<DiffWorker, AppError> {
+    let repo = GitRepository::open(repo_path)?;
+    Ok(BackgroundWorker::spawn(
+        move |cmd_rx: std::sync::mpsc::Receiver<DiffCommand>,
+              result_tx: std::sync::mpsc::Sender<DiffResult>| {
             while let Ok(mut cmd) = cmd_rx.recv() {
                 // Drain all queued commands, keeping only the most recent one.
                 while let Ok(next) = cmd_rx.try_recv() {
@@ -207,23 +155,6 @@ impl DiffWorker {
                     break;
                 }
             }
-        });
-
-        Ok(DiffWorker { cmd_tx, result_rx })
-    }
-
-    /// Send a command to the diff worker.
-    pub fn send(&self, cmd: DiffCommand) {
-        let _ = self.cmd_tx.send(cmd);
-    }
-
-    /// Try to receive a result (non-blocking).
-    pub fn try_recv(&self) -> Option<DiffResult> {
-        self.result_rx.try_recv().ok()
-    }
-
-    /// Receive a result (blocking).
-    pub fn recv(&self) -> Option<DiffResult> {
-        self.result_rx.recv().ok()
-    }
+        },
+    ))
 }

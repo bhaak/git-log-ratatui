@@ -11,6 +11,7 @@ mod text_utils;
 mod time_format;
 mod tree;
 mod ui;
+mod worker;
 mod workers;
 
 use std::io;
