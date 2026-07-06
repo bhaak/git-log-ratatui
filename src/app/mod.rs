@@ -17,12 +17,13 @@ mod input;
 mod render;
 mod search;
 pub(crate) mod state;
+mod viewport;
 
 pub(crate) const PAGE_SIZE: usize = 10;
 /// Number of commits loaded at startup. Keeps first paint fast on large repos.
 const INITIAL_COMMIT_LIMIT: usize = 5000;
 /// How many additional commits to load when scrolling near the end.
-const COMMIT_LIMIT_INCREMENT: usize = 5000;
+pub(crate) const COMMIT_LIMIT_INCREMENT: usize = 5000;
 pub(crate) const POLL_INTERVAL_DEFAULT: u8 = 10;
 pub(crate) const POLL_INTERVAL_MAX: u8 = 200;
 pub(crate) const POLL_BACKOFF_STEP: u8 = 10;
@@ -241,22 +242,6 @@ impl App {
 
         // Cache miss: fetch from the worker thread.
         self.request_commits(self.selected_branch.clone());
-    }
-
-    /// Raise the commit limit and reload, appending older commits. Triggered when
-    /// the selection nears the end of the currently loaded commits.
-    fn request_more_commits(&mut self) {
-        self.commits_loaded = false;
-        self.loading_more = true;
-        self.commit_limit = self.commit_limit.saturating_add(COMMIT_LIMIT_INCREMENT);
-        if !self.commit_worker.send(CommitCommand::FetchCommits {
-            branch: self.selected_branch.clone(),
-            scope: self.branch_scope,
-            limit: Some(self.commit_limit),
-            simplified: self.simplified_graph,
-        }) {
-            self.status_message = Some("Commit worker disconnected — restart required".to_string());
-        }
     }
 
     fn request_diff(&mut self, hash: &str) {

@@ -9,6 +9,7 @@ use crate::models::*;
 use crate::ui;
 
 use super::search;
+use super::viewport;
 use super::App;
 
 pub(crate) fn render(app: &mut App, frame: &mut Frame) {
@@ -47,7 +48,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     if !app.all_commits_loaded && app.commits_loaded && app.filtered_commits.is_none() {
         let loaded = search::visible_count(&app.state);
         if loaded > 0 && app.selected_index + PAGE_SIZE >= loaded {
-            app.request_more_commits();
+            viewport::request_more_commits(&mut app.state, &app.commit_worker);
         }
     }
 
