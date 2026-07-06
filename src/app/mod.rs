@@ -15,6 +15,7 @@ use state::AppState;
 
 mod input;
 mod render;
+mod search;
 pub(crate) mod state;
 
 pub(crate) const PAGE_SIZE: usize = 10;
@@ -228,13 +229,13 @@ impl App {
             if let Some(cached) = self.simplified_commits_cache.take() {
                 self.all_commits = cached;
                 self.commits_loaded = true;
-                self.apply_search_filter();
+                search::apply_search_filter(&mut self.state);
                 return;
             }
         } else if let Some(cached) = self.full_commits_cache.take() {
             self.all_commits = cached;
             self.commits_loaded = true;
-            self.apply_search_filter();
+            search::apply_search_filter(&mut self.state);
             return;
         }
 
@@ -256,15 +257,6 @@ impl App {
         }) {
             self.status_message = Some("Commit worker disconnected — restart required".to_string());
         }
-    }
-
-    /// Re-run the search filter after an incremental load while keeping the
-    /// current selection (unlike `apply_search_filter`, which resets it to 0).
-    fn reapply_filter_preserving_selection(&mut self) {
-        let prev = self.selected_index;
-        self.apply_search_filter();
-        self.selected_index = prev;
-        self.clamp_selection();
     }
 
     fn request_diff(&mut self, hash: &str) {
@@ -306,9 +298,9 @@ impl App {
                         if self.all_commits.len() <= prev_len {
                             self.all_commits_loaded = true;
                         }
-                        self.reapply_filter_preserving_selection();
+                        search::reapply_filter_preserving_selection(&mut self.state);
                     } else {
-                        self.apply_search_filter();
+                        search::apply_search_filter(&mut self.state);
                     }
                     self.commits_loaded = true;
                     self.status_message = None;
@@ -456,71 +448,11 @@ impl App {
     }
 
     // --- Search ---
-
-    fn apply_search_filter(&mut self) {
-        if self.search_query.is_empty() {
-            self.filtered_commits = None;
-        } else {
-            let q = self.search_query.to_lowercase();
-            self.filtered_commits = Some(
-                self.all_commits
-                    .iter()
-                    .filter(|c| {
-                        c.graph_only
-                            || c.hash.to_lowercase().contains(&q)
-                            || c.author.to_lowercase().contains(&q)
-                            || c.date.to_lowercase().contains(&q)
-                            || c.subject.to_lowercase().contains(&q)
-                    })
-                    .cloned()
-                    .collect(),
-            );
-        }
-        self.build_visible_mapping();
-        self.selected_index = 0;
-        self.clamp_selection();
-    }
-
-    fn build_visible_mapping(&mut self) {
-        let commits = self
-            .filtered_commits
-            .as_deref()
-            .unwrap_or(&self.all_commits);
-        self.visible_to_commit = (0..commits.len())
-            .filter(|&i| !commits[i].graph_only)
-            .collect();
-    }
-
-    fn visible_count(&self) -> usize {
-        self.visible_to_commit.len()
-    }
-
-    fn visible_to_filtered(&self, visible_idx: usize) -> usize {
-        self.visible_to_commit
-            .get(visible_idx)
-            .copied()
-            .unwrap_or(0)
-    }
-
-    fn filtered_to_visible(&self, filtered_idx: usize) -> Option<usize> {
-        self.visible_to_commit
-            .iter()
-            .position(|&i| i == filtered_idx)
-    }
-
-    fn clamp_selection(&mut self) {
-        if self.visible_count() > 0 {
-            self.selected_index = self
-                .selected_index
-                .min(self.visible_count().saturating_sub(1));
-        } else {
-            self.selected_index = 0;
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::search;
     use super::*;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
@@ -553,7 +485,7 @@ mod tests {
             deco_line: 0,
         }];
         app.search_query.clear();
-        app.apply_search_filter();
+        search::apply_search_filter(&mut app.state);
         assert_eq!(
             app.filtered_commits
                 .as_deref()
@@ -593,7 +525,7 @@ mod tests {
             },
         ];
         app.search_query = "bug".into();
-        app.apply_search_filter();
+        search::apply_search_filter(&mut app.state);
         assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
         assert_eq!(app.filtered_commits.as_deref().unwrap()[0].hash, "abc");
     }
@@ -614,7 +546,7 @@ mod tests {
             deco_line: 0,
         }];
         app.search_query = "bug".into();
-        app.apply_search_filter();
+        search::apply_search_filter(&mut app.state);
         assert_eq!(app.filtered_commits.as_deref().unwrap().len(), 1);
     }
 
@@ -659,16 +591,16 @@ mod tests {
                 deco_line: 0,
             },
         ]);
-        app.build_visible_mapping();
-        assert_eq!(app.visible_count(), 2);
-        assert_eq!(app.visible_to_filtered(0), 0); // first commit
-        assert_eq!(app.visible_to_filtered(1), 2); // third commit
+        search::build_visible_mapping(&mut app.state);
+        assert_eq!(search::visible_count(&app.state), 2);
+        assert_eq!(search::visible_to_filtered(&app.state, 0), 0); // first commit
+        assert_eq!(search::visible_to_filtered(&app.state, 1), 2); // third commit
     }
 
     #[test]
     fn test_clamp_selection_empty() {
         let mut app = test_app();
-        app.clamp_selection();
+        search::clamp_selection(&mut app.state);
         assert_eq!(app.selected_index, 0);
     }
 
@@ -687,9 +619,9 @@ mod tests {
             decorations: vec![],
             deco_line: 0,
         }]);
-        app.build_visible_mapping();
+        search::build_visible_mapping(&mut app.state);
         app.selected_index = 0;
-        app.clamp_selection();
+        search::clamp_selection(&mut app.state);
         assert_eq!(app.selected_index, 0);
     }
 

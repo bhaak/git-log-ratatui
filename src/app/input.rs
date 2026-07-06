@@ -14,6 +14,7 @@ use crossterm::terminal::{
 };
 use ratatui::layout::Rect;
 
+use super::search;
 use super::App;
 use super::{PAGE_SIZE, POLL_BACKOFF_STEP, POLL_INTERVAL_DEFAULT, POLL_INTERVAL_MAX};
 
@@ -111,8 +112,8 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, A
         }
         // Clipboard — global
         KeyCode::Char('y') => {
-            if app.visible_count() > 0 {
-                let ci = app.visible_to_filtered(app.selected_index);
+            if search::visible_count(&app.state) > 0 {
+                let ci = search::visible_to_filtered(&app.state, app.selected_index);
                 if let Some(c) = app
                     .filtered_commits
                     .as_deref()
@@ -130,8 +131,8 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, A
             return Ok(EventOutcome::Continue);
         }
         KeyCode::Char('Y') => {
-            if app.visible_count() > 0 {
-                let ci = app.visible_to_filtered(app.selected_index);
+            if search::visible_count(&app.state) > 0 {
+                let ci = search::visible_to_filtered(&app.state, app.selected_index);
                 if let Some(c) = app
                     .filtered_commits
                     .as_deref()
@@ -171,7 +172,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Result<EventOutcome, A
             if app.focus == Panel::Search {
                 app.search_query.clear();
                 app.cursor_pos = 0;
-                app.apply_search_filter();
+                search::apply_search_filter(&mut app.state);
             }
             return Ok(EventOutcome::Continue);
         }
@@ -217,8 +218,8 @@ fn move_down(app: &mut App) {
                 app.branch_index = 0;
             }
         }
-        Panel::Commits if app.visible_count() > 0 => {
-            app.selected_index = (app.selected_index + 1) % app.visible_count();
+        Panel::Commits if search::visible_count(&app.state) > 0 => {
+            app.selected_index = (app.selected_index + 1) % search::visible_count(&app.state);
         }
         Panel::Diff if !app.file_entries.is_empty() => {
             app.selected_file_index = (app.selected_file_index + 1) % app.file_entries.len();
@@ -236,11 +237,11 @@ fn move_up(app: &mut App) {
                 app.branch_index = app.branch_tree.len() - 1;
             }
         }
-        Panel::Commits if app.visible_count() > 0 => {
+        Panel::Commits if search::visible_count(&app.state) > 0 => {
             if app.selected_index > 0 {
                 app.selected_index -= 1;
             } else {
-                app.selected_index = app.visible_count() - 1;
+                app.selected_index = search::visible_count(&app.state) - 1;
             }
         }
         Panel::Diff if !app.file_entries.is_empty() => {
@@ -269,7 +270,7 @@ fn handle_paste(app: &mut App) {
     if let Some(text) = clipboard::get_clipboard_text() {
         app.search_query = text;
         app.cursor_pos = app.search_query.len();
-        app.apply_search_filter();
+        search::apply_search_filter(&mut app.state);
         app.focus = Panel::Search;
     }
 }
@@ -375,18 +376,18 @@ fn handle_search_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.search_query.clear();
             app.cursor_pos = 0;
-            app.apply_search_filter();
+            search::apply_search_filter(&mut app.state);
         }
         KeyCode::Backspace if app.cursor_pos > 0 => {
             let prev = text_utils::prev_char_boundary(&app.search_query, app.cursor_pos);
             app.search_query.remove(prev);
             app.cursor_pos = prev;
-            app.apply_search_filter();
+            search::apply_search_filter(&mut app.state);
         }
         KeyCode::Delete if app.cursor_pos < app.search_query.len() => {
             let pos = app.cursor_pos;
             app.search_query.remove(pos);
-            app.apply_search_filter();
+            search::apply_search_filter(&mut app.state);
         }
         KeyCode::Left => {
             if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -412,7 +413,7 @@ fn handle_search_keys(app: &mut App, key: KeyEvent) {
             let pos = app.cursor_pos;
             app.search_query.insert(pos, ch);
             app.cursor_pos += ch.len_utf8();
-            app.apply_search_filter();
+            search::apply_search_filter(&mut app.state);
         }
         _ => {}
     }
@@ -420,26 +421,26 @@ fn handle_search_keys(app: &mut App, key: KeyEvent) {
 
 fn handle_commit_keys(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Up if app.visible_count() > 0 => {
+        KeyCode::Up if search::visible_count(&app.state) > 0 => {
             if app.selected_index > 0 {
                 app.selected_index -= 1;
             } else {
-                app.selected_index = app.visible_count() - 1;
+                app.selected_index = search::visible_count(&app.state) - 1;
             }
         }
-        KeyCode::Down if app.visible_count() > 0 => {
-            app.selected_index = (app.selected_index + 1) % app.visible_count();
+        KeyCode::Down if search::visible_count(&app.state) > 0 => {
+            app.selected_index = (app.selected_index + 1) % search::visible_count(&app.state);
         }
         KeyCode::Enter => {
             app.focus = Panel::Diff;
         }
         KeyCode::PageUp => {
             app.selected_index = app.selected_index.saturating_sub(PAGE_SIZE);
-            app.clamp_selection();
+            search::clamp_selection(&mut app.state);
         }
-        KeyCode::PageDown if app.visible_count() > 0 => {
-            app.selected_index =
-                (app.selected_index + PAGE_SIZE).min(app.visible_count().saturating_sub(1));
+        KeyCode::PageDown if search::visible_count(&app.state) > 0 => {
+            app.selected_index = (app.selected_index + PAGE_SIZE)
+                .min(search::visible_count(&app.state).saturating_sub(1));
         }
         _ => {}
     }
@@ -625,7 +626,7 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
             .saturating_sub(ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD)))
             as usize;
         let filtered_idx = rel_row + app.table_state.offset();
-        if let Some(vis_idx) = app.filtered_to_visible(filtered_idx) {
+        if let Some(vis_idx) = search::filtered_to_visible(&app.state, filtered_idx) {
             app.selected_index = vis_idx;
         }
     } else if ui::layout::rect_contains(&areas.diff, click_pos) {
@@ -748,14 +749,14 @@ fn handle_scroll_at(app: &mut App, col: u16, row: u16, direction: i32) {
             }
         }
     } else if ui::layout::rect_contains(&areas.table, pos) {
-        if app.visible_count() > 0 {
+        if search::visible_count(&app.state) > 0 {
             if direction > 0 {
-                app.selected_index = (app.selected_index + 1) % app.visible_count();
+                app.selected_index = (app.selected_index + 1) % search::visible_count(&app.state);
             } else {
                 if app.selected_index > 0 {
                     app.selected_index -= 1;
                 } else {
-                    app.selected_index = app.visible_count() - 1;
+                    app.selected_index = search::visible_count(&app.state) - 1;
                 }
             }
         }
@@ -778,8 +779,8 @@ fn handle_scroll_down(app: &mut App) {
                 app.branch_index = 0;
             }
         }
-        Panel::Commits if app.visible_count() > 0 => {
-            app.selected_index = (app.selected_index + 1) % app.visible_count();
+        Panel::Commits if search::visible_count(&app.state) > 0 => {
+            app.selected_index = (app.selected_index + 1) % search::visible_count(&app.state);
         }
         Panel::Diff => {
             app.diff_scroll += 1;
@@ -798,11 +799,11 @@ fn handle_scroll_up(app: &mut App) {
                 app.branch_index = app.branch_tree.len() - 1;
             }
         }
-        Panel::Commits if app.visible_count() > 0 => {
+        Panel::Commits if search::visible_count(&app.state) > 0 => {
             if app.selected_index > 0 {
                 app.selected_index -= 1;
             } else {
-                app.selected_index = app.visible_count() - 1;
+                app.selected_index = search::visible_count(&app.state) - 1;
             }
         }
         Panel::Diff => {

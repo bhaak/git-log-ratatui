@@ -8,6 +8,7 @@ use crate::app::PAGE_SIZE;
 use crate::models::*;
 use crate::ui;
 
+use super::search;
 use super::App;
 
 pub(crate) fn render(app: &mut App, frame: &mut Frame) {
@@ -37,14 +38,14 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
 
     // Clamp cursor
     app.cursor_pos = app.cursor_pos.min(app.search_query.len());
-    app.clamp_selection();
+    search::clamp_selection(&mut app.state);
 
     // Incrementally load older commits when the selection nears the end of
     // what's currently loaded. Skipped while a search filter is active (the
     // filtered view isn't a reliable proxy for the loaded window) and while a
     // load is already in flight (commits_loaded == false).
     if !app.all_commits_loaded && app.commits_loaded && app.filtered_commits.is_none() {
-        let loaded = app.visible_count();
+        let loaded = search::visible_count(&app.state);
         if loaded > 0 && app.selected_index + PAGE_SIZE >= loaded {
             app.request_more_commits();
         }
@@ -204,8 +205,8 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     ui::help_bar::render(frame, help_area, app.focus, app.status_message.as_deref());
 
     // Trigger diff load on selection change
-    let current_hash = if app.visible_count() > 0 {
-        let ci = app.visible_to_filtered(app.selected_index);
+    let current_hash = if search::visible_count(&app.state) > 0 {
+        let ci = search::visible_to_filtered(&app.state, app.selected_index);
         app.filtered_commits
             .as_deref()
             .unwrap_or(&app.all_commits)
