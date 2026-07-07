@@ -54,8 +54,8 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     );
     let total = all_lines.len();
     let visible = area.height.saturating_sub(PANEL_BORDER_H) as usize;
-    let start = (ctx.diff_scroll + 1).min(total);
-    let end = (ctx.diff_scroll + visible).min(total);
+    let start = (ctx.diff_scroll.saturating_add(1)).min(total);
+    let end = (ctx.diff_scroll.saturating_add(visible)).min(total);
 
     let diff_title = if let Some(hash) = ctx.short_hash {
         format!(" Diff - {}", hash)

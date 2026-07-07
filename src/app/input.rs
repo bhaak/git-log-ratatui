@@ -225,7 +225,8 @@ pub(crate) fn execute_command(app: &mut App, cmd: Command) {
         }
         ScrollDiff(delta) => {
             if delta > 0 {
-                app.state.diff.diff_scroll += delta as usize;
+                app.state.diff.diff_scroll =
+                    app.state.diff.diff_scroll.saturating_add(delta as usize);
             } else {
                 app.state.diff.diff_scroll =
                     app.state.diff.diff_scroll.saturating_sub((-delta) as usize);
