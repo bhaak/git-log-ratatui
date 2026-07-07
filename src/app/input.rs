@@ -102,13 +102,21 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             }];
         }
         KeyCode::BackTab => return vec![Command::FocusPrev],
-        KeyCode::Char('l') => return vec![Command::FocusNext],
-        KeyCode::Char('h') => return vec![Command::FocusPrev],
+        KeyCode::Char('l') if app.state.ui.focus != PanelEnum::Search => {
+            return vec![Command::FocusNext]
+        }
+        KeyCode::Char('h') if app.state.ui.focus != PanelEnum::Search => {
+            return vec![Command::FocusPrev]
+        }
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::CycleScope];
         }
-        KeyCode::Char('y') => return vec![Command::CopyHashShort],
-        KeyCode::Char('Y') => return vec![Command::CopyHashFull],
+        KeyCode::Char('y') if app.state.ui.focus != PanelEnum::Search => {
+            return vec![Command::CopyHashShort]
+        }
+        KeyCode::Char('Y') if app.state.ui.focus != PanelEnum::Search => {
+            return vec![Command::CopyHashFull]
+        }
         KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if let Some(text) = clipboard::get_clipboard_text() {
                 return vec![Command::PasteSearch(text)];
@@ -154,10 +162,12 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
     }
 
     // --- Vim navigation keys (global alternative for up/down) ---
-    match key.code {
-        KeyCode::Char('j') => return vec![Command::MoveDown],
-        KeyCode::Char('k') => return vec![Command::MoveUp],
-        _ => {}
+    if app.state.ui.focus != PanelEnum::Search {
+        match key.code {
+            KeyCode::Char('j') => return vec![Command::MoveDown],
+            KeyCode::Char('k') => return vec![Command::MoveUp],
+            _ => {}
+        }
     }
 
     // --- Dispatch to the focused panel ---
