@@ -79,8 +79,9 @@ pub(crate) fn handle_event(app: &mut App) -> Result<EventOutcome, AppError> {
 }
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
-    // --- Global quit keys ---
+    // --- Always-global keys ---
     match key.code {
+        // Quit
         KeyCode::Char('q') => return vec![Command::Quit],
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::Quit]
@@ -89,11 +90,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             suspend(app);
             return Vec::new();
         }
-        _ => {}
-    }
-
-    // --- Global keys — work regardless of focus ---
-    match key.code {
+        // Focus cycle
         KeyCode::Tab => {
             return vec![if key.modifiers.contains(KeyModifiers::SHIFT) {
                 Command::FocusPrev
@@ -102,20 +99,9 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             }];
         }
         KeyCode::BackTab => return vec![Command::FocusPrev],
-        KeyCode::Char('l') if app.state.ui.focus != PanelEnum::Search => {
-            return vec![Command::FocusNext]
-        }
-        KeyCode::Char('h') if app.state.ui.focus != PanelEnum::Search => {
-            return vec![Command::FocusPrev]
-        }
+        // Ctrl+shortcuts
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::CycleScope];
-        }
-        KeyCode::Char('y') if app.state.ui.focus != PanelEnum::Search => {
-            return vec![Command::CopyHashShort]
-        }
-        KeyCode::Char('Y') if app.state.ui.focus != PanelEnum::Search => {
-            return vec![Command::CopyHashFull]
         }
         KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if let Some(text) = clipboard::get_clipboard_text() {
@@ -147,36 +133,35 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
                 ];
             }
         }
-        KeyCode::Esc => {
-            if app.state.ui.focus == PanelEnum::Search {
-                return vec![Command::ClearSearch];
-            }
-            return Vec::new();
-        }
-        KeyCode::Char('g')
-            if key.modifiers.is_empty() && app.state.ui.focus == PanelEnum::Commits =>
-        {
-            return vec![Command::ToggleGraph];
-        }
         _ => {}
     }
 
-    // --- Vim navigation keys (global alternative for up/down) ---
-    if app.state.ui.focus != PanelEnum::Search {
-        match key.code {
-            KeyCode::Char('j') => return vec![Command::MoveDown],
-            KeyCode::Char('k') => return vec![Command::MoveUp],
-            _ => {}
-        }
-    }
-
-    // --- Dispatch to the focused panel ---
-    match app.state.ui.focus {
+    // --- Panel dispatch — focused panel gets first chance at the key ---
+    let commands = match app.state.ui.focus {
         PanelEnum::Branches => BranchPanel.handle_event(&key, &mut app.state.branch),
         PanelEnum::Search => SearchPanel.handle_event(&key, &mut app.state.search),
         PanelEnum::Scope => ScopePanel.handle_event(&key, &mut app.state.branch.branch_scope),
         PanelEnum::Commits => CommitPanel::new().handle_event(&key, &mut app.state.commit),
         PanelEnum::Diff => DiffPanel.handle_event(&key, &mut app.state.diff),
+    };
+    if !commands.is_empty() {
+        return commands;
+    }
+
+    // --- Fallback: single-character shortcuts (only if panel ignored the key) ---
+    match key.code {
+        KeyCode::Char('h') => vec![Command::FocusPrev],
+        KeyCode::Char('l') => vec![Command::FocusNext],
+        KeyCode::Char('j') => vec![Command::MoveDown],
+        KeyCode::Char('k') => vec![Command::MoveUp],
+        KeyCode::Char('y') => vec![Command::CopyHashShort],
+        KeyCode::Char('Y') => vec![Command::CopyHashFull],
+        KeyCode::Char('g')
+            if key.modifiers.is_empty() && app.state.ui.focus == PanelEnum::Commits =>
+        {
+            vec![Command::ToggleGraph]
+        }
+        _ => Vec::new(),
     }
 }
 
