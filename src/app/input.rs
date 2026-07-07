@@ -242,12 +242,38 @@ pub(crate) fn execute_command(app: &mut App, cmd: Command) {
         }
         SelectNextFile => select_next_file(app),
         SelectPrevFile => select_prev_file(app),
-        JumpToTop => {
-            app.state.diff.diff_scroll = 0;
-        }
-        JumpToBottom => {
-            app.state.diff.diff_scroll = usize::MAX;
-        }
+        JumpToTop => match app.state.ui.focus {
+            PanelEnum::Branches => {
+                app.state.branch.branch_index = 0;
+            }
+            PanelEnum::Commits => {
+                if search::visible_count(&app.state) > 0 {
+                    app.state.commit.selected_index = 0;
+                    search::clamp_selection(&mut app.state);
+                }
+            }
+            PanelEnum::Diff => {
+                app.state.diff.diff_scroll = 0;
+            }
+            _ => {}
+        },
+        JumpToBottom => match app.state.ui.focus {
+            PanelEnum::Branches => {
+                app.state.branch.branch_index =
+                    app.state.branch.branch_tree.len().saturating_sub(1);
+            }
+            PanelEnum::Commits => {
+                let count = search::visible_count(&app.state);
+                if count > 0 {
+                    app.state.commit.selected_index = count.saturating_sub(1);
+                    search::clamp_selection(&mut app.state);
+                }
+            }
+            PanelEnum::Diff => {
+                app.state.diff.diff_scroll = usize::MAX;
+            }
+            _ => {}
+        },
         ShowCommitDiff => {
             app.state.ui.focus = PanelEnum::Diff;
         }

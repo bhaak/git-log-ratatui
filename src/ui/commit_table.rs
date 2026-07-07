@@ -649,6 +649,8 @@ impl PanelTrait for CommitPanel {
             KeyCode::Enter => vec![Command::ShowCommitDiff],
             KeyCode::PageUp => vec![Command::PageUp],
             KeyCode::PageDown => vec![Command::PageDown],
+            KeyCode::Home => vec![Command::JumpToTop],
+            KeyCode::End => vec![Command::JumpToBottom],
             _ => Vec::new(),
         }
     }
@@ -660,6 +662,7 @@ impl PanelTrait for CommitPanel {
             ("y/Y", "copy hash"),
             ("g", "toggle graph"),
             ("PgUp/PgDn", "page"),
+            ("Home/End", "top/bottom"),
         ]
     }
 

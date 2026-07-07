@@ -105,6 +105,8 @@ impl Panel for BranchPanel {
             }
             KeyCode::PageUp => vec![Command::PageUp],
             KeyCode::PageDown => vec![Command::PageDown],
+            KeyCode::Home => vec![Command::JumpToTop],
+            KeyCode::End => vec![Command::JumpToBottom],
             _ => Vec::new(),
         }
     }
@@ -115,6 +117,7 @@ impl Panel for BranchPanel {
             ("Enter", "select"),
             ("Space", "toggle"),
             ("PgUp/PgDn", "page"),
+            ("Home/End", "top/bottom"),
         ]
     }
 
