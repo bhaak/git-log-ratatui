@@ -119,20 +119,27 @@ impl ScrollbarView {
     /// Combines `split()`, positional containment check and `map_click_to_position()`.
     /// Returns `None` if content fits entirely or click is outside the scrollbar area.
     pub fn click_to_index(&self, panel_area: Rect, click_pos: (u16, u16)) -> Option<usize> {
-        let (_, sb) = Self::split(panel_area);
-        if click_pos.0 < sb.x
-            || click_pos.0 >= sb.x + sb.width
-            || click_pos.1 < sb.y
-            || click_pos.1 >= sb.y + sb.height
-        {
+        if !self.is_click_in_scrollbar_area(panel_area, click_pos) {
             return None;
         }
+        let (_, sb) = Self::split(panel_area);
         Self::map_click_to_position(
             sb,
             click_pos.1,
             self.content_length(),
             self.viewport_length(),
         )
+    }
+
+    /// Check whether a click falls within the scrollbar column of a panel,
+    /// regardless of whether content currently overflows. This is used as a
+    /// fallback to still give the panel focus when clicking its scrollbar area.
+    pub fn is_click_in_scrollbar_area(&self, panel_area: Rect, click_pos: (u16, u16)) -> bool {
+        let (_, sb) = Self::split(panel_area);
+        click_pos.0 >= sb.x
+            && click_pos.0 < sb.x + sb.width
+            && click_pos.1 >= sb.y
+            && click_pos.1 < sb.y + sb.height
     }
 }
 

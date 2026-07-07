@@ -536,31 +536,54 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
     let click_pos = (col, row);
 
     // Scrollbar clicks
-    if let Some(_pos) = app
+    if app
         .state
         .branch
         .scrollbar
         .click_to_index(branch_visible, click_pos)
+        .or_else(|| {
+            app.state
+                .branch
+                .scrollbar
+                .is_click_in_scrollbar_area(branch_visible, click_pos)
+                .then_some(0)
+        })
+        .is_some()
     {
         return vec![Command::InitiateScrollbarDrag(PanelEnum::Branches)];
     }
-    if let Some(_pos) = app
+    if app
         .state
         .commit
         .scrollbar
         .click_to_index(areas.table, click_pos)
+        .or_else(|| {
+            app.state
+                .commit
+                .scrollbar
+                .is_click_in_scrollbar_area(areas.table, click_pos)
+                .then_some(0)
+        })
+        .is_some()
     {
         return vec![Command::InitiateScrollbarDrag(PanelEnum::Commits)];
     }
-    if let Some(new_pos) = app
+    if let Some(pos) = app
         .state
         .diff
         .scrollbar
         .click_to_index(areas.diff, click_pos)
+        .or_else(|| {
+            app.state
+                .diff
+                .scrollbar
+                .is_click_in_scrollbar_area(areas.diff, click_pos)
+                .then_some(app.state.diff.diff_scroll)
+        })
     {
         return vec![
             Command::InitiateScrollbarDrag(PanelEnum::Diff),
-            Command::ScrollToAbsolute(new_pos),
+            Command::ScrollToAbsolute(pos),
         ];
     }
 
