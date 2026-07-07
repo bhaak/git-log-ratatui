@@ -10,6 +10,8 @@ pub struct DiffState {
     pub diff_scroll: usize,
     pub last_selected_hash: Option<String>,
     pub diff_pending: bool,
+    /// Total display lines from the previous render, used to clamp scroll off-by-one.
+    pub prev_total_lines: usize,
     /// Scrollbar for the diff panel.
     pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
@@ -24,6 +26,7 @@ impl DiffState {
             diff_scroll: 0,
             last_selected_hash: None,
             diff_pending: false,
+            prev_total_lines: 0,
             scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }

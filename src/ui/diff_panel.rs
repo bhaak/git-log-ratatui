@@ -518,6 +518,14 @@ impl panel_mod::Panel for DiffPanel {
     fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
         let (content_area, scrollbar_area) = ScrollbarView::split(area);
 
+        // Clamp diff_scroll BEFORE rendering so End/PageDown show correct bounds
+        // immediately. Uses the previous frame's total_lines which only changes
+        // when a new diff is loaded (in which case diff_scroll is already 0).
+        let visible = (content_area.height.saturating_sub(PANEL_BORDER_H)) as usize;
+        state.diff_scroll = state
+            .diff_scroll
+            .min(state.prev_total_lines.saturating_sub(visible));
+
         let short_hash = state.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
         });
@@ -533,11 +541,7 @@ impl panel_mod::Panel for DiffPanel {
             theme: ctx.theme,
         };
         let total_lines = render(frame, content_area, &diff_ctx);
-
-        // Clamp diff_scroll so the last line stays at the bottom and
-        // content cannot scroll past the top or bottom bounds.
-        let visible = (content_area.height.saturating_sub(PANEL_BORDER_H)) as usize;
-        state.diff_scroll = state.diff_scroll.min(total_lines.saturating_sub(visible));
+        state.prev_total_lines = total_lines;
 
         let focus_style = if ctx.is_focused(Panel::Diff) {
             Style::default().fg(ctx.theme.focused_border)
