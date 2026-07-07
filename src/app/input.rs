@@ -628,14 +628,17 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         let actual_index = rel_row + app.state.branch.branch_list_offset;
         if actual_index < app.state.branch.branch_tree.len() {
             let item = &app.state.branch.branch_tree[actual_index];
-            return vec![Command::MouseClickBranch {
-                index: actual_index,
-                full_path: item.full_path.clone(),
-                is_branch: item.is_branch,
-                is_expandable: item.expandable,
-                is_expanded: item.expanded,
-                key: item.key.clone(),
-            }];
+            return vec![
+                Command::SetFocus(PanelEnum::Branches),
+                Command::MouseClickBranch {
+                    index: actual_index,
+                    full_path: item.full_path.clone(),
+                    is_branch: item.is_branch,
+                    is_expandable: item.expandable,
+                    is_expanded: item.expanded,
+                    key: item.key.clone(),
+                },
+            ];
         }
         return vec![Command::SetFocus(PanelEnum::Branches)];
     }
