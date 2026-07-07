@@ -59,6 +59,8 @@ pub struct BranchEntry {
 pub struct BranchData {
     pub default_branch: Option<String>,
     pub entries: Vec<BranchEntry>,
+    /// Tag names from the repository (always fetched, regardless of scope).
+    pub tags: Vec<String>,
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use crate::tree;
 pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     let local_section_key = "__local__";
     let remote_section_key = "__remote__";
+    let tags_section_key = "__tags__";
 
     let local_expanded = state
         .branch
@@ -16,6 +17,12 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         .branch
         .expanded_nodes
         .get(remote_section_key)
+        .copied()
+        .unwrap_or(true);
+    let tags_expanded = state
+        .branch
+        .expanded_nodes
+        .get(tags_section_key)
         .copied()
         .unwrap_or(true);
 
@@ -39,6 +46,17 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         full_path: String::new(),
         tree_prefix: String::new(),
         key: remote_section_key.to_string(),
+    };
+
+    let tags_item = TreeItem {
+        name: "Tags".to_string(),
+        depth: 0,
+        expandable: true,
+        expanded: tags_expanded,
+        is_branch: false,
+        full_path: String::new(),
+        tree_prefix: String::new(),
+        key: tags_section_key.to_string(),
     };
 
     // Separate local and remote branch names
@@ -95,6 +113,25 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         if remote_expanded {
             let branch_items = tree::flatten_tree(&remote_root, 0, &state.branch.expanded_nodes);
             items.extend(branch_items);
+        }
+    }
+
+    // Tags section
+    if !state.branch.all_branches.tags.is_empty() {
+        items.push(tags_item);
+
+        let mut tag_root = tree::build_branch_tree(&state.branch.all_branches.tags);
+        tree::sort_tree(&mut tag_root);
+
+        if tags_expanded {
+            let mut tag_items = tree::flatten_tree(&tag_root, 0, &state.branch.expanded_nodes);
+            // Prefix tag full_paths with refs/tags/ to avoid collisions with same-named branches
+            for item in &mut tag_items {
+                if item.is_branch {
+                    item.full_path = format!("refs/tags/{}", item.full_path);
+                }
+            }
+            items.extend(tag_items);
         }
     }
 

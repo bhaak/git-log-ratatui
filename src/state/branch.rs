@@ -23,6 +23,7 @@ impl BranchState {
             all_branches: BranchData {
                 default_branch: None,
                 entries: Vec::new(),
+                tags: Vec::new(),
             },
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),

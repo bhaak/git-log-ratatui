@@ -4,7 +4,8 @@ use crate::models::*;
 use super::GitRepository;
 
 impl GitRepository {
-    /// Fetch all branch entries for the given scope, including branch type info.
+    /// Fetch all branch entries for the given scope, including branch type info
+    /// and the full tag list. Tags are always returned regardless of scope.
     pub fn fetch_branches(&self, scope: BranchScope) -> Result<BranchData, AppError> {
         let default_branch = self.detect_default_branch();
         let mut entries = Vec::new();
@@ -44,10 +45,23 @@ impl GitRepository {
             }
         }
 
+        let tags = self.fetch_tags()?;
+
         Ok(BranchData {
             default_branch,
             entries,
+            tags,
         })
+    }
+
+    /// Fetch all tag names from the repository.
+    fn fetch_tags(&self) -> Result<Vec<String>, AppError> {
+        let tag_names = self.repo.tag_names(None)?;
+        let mut tags = Vec::new();
+        for name in tag_names.iter().flatten() {
+            tags.push(name.to_string());
+        }
+        Ok(tags)
     }
 
     fn list_branches(&self, filter: Option<git2::BranchType>) -> Result<Vec<String>, AppError> {
@@ -66,8 +80,10 @@ impl GitRepository {
         Ok(branches)
     }
 
-    /// Resolve a shorthand branch name (e.g. "main" or "origin/main") to a full
-    /// git reference name (e.g. "refs/heads/main" or "refs/remotes/origin/main").
+    /// Resolve a shorthand name to a full git reference.
+    ///
+    /// Tries `refs/heads/`, then `refs/remotes/`, then `refs/tags/`.
+    /// If the name already starts with `refs/`, looks it up directly.
     pub fn resolve_branch_ref_name(&self, branch: &str) -> Option<String> {
         if let Ok(r) = self.repo.find_reference(&format!("refs/heads/{}", branch)) {
             return r.name().map(|n| n.to_string());
@@ -76,6 +92,9 @@ impl GitRepository {
             .repo
             .find_reference(&format!("refs/remotes/{}", branch))
         {
+            return r.name().map(|n| n.to_string());
+        }
+        if let Ok(r) = self.repo.find_reference(&format!("refs/tags/{}", branch)) {
             return r.name().map(|n| n.to_string());
         }
         if branch.starts_with("refs/") {
