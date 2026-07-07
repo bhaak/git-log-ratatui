@@ -550,7 +550,10 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         })
         .is_some()
     {
-        return vec![Command::InitiateScrollbarDrag(PanelEnum::Branches)];
+        return vec![
+            Command::SetFocus(PanelEnum::Branches),
+            Command::InitiateScrollbarDrag(PanelEnum::Branches),
+        ];
     }
     if app
         .state
@@ -566,7 +569,10 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         })
         .is_some()
     {
-        return vec![Command::InitiateScrollbarDrag(PanelEnum::Commits)];
+        return vec![
+            Command::SetFocus(PanelEnum::Commits),
+            Command::InitiateScrollbarDrag(PanelEnum::Commits),
+        ];
     }
     if let Some(pos) = app
         .state
@@ -582,6 +588,7 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         })
     {
         return vec![
+            Command::SetFocus(PanelEnum::Diff),
             Command::InitiateScrollbarDrag(PanelEnum::Diff),
             Command::ScrollToAbsolute(pos),
         ];
