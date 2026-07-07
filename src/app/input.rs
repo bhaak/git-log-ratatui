@@ -584,6 +584,10 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         return vec![Command::SetFocus(PanelEnum::Branches)];
     }
 
+    if ui::layout::rect_contains(&branch_visible, click_pos) {
+        return vec![Command::SetFocus(PanelEnum::Branches)];
+    }
+
     if ui::layout::rect_contains(&areas.scope, click_pos) {
         return vec![Command::SetFocus(PanelEnum::Scope), Command::CycleScope];
     }
@@ -604,6 +608,10 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
                 Command::SelectCommitIndex(vis_idx),
             ];
         }
+        return vec![Command::SetFocus(PanelEnum::Commits)];
+    }
+
+    if ui::layout::rect_contains(&areas.table, click_pos) {
         return vec![Command::SetFocus(PanelEnum::Commits)];
     }
 
