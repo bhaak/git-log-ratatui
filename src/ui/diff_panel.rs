@@ -57,6 +57,11 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     let start = (ctx.diff_scroll.saturating_add(1)).min(total);
     let end = (ctx.diff_scroll.saturating_add(visible)).min(total);
 
+    // ratatui Paragraph internally computes `area.height + scroll.y` (both u16).
+    // Prevent overflow by capping the scroll value.
+    let safe_max = (u16::MAX as usize).saturating_sub(area.height as usize);
+    let scroll_y = ctx.diff_scroll.min(total).min(safe_max) as u16;
+
     let diff_title = if let Some(hash) = ctx.short_hash {
         format!(" Diff - {}", hash)
     } else {
@@ -82,7 +87,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )
-        .scroll((ctx.diff_scroll as u16, 0));
+        .scroll((scroll_y, 0));
 
     frame.render_widget(paragraph, area);
     total
