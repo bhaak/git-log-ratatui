@@ -63,10 +63,10 @@ pub(crate) fn handle_event(app: &mut App) -> Result<EventOutcome, AppError> {
             if let MouseEventKind::Down(_) | MouseEventKind::Drag(_) = mouse.kind {
                 app.state.ui.last_mouse_pos = Some((mouse.column, mouse.row));
             }
-            if let MouseEventKind::Up(_) = mouse.kind {
-                app.state.ui.dragging = None;
+            let commands = handle_mouse(app, mouse);
+            for cmd in commands {
+                execute_command(app, cmd);
             }
-            handle_mouse(app, mouse);
         }
         Event::Resize(w, h) => {
             app.state.ui.dirty = true;
@@ -172,7 +172,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
 
 // --- Command execution ---
 
-fn execute_command(app: &mut App, cmd: Command) {
+pub(crate) fn execute_command(app: &mut App, cmd: Command) {
     use Command::*;
 
     match cmd {
@@ -220,41 +220,8 @@ fn execute_command(app: &mut App, cmd: Command) {
         ToggleGraph => {
             app.toggle_simplified_graph();
         }
-        CopyHashShort => {
-            if search::visible_count(&app.state) > 0 {
-                let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
-                if let Some(c) = app
-                    .state
-                    .commit
-                    .filtered_commits
-                    .as_deref()
-                    .unwrap_or(&app.state.commit.all_commits)
-                    .get(ci)
-                {
-                    let short = if c.hash.len() > ui::commit_table::SHORT_HASH_LEN {
-                        &c.hash[..ui::commit_table::SHORT_HASH_LEN]
-                    } else {
-                        &c.hash
-                    };
-                    let _ = clipboard::copy_to_clipboard(short);
-                }
-            }
-        }
-        CopyHashFull => {
-            if search::visible_count(&app.state) > 0 {
-                let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
-                if let Some(c) = app
-                    .state
-                    .commit
-                    .filtered_commits
-                    .as_deref()
-                    .unwrap_or(&app.state.commit.all_commits)
-                    .get(ci)
-                {
-                    let _ = clipboard::copy_to_clipboard(&c.hash);
-                }
-            }
-        }
+        CopyHashShort => copy_hash(app, true),
+        CopyHashFull => copy_hash(app, false),
         PasteSearch(text) => {
             app.state.search.search_query = text;
             app.state.search.cursor_pos = app.state.search.search_query.len();
@@ -278,46 +245,8 @@ fn execute_command(app: &mut App, cmd: Command) {
                 app.state.diff.diff_scroll = entry.diff_line + offset;
             }
         }
-        SelectNextFile => {
-            if !app.state.diff.file_entries.is_empty() {
-                app.state.diff.selected_file_index =
-                    (app.state.diff.selected_file_index + 1) % app.state.diff.file_entries.len();
-                let offset = ui::diff_panel::diff_line_offset(
-                    app.state.diff.commit_info.as_ref(),
-                    &app.state.diff.file_entries,
-                );
-                if let Some(entry) = app
-                    .state
-                    .diff
-                    .file_entries
-                    .get(app.state.diff.selected_file_index)
-                {
-                    app.state.diff.diff_scroll = entry.diff_line + offset;
-                }
-            }
-        }
-        SelectPrevFile => {
-            if !app.state.diff.file_entries.is_empty() {
-                if app.state.diff.selected_file_index > 0 {
-                    app.state.diff.selected_file_index -= 1;
-                    let offset = ui::diff_panel::diff_line_offset(
-                        app.state.diff.commit_info.as_ref(),
-                        &app.state.diff.file_entries,
-                    );
-                    if let Some(entry) = app
-                        .state
-                        .diff
-                        .file_entries
-                        .get(app.state.diff.selected_file_index)
-                    {
-                        app.state.diff.diff_scroll = entry.diff_line + offset;
-                    }
-                } else {
-                    app.state.diff.diff_scroll = 0;
-                    app.state.diff.selected_file_index = 0;
-                }
-            }
-        }
+        SelectNextFile => select_next_file(app),
+        SelectPrevFile => select_prev_file(app),
         JumpToTop => {
             app.state.diff.diff_scroll = 0;
         }
@@ -327,7 +256,117 @@ fn execute_command(app: &mut App, cmd: Command) {
         ShowCommitDiff => {
             app.state.ui.focus = PanelEnum::Diff;
         }
+        InitiateDragVertical => {
+            app.state.ui.dragging = Some(ui::layout::DragDirection::Vertical);
+        }
+        InitiateDragHorizontal => {
+            app.state.ui.dragging = Some(ui::layout::DragDirection::Horizontal);
+        }
+        EndDrag => {
+            app.state.ui.dragging = None;
+        }
+        InitiateScrollbarDrag(panel) => {
+            app.state.ui.dragging = None;
+            app.state.ui.focus = panel;
+            app.state.ui.scrollbar_drag = Some(panel);
+        }
+        EndScrollbarDrag => {
+            app.state.ui.scrollbar_drag = None;
+        }
+        SetBranchWidthPct(pct) => {
+            app.state.ui.branch_width_pct = pct;
+        }
+        SetDiffHeightPct(pct) => {
+            app.state.ui.diff_height_pct = pct;
+        }
+        SelectCommitIndex(idx) => {
+            app.state.commit.selected_index = idx;
+            search::clamp_selection(&mut app.state);
+        }
+        MouseClickBranch {
+            index,
+            full_path,
+            is_branch,
+            is_expandable,
+            is_expanded,
+            key,
+        } => {
+            app.state.branch.branch_index = index;
+            if is_branch {
+                app.request_commits(Some(full_path));
+                app.state.ui.focus = PanelEnum::Commits;
+            } else if is_expandable {
+                app.state.branch.expanded_nodes.insert(key, !is_expanded);
+                branches::rebuild_branch_tree(&mut app.state);
+            }
+        }
+        ScrollToAbsolute(pos) => {
+            app.state.diff.diff_scroll = pos;
+        }
         Quit => {} // handled outside
+    }
+}
+
+fn copy_hash(app: &mut App, short: bool) {
+    if search::visible_count(&app.state) > 0 {
+        let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
+        if let Some(c) = app
+            .state
+            .commit
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&app.state.commit.all_commits)
+            .get(ci)
+        {
+            let hash = if short && c.hash.len() > ui::commit_table::SHORT_HASH_LEN {
+                &c.hash[..ui::commit_table::SHORT_HASH_LEN]
+            } else {
+                &c.hash
+            };
+            let _ = clipboard::copy_to_clipboard(hash);
+        }
+    }
+}
+
+fn select_next_file(app: &mut App) {
+    if !app.state.diff.file_entries.is_empty() {
+        app.state.diff.selected_file_index =
+            (app.state.diff.selected_file_index + 1) % app.state.diff.file_entries.len();
+        let offset = ui::diff_panel::diff_line_offset(
+            app.state.diff.commit_info.as_ref(),
+            &app.state.diff.file_entries,
+        );
+        if let Some(entry) = app
+            .state
+            .diff
+            .file_entries
+            .get(app.state.diff.selected_file_index)
+        {
+            app.state.diff.diff_scroll = entry.diff_line + offset;
+        }
+    }
+}
+
+fn select_prev_file(app: &mut App) {
+    if !app.state.diff.file_entries.is_empty() {
+        if app.state.diff.selected_file_index > 0 {
+            app.state.diff.selected_file_index -= 1;
+            let offset = ui::diff_panel::diff_line_offset(
+                app.state.diff.commit_info.as_ref(),
+                &app.state.diff.file_entries,
+            );
+            if let Some(entry) = app
+                .state
+                .diff
+                .file_entries
+                .get(app.state.diff.selected_file_index)
+            {
+                app.state.diff.diff_scroll = entry.diff_line + offset;
+            }
+        } else {
+            app.state.diff.diff_scroll = 0;
+            app.state.diff.selected_file_index = 0;
+        }
     }
 }
 
@@ -455,37 +494,32 @@ fn suspend(_app: &mut App) {
     let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture,);
 }
 
-// --- Mouse handling ---
+// --- Mouse handling (produces Commands, does not mutate state) ---
 
-pub(crate) fn handle_mouse(app: &mut App, mouse: event::MouseEvent) {
+fn handle_mouse(app: &App, mouse: event::MouseEvent) -> Vec<Command> {
     use crossterm::event::MouseButton;
+
+    let col = mouse.column;
+    let row = mouse.row;
 
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
-            handle_mouse_click(app, mouse.column, mouse.row);
-            check_resize_start(app, mouse.column, mouse.row);
+            let mut commands = mouse_click(app, col, row);
+            commands.extend(check_resize_start(app, col, row));
+            commands
         }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            handle_mouse_drag(app, mouse.column, mouse.row);
-        }
+        MouseEventKind::Drag(MouseButton::Left) => mouse_drag(app, col, row),
         MouseEventKind::Up(MouseButton::Left) => {
-            app.state.ui.dragging = None;
-            app.state.ui.scrollbar_drag = None;
+            vec![Command::EndDrag, Command::EndScrollbarDrag]
         }
-        MouseEventKind::ScrollDown => {
-            handle_scroll_at(app, mouse.column, mouse.row, 1);
-        }
-        MouseEventKind::ScrollUp => {
-            handle_scroll_at(app, mouse.column, mouse.row, -1);
-        }
-        _ => {}
+        MouseEventKind::ScrollDown => scroll_at(app, col, row, 1),
+        MouseEventKind::ScrollUp => scroll_at(app, col, row, -1),
+        _ => Vec::new(),
     }
 }
 
-pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
-    let Some((tw, th)) = app.state.ui.last_size else {
-        return;
-    };
+fn compute_mouse_areas(app: &App) -> (Rect, ui::layout::LayoutAreas, Rect) {
+    let (tw, th) = app.state.ui.last_size.unwrap_or((80, 24));
     let full = Rect::new(0, 0, tw, th);
     let areas = ui::layout::compute_areas(
         full,
@@ -493,35 +527,35 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
         app.state.ui.diff_height_pct,
     );
     let help_h = ui::layout::HELP_BAR_HEIGHT.min(th);
-    let branch_visible_area = Rect::new(
+    let branch_visible = Rect::new(
         areas.branch.x,
         areas.branch.y,
         areas.branch.width,
         areas.branch.height.saturating_sub(help_h),
     );
+    (full, areas, branch_visible)
+}
+
+pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
+    let (_full, areas, branch_visible) = compute_mouse_areas(app);
     let click_pos = (col, row);
 
-    if let Some(_new_pos) = app
+    // Scrollbar clicks
+    if let Some(_pos) = app
         .state
         .branch
         .scrollbar
-        .click_to_index(branch_visible_area, click_pos)
+        .click_to_index(branch_visible, click_pos)
     {
-        app.state.ui.dragging = None;
-        app.state.ui.focus = PanelEnum::Branches;
-        app.state.ui.scrollbar_drag = Some(PanelEnum::Branches);
-        return;
+        return vec![Command::InitiateScrollbarDrag(PanelEnum::Branches)];
     }
-    if let Some(_new_pos) = app
+    if let Some(_pos) = app
         .state
         .commit
         .scrollbar
         .click_to_index(areas.table, click_pos)
     {
-        app.state.ui.dragging = None;
-        app.state.ui.focus = PanelEnum::Commits;
-        app.state.ui.scrollbar_drag = Some(PanelEnum::Commits);
-        return;
+        return vec![Command::InitiateScrollbarDrag(PanelEnum::Commits)];
     }
     if let Some(new_pos) = app
         .state
@@ -529,134 +563,111 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
         .scrollbar
         .click_to_index(areas.diff, click_pos)
     {
-        app.state.ui.dragging = None;
-        app.state.ui.focus = PanelEnum::Diff;
-        app.state.ui.scrollbar_drag = Some(PanelEnum::Diff);
-        app.state.diff.diff_scroll = new_pos;
-        return;
+        return vec![
+            Command::InitiateScrollbarDrag(PanelEnum::Diff),
+            Command::ScrollToAbsolute(new_pos),
+        ];
     }
 
-    if ui::layout::rect_contains_interior(&branch_visible_area, click_pos) {
-        app.state.ui.focus = PanelEnum::Branches;
+    // Panel content clicks
+    if ui::layout::rect_contains_interior(&branch_visible, click_pos) {
         let rel_row = (row
             .saturating_sub(areas.branch.y)
             .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
         let actual_index = rel_row + app.state.branch.branch_list_offset;
         if actual_index < app.state.branch.branch_tree.len() {
-            app.state.branch.branch_index = actual_index;
-            let action = app.state.branch.branch_tree.get(actual_index).map(|item| {
-                if item.is_branch {
-                    (Some(item.full_path.clone()), None)
-                } else if item.expandable {
-                    (None, Some((item.key.clone(), !item.expanded)))
-                } else {
-                    (None, None)
-                }
-            });
-            if let Some((branch_path, toggle)) = action {
-                if let Some(path) = branch_path {
-                    app.request_commits(Some(path));
-                    app.state.ui.focus = PanelEnum::Commits;
-                } else if let Some((key, new_state)) = toggle {
-                    app.state.branch.expanded_nodes.insert(key, new_state);
-                    branches::rebuild_branch_tree(&mut app.state);
-                }
-            }
+            let item = &app.state.branch.branch_tree[actual_index];
+            return vec![Command::MouseClickBranch {
+                index: actual_index,
+                full_path: item.full_path.clone(),
+                is_branch: item.is_branch,
+                is_expandable: item.expandable,
+                is_expanded: item.expanded,
+                key: item.key.clone(),
+            }];
         }
-    } else if ui::layout::rect_contains(&areas.scope, click_pos) {
-        app.state.ui.focus = PanelEnum::Scope;
-        app.state.branch.branch_scope = app.state.branch.branch_scope.next();
-        app.state.branch.branch_index = 0;
-        app.state.branch.expanded_nodes.clear();
-        app.state.search.search_query.clear();
-        app.state.search.cursor_pos = 0;
-        app.state.branch.selected_branch = None;
-        app.request_branches();
-        app.request_commits(None);
-    } else if ui::layout::rect_contains(&areas.search, click_pos) {
-        app.state.ui.focus = PanelEnum::Search;
-    } else if ui::layout::rect_contains_interior(&areas.table, click_pos) {
-        app.state.ui.focus = PanelEnum::Commits;
+        return vec![Command::SetFocus(PanelEnum::Branches)];
+    }
+
+    if ui::layout::rect_contains(&areas.scope, click_pos) {
+        return vec![Command::SetFocus(PanelEnum::Scope), Command::CycleScope];
+    }
+
+    if ui::layout::rect_contains(&areas.search, click_pos) {
+        return vec![Command::SetFocus(PanelEnum::Search)];
+    }
+
+    if ui::layout::rect_contains_interior(&areas.table, click_pos) {
         let rel_row = (row
             .saturating_sub(areas.table.y)
             .saturating_sub(ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD)))
             as usize;
         let filtered_idx = rel_row + app.state.commit.table_state.offset();
         if let Some(vis_idx) = search::filtered_to_visible(&app.state, filtered_idx) {
-            app.state.commit.selected_index = vis_idx;
+            return vec![
+                Command::SetFocus(PanelEnum::Commits),
+                Command::SelectCommitIndex(vis_idx),
+            ];
         }
-    } else if ui::layout::rect_contains(&areas.diff, click_pos) {
-        app.state.ui.focus = PanelEnum::Diff;
-        let rel_row = (row
-            .saturating_sub(areas.diff.y)
-            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        return vec![Command::SetFocus(PanelEnum::Commits)];
+    }
+
+    if ui::layout::rect_contains(&areas.diff, click_pos) {
         let meta_offset = if let Some(ref info) = app.state.diff.commit_info {
             ui::diff_panel::count_metadata_lines(info)
         } else {
             0
         };
+        let rel_row = (row
+            .saturating_sub(areas.diff.y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
         if rel_row > meta_offset && rel_row <= meta_offset + app.state.diff.file_entries.len() + 2 {
             let file_idx = rel_row - meta_offset - 1;
             if file_idx < app.state.diff.file_entries.len() {
-                app.state.diff.selected_file_index = file_idx;
                 let offset = ui::diff_panel::diff_line_offset(
                     app.state.diff.commit_info.as_ref(),
                     &app.state.diff.file_entries,
                 );
                 if let Some(entry) = app.state.diff.file_entries.get(file_idx) {
-                    app.state.diff.diff_scroll = entry.diff_line + offset;
+                    return vec![
+                        Command::SetFocus(PanelEnum::Diff),
+                        Command::JumpToDiffFile(file_idx),
+                        Command::ScrollToAbsolute(entry.diff_line + offset),
+                    ];
                 }
             }
         }
+        return vec![Command::SetFocus(PanelEnum::Diff)];
     }
+
+    Vec::new()
 }
 
-fn check_resize_start(app: &mut App, col: u16, row: u16) {
-    let Some((tw, th)) = app.state.ui.last_size else {
-        return;
-    };
-    let full = Rect::new(0, 0, tw, th);
-    let areas = ui::layout::compute_areas(
-        full,
-        app.state.ui.branch_width_pct,
-        app.state.ui.diff_height_pct,
-    );
+fn check_resize_start(app: &App, col: u16, row: u16) -> Vec<Command> {
+    let (_full, areas, _branch_visible) = compute_mouse_areas(app);
 
     if ui::layout::is_on_vertical_border(col, row, areas.branch) {
-        app.state.ui.dragging = Some(ui::layout::DragDirection::Vertical);
-        return;
+        return vec![Command::InitiateDragVertical];
     }
-
     if ui::layout::is_on_horizontal_border(col, row, areas.right, areas.table) {
-        app.state.ui.dragging = Some(ui::layout::DragDirection::Horizontal);
+        return vec![Command::InitiateDragHorizontal];
     }
+    Vec::new()
 }
 
-fn handle_mouse_drag(app: &mut App, col: u16, row: u16) {
+fn mouse_drag(app: &App, col: u16, row: u16) -> Vec<Command> {
+    let mut commands = Vec::new();
+
     if let Some(panel) = app.state.ui.scrollbar_drag {
-        let Some((tw, th)) = app.state.ui.last_size else {
-            return;
-        };
-        let full = Rect::new(0, 0, tw, th);
-        let areas = ui::layout::compute_areas(
-            full,
-            app.state.ui.branch_width_pct,
-            app.state.ui.diff_height_pct,
-        );
-        let help_h = ui::layout::HELP_BAR_HEIGHT.min(th);
-        let branch_visible_area = Rect::new(
-            areas.branch.x,
-            areas.branch.y,
-            areas.branch.width,
-            areas.branch.height.saturating_sub(help_h),
-        );
+        let (_full, areas, branch_visible) = compute_mouse_areas(app);
         match panel {
             PanelEnum::Branches => {
+                // scrollbar drag on branch: position is tracked via state alone
                 let _ = app
                     .state
                     .branch
                     .scrollbar
-                    .click_to_index(branch_visible_area, (col, row));
+                    .click_to_index(branch_visible, (col, row));
             }
             PanelEnum::Commits => {
                 let _ = app
@@ -672,67 +683,54 @@ fn handle_mouse_drag(app: &mut App, col: u16, row: u16) {
                     .scrollbar
                     .click_to_index(areas.diff, (col, row))
                 {
-                    app.state.diff.diff_scroll = new_pos;
+                    commands.push(Command::ScrollToAbsolute(new_pos));
                 }
             }
             _ => {}
         }
-        return;
+        return commands;
     }
 
     match app.state.ui.dragging {
         Some(ui::layout::DragDirection::Vertical) => {
             if let Some((tw, _)) = app.state.ui.last_size {
-                app.state.ui.branch_width_pct = ui::layout::vertical_resize_pct(col, tw);
+                commands.push(Command::SetBranchWidthPct(ui::layout::vertical_resize_pct(
+                    col, tw,
+                )));
             }
         }
         Some(ui::layout::DragDirection::Horizontal) => {
             if let Some((_, th)) = app.state.ui.last_size {
-                app.state.ui.diff_height_pct = ui::layout::horizontal_resize_pct(row, th);
+                commands.push(Command::SetDiffHeightPct(
+                    ui::layout::horizontal_resize_pct(row, th),
+                ));
             }
         }
         None => {}
     }
+
+    commands
 }
 
-fn handle_scroll_at(app: &mut App, col: u16, row: u16, direction: i32) {
-    let Some((tw, th)) = app.state.ui.last_size else {
-        return;
-    };
-    let full = Rect::new(0, 0, tw, th);
-    let areas = ui::layout::compute_areas(
-        full,
-        app.state.ui.branch_width_pct,
-        app.state.ui.diff_height_pct,
-    );
+fn scroll_at(app: &App, col: u16, row: u16, direction: i32) -> Vec<Command> {
+    let (_full, areas, _branch_visible) = compute_mouse_areas(app);
     let pos = (col, row);
 
     if ui::layout::rect_contains(&areas.branch, pos) {
-        app.state.branch.branch_index = if direction > 0 {
-            cycle_forward(
-                app.state.branch.branch_index,
-                app.state.branch.branch_tree.len(),
-            )
+        if direction > 0 {
+            vec![Command::MoveDown]
         } else {
-            cycle_backward(
-                app.state.branch.branch_index,
-                app.state.branch.branch_tree.len(),
-            )
-        };
+            vec![Command::MoveUp]
+        }
     } else if ui::layout::rect_contains(&areas.table, pos) {
-        let count = search::visible_count(&app.state);
-        if count > 0 {
-            app.state.commit.selected_index = if direction > 0 {
-                cycle_forward(app.state.commit.selected_index, count)
-            } else {
-                cycle_backward(app.state.commit.selected_index, count)
-            };
+        if direction > 0 {
+            vec![Command::MoveDown]
+        } else {
+            vec![Command::MoveUp]
         }
     } else if ui::layout::rect_contains(&areas.diff, pos) {
-        if direction > 0 {
-            app.state.diff.diff_scroll += 1;
-        } else {
-            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(1);
-        }
+        vec![Command::ScrollDiff(direction)]
+    } else {
+        Vec::new()
     }
 }

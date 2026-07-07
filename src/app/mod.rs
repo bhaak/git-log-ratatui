@@ -665,14 +665,20 @@ mod tests {
 
         let prev_branch_index = app.state.branch.branch_index;
 
-        input::handle_mouse_click(&mut app, 19, 5);
+        // Click on scrollbar column (x=19, which is far right) — should NOT change selection
+        for cmd in input::mouse_click(&app, 19, 5) {
+            input::execute_command(&mut app, cmd);
+        }
 
         assert_eq!(
             app.state.branch.branch_index, prev_branch_index,
             "branch_index should NOT change on scrollbar click"
         );
 
-        input::handle_mouse_click(&mut app, 5, 3);
+        // Click on content area (x=5) — SHOULD change selection
+        for cmd in input::mouse_click(&app, 5, 3) {
+            input::execute_command(&mut app, cmd);
+        }
         assert_eq!(
             app.state.branch.branch_index, 2,
             "branch_index should change on content click"
