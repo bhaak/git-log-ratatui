@@ -116,8 +116,8 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         }
     }
 
-    // Tags section
-    if !state.branch.all_branches.tags.is_empty() {
+    // Tags section (only shown when scope is All)
+    if state.branch.branch_scope == BranchScope::All && !state.branch.all_branches.tags.is_empty() {
         items.push(tags_item);
 
         let mut tag_root = tree::build_branch_tree(&state.branch.all_branches.tags);
