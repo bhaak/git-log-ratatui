@@ -62,7 +62,18 @@ impl ScrollbarView {
             return;
         }
 
-        self.state = ScrollbarState::new(content_length)
+        // ratatui's ScrollbarState treats position as if it ranges from 0 to
+        // content_length - 1, and the formula is:
+        //   thumb_pos = position / (content_length - 1 + viewport_length)
+        //
+        // Our position is a viewport offset (0 .. content_length - viewport_length).
+        // Using `content_length - viewport_length + 1` as the effective content
+        // makes the mapping linear so that position = offset_max puts the thumb
+        // exactly at the bottom of the track.
+        let effective_content = content_length
+            .saturating_sub(viewport_length)
+            .saturating_add(1);
+        self.state = ScrollbarState::new(effective_content)
             .viewport_content_length(viewport_length)
             .position(position);
 
@@ -79,7 +90,8 @@ impl ScrollbarView {
     /// Returns `None` if the content fits entirely (no scrolling needed).
     ///
     /// The formula is the exact inverse of how ratatui renders the scrollbar thumb:
-    ///   thumb_start = position * track_length / (content_length - 1 + viewport_length)
+    ///   thumb_start = position * track_length / (effective - 1 + viewport_length)
+    /// where `effective = content_length - viewport_length + 1`.
     pub fn map_click_to_position(
         scrollbar_area: Rect,
         row: u16,
@@ -90,12 +102,14 @@ impl ScrollbarView {
             return None;
         }
 
+        let effective = content_length
+            .saturating_sub(viewport_length)
+            .saturating_add(1);
         let track_height = scrollbar_area.height as f64;
         let rel = (row.saturating_sub(scrollbar_area.y)) as f64;
         let ratio = (rel / track_height).clamp(0.0, 1.0);
-        // ratatui uses (content_length - 1 + viewport_length) as the full range denominator
-        let range = (content_length.saturating_sub(1) + viewport_length) as f64;
-        let max_position = content_length.saturating_sub(1);
+        let range = (effective.saturating_sub(1) + viewport_length) as f64;
+        let max_position = effective.saturating_sub(1);
 
         Some(((ratio * range).round() as usize).min(max_position))
     }
