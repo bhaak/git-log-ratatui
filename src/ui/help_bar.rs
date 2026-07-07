@@ -6,11 +6,17 @@ use ratatui::{
     Frame,
 };
 
-use crate::models::Panel;
 use crate::theme::Theme;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
-pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>, theme: &Theme) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    panel_label: &str,
+    context_keys: &[(&str, &str)],
+    status: Option<&str>,
+    theme: &Theme,
+) {
     if area.width < 10 || area.height < 2 {
         return;
     }
@@ -23,37 +29,9 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>,
 
     let common = [("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
 
-    let context: Vec<(&str, &str)> = match focus {
-        Panel::Branches => vec![
-            ("j/k/↑↓", "Nav"),
-            ("→←", "Expand"),
-            ("Space", "Toggle"),
-            ("Enter", "Load"),
-        ],
-        Panel::Search => vec![
-            ("Esc", "Clear"),
-            ("Ctrl+V", "Paste"),
-            ("Ctrl+A/E", "Home/End"),
-        ],
-        Panel::Scope => vec![("Space/Enter", "Cycle"), ("Ctrl+S", "Cycle")],
-        Panel::Commits => vec![
-            ("j/k/↑↓", "Nav"),
-            ("y", "Copy hash 7"),
-            ("Y", "Copy full"),
-            ("Enter", "→ Diff"),
-            ("g", "Graph toggle"),
-        ],
-        Panel::Diff => vec![
-            ("j/k/↑↓", "File"),
-            ("Enter", "Jump"),
-            ("n/p", "Next/prev"),
-            ("Home/End", "Top/bottom"),
-        ],
-    };
-
     let mut spans: Vec<Span> = Vec::new();
 
-    for (key, desc) in common.iter().chain(context.iter()) {
+    for (key, desc) in common.iter().chain(context_keys.iter()) {
         spans.push(Span::styled("<", bracket_style));
         spans.push(Span::styled(*key, key_style));
         spans.push(Span::styled(": ", bracket_style));
@@ -63,9 +41,9 @@ pub fn render(frame: &mut Frame, area: Rect, focus: Panel, status: Option<&str>,
     }
 
     let title = if let Some(msg) = status {
-        format!(" Help | {} ", msg)
+        format!(" {} | {} ", panel_label, msg)
     } else {
-        " Help ".to_string()
+        format!(" {} ", panel_label)
     };
 
     let paragraph = Paragraph::new(Line::from(spans)).block(

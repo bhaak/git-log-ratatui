@@ -88,17 +88,38 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     // Diff panel
     ui::diff_panel::DiffPanel.render(areas.diff, frame, &mut app.state.diff, &ctx);
 
-    // Help bar (full width at bottom)
+    // Help bar (full width at bottom) — dispatch to focused panel's help_keys + label
     let help_area = Rect::new(
         full.x,
         full.y + full.height.saturating_sub(ui::layout::HELP_BAR_HEIGHT),
         full.width,
         ui::layout::HELP_BAR_HEIGHT.min(full.height),
     );
+    let commit_panel = ui::commit_table::CommitPanel::new();
+    let (help_keys, label) = match app.state.ui.focus {
+        crate::models::Panel::Branches => (
+            ui::branch_panel::BranchPanel.help_keys(),
+            ui::branch_panel::BranchPanel.label(),
+        ),
+        crate::models::Panel::Search => (
+            ui::search_panel::SearchPanel.help_keys(),
+            ui::search_panel::SearchPanel.label(),
+        ),
+        crate::models::Panel::Scope => (
+            ui::scope_panel::ScopePanel.help_keys(),
+            ui::scope_panel::ScopePanel.label(),
+        ),
+        crate::models::Panel::Commits => (commit_panel.help_keys(), commit_panel.label()),
+        crate::models::Panel::Diff => (
+            ui::diff_panel::DiffPanel.help_keys(),
+            ui::diff_panel::DiffPanel.label(),
+        ),
+    };
     ui::help_bar::render(
         frame,
         help_area,
-        app.state.ui.focus,
+        label,
+        help_keys,
         app.state.ui.status_message.as_deref(),
         &theme,
     );
