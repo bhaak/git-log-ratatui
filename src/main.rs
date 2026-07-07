@@ -51,6 +51,21 @@ struct Cli {
 }
 
 fn main() -> Result<(), AppError> {
+    std::env::set_var("RUST_BACKTRACE", "full");
+
+    // Write panic backtraces to a file so they survive terminal cleanup.
+    std::panic::set_hook(Box::new(|info| {
+        let bt = std::backtrace::Backtrace::force_capture();
+        let output = format!(
+            "PANIC: {}\nLocation: {:?}\n\nBacktrace:\n{}",
+            info,
+            info.location(),
+            bt
+        );
+        eprintln!("{}", output);
+        let _ = std::fs::write("/tmp/git-log-ratatui-crash.log", output);
+    }));
+
     // Initialize tracing: logs to /tmp/git-log-ratatui.log.
     // Set RUST_LOG to control verbosity (default: info).
     let file = std::fs::File::create("/tmp/git-log-ratatui.log");
@@ -92,34 +107,21 @@ fn main() -> Result<(), AppError> {
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let config = config::Config::load();
-    let result = {
-        let mut app = app::App::new(repo_path, &config, cli.simplified_graph, cli.debug)?;
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.run(&mut terminal)))
-    };
+    let mut app = app::App::new(repo_path, &config, cli.simplified_graph, cli.debug)?;
 
-    // Cleanup terminal
-    disable_raw_mode()?;
-    let _ = io::stdout().execute(LeaveAlternateScreen);
-    let _ = io::stdout().execute(DisableMouseCapture);
+    // Run without catch_unwind so default panic handler prints full backtrace.
+    // Terminal cleanup happens below; if a panic occurs above, the terminal
+    // state is restored in the Drop guard.
+    struct TerminalGuard;
 
-    match result {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        }
-        Err(panic) => {
-            let msg = if let Some(s) = panic.downcast_ref::<String>() {
-                s.clone()
-            } else if let Some(s) = panic.downcast_ref::<&str>() {
-                s.to_string()
-            } else {
-                "Unknown panic".to_string()
-            };
-            eprintln!("Panic: {}", msg);
-            std::process::exit(1);
+    impl Drop for TerminalGuard {
+        fn drop(&mut self) {
+            let _ = disable_raw_mode();
+            let _ = io::stdout().execute(LeaveAlternateScreen);
+            let _ = io::stdout().execute(DisableMouseCapture);
         }
     }
 
-    Ok(())
+    let _guard = TerminalGuard;
+    app.run(&mut terminal)
 }
