@@ -534,12 +534,16 @@ impl panel_mod::Panel for DiffPanel {
         };
         let total_lines = render(frame, content_area, &diff_ctx);
 
+        // Clamp diff_scroll so the last line stays at the bottom and
+        // content cannot scroll past the top or bottom bounds.
+        let visible = (content_area.height.saturating_sub(PANEL_BORDER_H)) as usize;
+        state.diff_scroll = state.diff_scroll.min(total_lines.saturating_sub(visible));
+
         let focus_style = if ctx.is_focused(Panel::Diff) {
             Style::default().fg(ctx.theme.focused_border)
         } else {
             Style::default().fg(ctx.theme.unfocused_border)
         };
-        let visible = (content_area.height.saturating_sub(PANEL_BORDER_H)) as usize;
         state.scrollbar.render(
             frame,
             scrollbar_area,
