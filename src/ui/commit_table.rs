@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Modifier, Style},
@@ -10,8 +10,8 @@ use ratatui::{
 use std::cell::RefCell;
 
 use crate::app::commands::Command;
-use crate::app::state::AppState;
 use crate::models::*;
+use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
 use crate::ui::layout::TABLE_OVERHEAD;
@@ -279,7 +279,6 @@ fn build_graph_span(
     }
 
     if commit.graph.is_empty() || commit.graph_colors.len() != commit.graph.chars().count() {
-        // Fallback: single-color graph line
         let padded = format!("{:width$}", commit.graph, width = graph_width);
         return Line::from(Span::styled(
             padded,
@@ -303,7 +302,6 @@ fn build_graph_span(
         spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
     }
 
-    // Pad to graph_width
     let current_width = spans.len();
     for _ in current_width..graph_width {
         spans.push(Span::raw(" "));
@@ -312,8 +310,6 @@ fn build_graph_span(
     Line::from(spans)
 }
 
-/// Simplified graph: a colored bullet (●), or ○ for merges, no connecting lines.
-/// Bullets are colored by branch lane; commits not on a known branch tip render in gray.
 fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     let lane = commit.graph_colors.iter().find(|&&c| c != 255).copied();
 
@@ -348,7 +344,6 @@ fn build_hash_span(commit: &Commit, theme: &Theme) -> Line<'static> {
     ))
 }
 
-/// Build decorations-only text for graph_only rows.
 fn graph_only_decorations(commit: &Commit) -> String {
     if commit.decorations.is_empty() {
         String::new()
@@ -395,14 +390,11 @@ mod tests {
         }
     }
 
-    // --- build_hash_span ---
-
     #[test]
     fn test_build_hash_span_long_hash() {
         let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", false, vec![]);
         let span = build_hash_span(&c, &theme);
-        // Should be truncated to SHORT_HASH_LEN (7)
         let expected = Span::styled(
             "abc1234".to_string(),
             Style::default().fg(theme.scrollbar_thumb),
@@ -436,8 +428,6 @@ mod tests {
         assert_eq!(span, Line::from(expected));
     }
 
-    // --- build_graph_span ---
-
     #[test]
     fn test_build_graph_span_normal() {
         let theme = make_theme();
@@ -463,7 +453,7 @@ mod tests {
     fn test_build_simplified_graph_regular() {
         let theme = make_theme();
         let mut c = make_commit("", "●", false, vec![]);
-        c.graph_colors = vec![2]; // lane 2 → cyan
+        c.graph_colors = vec![2];
         let span = build_simplified_graph(&c, &theme);
         let expected = Span::styled("●".to_string(), Style::default().fg(theme.graph_colors[2]));
         assert_eq!(span, Line::from(expected));
@@ -478,8 +468,6 @@ mod tests {
         let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
         assert_eq!(span, Line::from(expected));
     }
-
-    // --- graph_only_decorations ---
 
     #[test]
     fn test_graph_only_decorations_empty() {
@@ -506,8 +494,6 @@ mod tests {
         );
         assert_eq!(graph_only_decorations(&c), "main, v1.0");
     }
-
-    // --- decoration_style ---
 
     #[test]
     fn test_decoration_style_tag() {
@@ -536,8 +522,6 @@ mod tests {
         let style = decoration_style(&DecorationKind::Head, &theme);
         assert_eq!(style, Style::default().fg(theme.decoration_head));
     }
-
-    // --- viewport windowing (performance regression guard) ---
 
     fn render_with(commit_count: usize, visible_index: usize, height: u16) -> TableState {
         use ratatui::{backend::TestBackend, Terminal};
@@ -568,7 +552,6 @@ mod tests {
 
     #[test]
     fn test_offset_follows_selection_into_view() {
-        // Height 13 => 13 - TABLE_OVERHEAD(3) = 10 visible data rows.
         let state = render_with(1000, 500, 13);
         let offset = state.offset();
         let viewport = 10;
@@ -589,7 +572,6 @@ mod tests {
 
     #[test]
     fn test_offset_clamped_at_end() {
-        // Selecting the last commit must not scroll past the end.
         let state = render_with(1000, 999, 13);
         let viewport = 10;
         assert_eq!(state.offset(), 1000 - viewport);
@@ -618,30 +600,28 @@ impl Default for CommitPanel {
 }
 
 impl PanelTrait for CommitPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
+    type State = CommitTableState;
+
+    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
         let commits = state
-            .commit
             .filtered_commits
             .as_deref()
-            .unwrap_or(&state.commit.all_commits);
+            .unwrap_or(&state.all_commits);
         let table_ctx = CommitTableCtx {
             commits,
-            visible_index: state.commit.selected_index,
+            visible_index: state.selected_index,
             is_focused: ctx.is_focused(Panel::Commits),
-            visible_to_commit: &state.commit.visible_to_commit,
-            total_loaded: state.commit.all_commits.len(),
-            search_active: !state.search.search_query.is_empty(),
-            simplified_graph: state.commit.simplified_graph,
+            visible_to_commit: &state.visible_to_commit,
+            total_loaded: state.all_commits.len(),
+            search_active: ctx.search_active,
+            simplified_graph: state.simplified_graph,
             debug_label: ctx.debug_label,
             theme: ctx.theme,
         };
         render(frame, area, &table_ctx, &mut self.table_state.borrow_mut());
     }
 
-    fn handle_event(&mut self, event: &Event, _state: &AppState) -> Vec<Command> {
-        let Event::Key(key) = event else {
-            return Vec::new();
-        };
+    fn handle_event(&mut self, key: &KeyEvent, _state: &mut Self::State) -> Vec<Command> {
         match key.code {
             KeyCode::Up => vec![Command::MoveUp],
             KeyCode::Down => vec![Command::MoveDown],

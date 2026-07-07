@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -12,6 +12,7 @@ use crate::diff_pairing::{
 };
 use crate::lcs;
 use crate::models::*;
+use crate::state::diff::DiffState;
 use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
 
@@ -257,19 +258,16 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
         .add_modifier(Modifier::BOLD);
     let value_style = Style::default();
 
-    // Subject
     lines.push(Line::from(vec![
         Span::styled("Subject:       ", label_style),
         Span::styled(commit_info.subject.clone(), subject_style),
     ]));
 
-    // Hash
     lines.push(Line::from(vec![
         Span::styled("Hash:          ", label_style),
         Span::styled(&commit_info.hash, value_style),
     ]));
 
-    // Parents
     let parents_text = if commit_info.parents.is_empty() {
         "\u{2014}".to_string()
     } else {
@@ -280,7 +278,6 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
         Span::styled(parents_text, value_style),
     ]));
 
-    // Author
     lines.push(Line::from(vec![
         Span::styled("Author:        ", label_style),
         Span::styled(
@@ -293,7 +290,6 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
         Span::styled(&commit_info.author_date, value_style),
     ]));
 
-    // Committer (only if different from author)
     if commit_info.committer_name != commit_info.author_name
         || commit_info.committer_email != commit_info.author_email
     {
@@ -321,21 +317,34 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
     lines
 }
 
+/// Count metadata lines without theme dependency (for offset calculations).
+pub fn count_metadata_lines(commit_info: &CommitInfo) -> usize {
+    let mut count = 5; // subject + hash + parents + author + author_date
+    if commit_info.committer_name != commit_info.author_name
+        || commit_info.committer_email != commit_info.author_email
+    {
+        count += 1;
+    }
+    if commit_info.committer_date != commit_info.author_date
+        && !commit_info.committer_date.is_empty()
+    {
+        count += 1;
+    }
+    count + 1 // blank line separator
+}
+
 /// Calculate the offset of the first diff line in the rendered output
 /// (metadata lines + file header lines + separator).
-pub fn diff_line_offset(
-    commit_info: Option<&CommitInfo>,
-    file_entries: &[FileEntry],
-    theme: &Theme,
-) -> usize {
+/// Uses `count_metadata_lines` which does not depend on theme.
+pub fn diff_line_offset(commit_info: Option<&CommitInfo>, file_entries: &[FileEntry]) -> usize {
     let mut offset = 0;
     if let Some(info) = commit_info {
-        offset += build_metadata_lines(info, theme).len();
+        offset += count_metadata_lines(info);
     }
     if !file_entries.is_empty() {
-        offset += 1; // "Changed files:" header
-        offset += file_entries.len(); // file entries
-        offset += 1; // separator blank line
+        offset += 1;
+        offset += file_entries.len();
+        offset += 1;
     }
     offset
 }
@@ -376,30 +385,23 @@ mod tests {
         }
     }
 
-    // --- build_metadata_lines ---
-
     #[test]
     fn test_build_metadata_lines_basic() {
         let theme = make_theme();
         let info = make_info("Hello world", "abc123");
         let lines = build_metadata_lines(&info, &theme);
 
-        // Should have: subject, hash, parents (—), author, author date, blank line = 6 lines
         assert_eq!(lines.len(), 6);
 
-        // Subject line
         let subject_span = &lines[0].spans[1];
         assert_eq!(subject_span.content, "Hello world");
 
-        // Hash line
         let hash_span = &lines[1].spans[1];
         assert_eq!(hash_span.content, "abc123");
 
-        // Parents (empty → em dash)
         let parents_span = &lines[2].spans[1];
         assert_eq!(parents_span.content, "\u{2014}");
 
-        // Author
         let author_span = &lines[3].spans[1];
         assert_eq!(author_span.content, "Author <a@b.com>");
     }
@@ -410,14 +412,11 @@ mod tests {
         let info = make_info_with_committer();
         let lines = build_metadata_lines(&info, &theme);
 
-        // Should include committer info (different from author)
         assert!(lines.len() >= 8);
 
-        // Parents should be joined with space
         let parents_span = &lines[2].spans[1];
         assert_eq!(parents_span.content, "parent1 parent2");
 
-        // Find committer line
         let has_committer = lines
             .iter()
             .any(|l| l.spans.len() > 1 && l.spans[1].content.contains("Committer <c@d.com>"));
@@ -434,35 +433,40 @@ mod tests {
         let theme = make_theme();
         let info = make_info("test", "hash");
         let lines = build_metadata_lines(&info, &theme);
-        // Author and committer are the same, committer date is empty — no extra lines
         let has_committer = lines
             .iter()
-            .any(|l| l.spans.len() > 0 && l.spans[0].content.contains("Committer"));
+            .any(|l| !l.spans.is_empty() && l.spans[0].content.contains("Committer"));
         assert!(
             !has_committer,
             "should not show committer when same as author"
         );
     }
 
-    // --- diff_line_offset ---
+    #[test]
+    fn test_count_metadata_lines_basic() {
+        let info = make_info("test", "hash");
+        assert_eq!(count_metadata_lines(&info), 6);
+    }
+
+    #[test]
+    fn test_count_metadata_lines_with_committer() {
+        let info = make_info_with_committer();
+        assert_eq!(count_metadata_lines(&info), 8);
+    }
 
     #[test]
     fn test_diff_line_offset_no_info_no_files() {
-        let theme = make_theme();
-        assert_eq!(diff_line_offset(None, &[], &theme), 0);
+        assert_eq!(diff_line_offset(None, &[]), 0);
     }
 
     #[test]
     fn test_diff_line_offset_with_info_only() {
-        let theme = make_theme();
         let info = make_info("test", "hash");
-        let expected = build_metadata_lines(&info, &theme).len();
-        assert_eq!(diff_line_offset(Some(&info), &[], &theme), expected);
+        assert_eq!(diff_line_offset(Some(&info), &[]), 6);
     }
 
     #[test]
     fn test_diff_line_offset_with_files() {
-        let theme = make_theme();
         let info = make_info("test", "hash");
         let files = &[
             FileEntry {
@@ -478,26 +482,22 @@ mod tests {
                 old_name: None,
             },
         ];
-        let metadata_len = build_metadata_lines(&info, &theme).len();
-        let expected = metadata_len + 1 + 2 + 1; // header + 2 files + blank
-        assert_eq!(diff_line_offset(Some(&info), files, &theme), expected);
+        assert_eq!(diff_line_offset(Some(&info), files), 10); // 6 + 1 + 2 + 1
     }
 
     #[test]
     fn test_diff_line_offset_files_only() {
-        let theme = make_theme();
         let files = &[FileEntry {
             name: "a.rs".to_string(),
             diff_line: 0,
             status: '~',
             old_name: None,
         }];
-        assert_eq!(diff_line_offset(None, files, &theme), 3); // header + 1 file + blank
+        assert_eq!(diff_line_offset(None, files), 3);
     }
 }
 
 use crate::app::commands::Command;
-use crate::app::state::AppState;
 use crate::ui::panel::{self as panel_mod};
 use crate::ui::render_ctx::RenderCtx;
 
@@ -506,16 +506,18 @@ use crate::ui::render_ctx::RenderCtx;
 pub struct DiffPanel;
 
 impl panel_mod::Panel for DiffPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
-        let short_hash = state.diff.commit_info.as_ref().map(|info| {
+    type State = DiffState;
+
+    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+        let short_hash = state.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
         });
         let diff_ctx = DiffPanelCtx {
-            commit_info: state.diff.commit_info.as_ref(),
-            diff_lines: &state.diff.diff_lines,
-            file_entries: &state.diff.file_entries,
-            selected_file_index: state.diff.selected_file_index,
-            diff_scroll: state.diff.diff_scroll,
+            commit_info: state.commit_info.as_ref(),
+            diff_lines: &state.diff_lines,
+            file_entries: &state.file_entries,
+            selected_file_index: state.selected_file_index,
+            diff_scroll: state.diff_scroll,
             is_focused: ctx.is_focused(Panel::Diff),
             short_hash,
             debug_label: ctx.debug_label,
@@ -524,17 +526,9 @@ impl panel_mod::Panel for DiffPanel {
         let _ = render(frame, area, &diff_ctx);
     }
 
-    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
-        let Event::Key(key) = event else {
-            return Vec::new();
-        };
-        let file_section_end = diff_line_offset(
-            state.diff.commit_info.as_ref(),
-            &state.diff.file_entries,
-            &state.theme,
-        );
-        let past_meta =
-            state.diff.diff_scroll >= file_section_end || state.diff.file_entries.is_empty();
+    fn handle_event(&mut self, key: &KeyEvent, state: &mut Self::State) -> Vec<Command> {
+        let file_section_end = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
+        let past_meta = state.diff_scroll >= file_section_end || state.file_entries.is_empty();
 
         match key.code {
             KeyCode::Up => {
@@ -551,22 +545,20 @@ impl panel_mod::Panel for DiffPanel {
                     vec![Command::MoveDown]
                 }
             }
-            KeyCode::Enter => vec![Command::JumpToDiffFile(state.diff.selected_file_index)],
-            KeyCode::Char('n') if !state.diff.file_entries.is_empty() => {
+            KeyCode::Enter => vec![Command::JumpToDiffFile(state.selected_file_index)],
+            KeyCode::Char('n') if !state.file_entries.is_empty() => {
                 vec![Command::SelectNextFile]
             }
-            KeyCode::Char('p') if !state.diff.file_entries.is_empty() => {
+            KeyCode::Char('p') if !state.file_entries.is_empty() => {
                 vec![Command::SelectPrevFile]
             }
             KeyCode::Home => vec![Command::JumpToTop],
             KeyCode::End => vec![Command::JumpToBottom],
             KeyCode::PageUp => {
-                let page = state.ui.diff_scrollbar.viewport_length().max(1);
-                vec![Command::ScrollDiff(-(page as i32))]
+                vec![Command::PageUp]
             }
             KeyCode::PageDown => {
-                let page = state.ui.diff_scrollbar.viewport_length().max(1);
-                vec![Command::ScrollDiff(page as i32)]
+                vec![Command::PageDown]
             }
             _ => Vec::new(),
         }

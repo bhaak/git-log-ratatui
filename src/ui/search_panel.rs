@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -43,10 +43,8 @@ pub fn render(
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    // Build the inner content
     let inner_area = block.inner(area);
 
-    // Build display text with cursor and "Search: " prefix
     let prefix = " Search: ";
     let display: Vec<Span> = if is_focused && inner_area.width > 2 {
         let prefix_len = prefix.chars().count();
@@ -118,7 +116,7 @@ pub fn render(
 }
 
 use crate::app::commands::Command;
-use crate::app::state::AppState;
+use crate::state::search::SearchState;
 use crate::text_utils;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
@@ -127,18 +125,16 @@ use crate::ui::render_ctx::RenderCtx;
 pub struct SearchPanel;
 
 impl Panel for SearchPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
-        let branch_label = state
-            .branch
-            .selected_branch
-            .as_deref()
-            .unwrap_or("all branches");
-        let title = format!("Git Log - {} [{}]", state.repo_path, branch_label);
+    type State = SearchState;
+
+    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+        let branch_label = ctx.selected_branch.unwrap_or("all branches");
+        let title = format!("Git Log - {} [{}]", ctx.repo_path, branch_label);
         render(
             frame,
             area,
-            &state.search.search_query,
-            state.search.cursor_pos,
+            &state.search_query,
+            state.cursor_pos,
             branch_label,
             &title,
             ctx.is_focused(crate::models::Panel::Search),
@@ -147,69 +143,48 @@ impl Panel for SearchPanel {
         );
     }
 
-    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
-        let Event::Key(key) = event else {
-            return Vec::new();
-        };
+    fn handle_event(&mut self, key: &KeyEvent, state: &mut Self::State) -> Vec<Command> {
         match key.code {
             KeyCode::Esc => vec![Command::ClearSearch],
-            KeyCode::Backspace if state.search.cursor_pos > 0 => {
-                let pos = state.search.cursor_pos;
-                let prev = text_utils::prev_char_boundary(&state.search.search_query, pos);
-                let mut q = state.search.search_query.clone();
+            KeyCode::Backspace if state.cursor_pos > 0 => {
+                let pos = state.cursor_pos;
+                let prev = text_utils::prev_char_boundary(&state.search_query, pos);
+                let mut q = state.search_query.clone();
                 q.remove(prev);
                 vec![Command::SetSearch(q, prev)]
             }
-            KeyCode::Delete if state.search.cursor_pos < state.search.search_query.len() => {
-                let pos = state.search.cursor_pos;
-                let mut q = state.search.search_query.clone();
+            KeyCode::Delete if state.cursor_pos < state.search_query.len() => {
+                let pos = state.cursor_pos;
+                let mut q = state.search_query.clone();
                 q.remove(pos);
                 vec![Command::SetSearch(q, pos)]
             }
             KeyCode::Left => {
                 let new_pos = if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    text_utils::prev_word_boundary(
-                        &state.search.search_query,
-                        state.search.cursor_pos,
-                    )
+                    text_utils::prev_word_boundary(&state.search_query, state.cursor_pos)
                 } else {
-                    text_utils::prev_char_boundary(
-                        &state.search.search_query,
-                        state.search.cursor_pos,
-                    )
+                    text_utils::prev_char_boundary(&state.search_query, state.cursor_pos)
                 };
-                vec![Command::SetSearch(
-                    state.search.search_query.clone(),
-                    new_pos,
-                )]
+                vec![Command::SetSearch(state.search_query.clone(), new_pos)]
             }
             KeyCode::Right => {
                 let new_pos = if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    text_utils::next_word_boundary(
-                        &state.search.search_query,
-                        state.search.cursor_pos,
-                    )
+                    text_utils::next_word_boundary(&state.search_query, state.cursor_pos)
                 } else {
-                    text_utils::next_char_boundary(
-                        &state.search.search_query,
-                        state.search.cursor_pos,
-                    )
+                    text_utils::next_char_boundary(&state.search_query, state.cursor_pos)
                 };
-                vec![Command::SetSearch(
-                    state.search.search_query.clone(),
-                    new_pos,
-                )]
+                vec![Command::SetSearch(state.search_query.clone(), new_pos)]
             }
             KeyCode::Home => {
-                vec![Command::SetSearch(state.search.search_query.clone(), 0)]
+                vec![Command::SetSearch(state.search_query.clone(), 0)]
             }
             KeyCode::End => {
-                let len = state.search.search_query.len();
-                vec![Command::SetSearch(state.search.search_query.clone(), len)]
+                let len = state.search_query.len();
+                vec![Command::SetSearch(state.search_query.clone(), len)]
             }
             KeyCode::Char(ch) => {
-                let pos = state.search.cursor_pos;
-                let mut q = state.search.search_query.clone();
+                let pos = state.cursor_pos;
+                let mut q = state.search_query.clone();
                 q.insert(pos, ch);
                 vec![Command::SetSearch(q, pos + ch.len_utf8())]
             }

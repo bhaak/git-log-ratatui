@@ -162,26 +162,11 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
 
     // --- Dispatch to the focused panel ---
     match app.state.ui.focus {
-        PanelEnum::Branches => {
-            let mut panel = BranchPanel;
-            panel.handle_event(&Event::Key(key), &app.state)
-        }
-        PanelEnum::Search => {
-            let mut panel = SearchPanel;
-            panel.handle_event(&Event::Key(key), &app.state)
-        }
-        PanelEnum::Scope => {
-            let mut panel = ScopePanel;
-            panel.handle_event(&Event::Key(key), &app.state)
-        }
-        PanelEnum::Commits => {
-            let mut panel = CommitPanel::new();
-            panel.handle_event(&Event::Key(key), &app.state)
-        }
-        PanelEnum::Diff => {
-            let mut panel = DiffPanel;
-            panel.handle_event(&Event::Key(key), &app.state)
-        }
+        PanelEnum::Branches => BranchPanel.handle_event(&key, &mut app.state.branch),
+        PanelEnum::Search => SearchPanel.handle_event(&key, &mut app.state.search),
+        PanelEnum::Scope => ScopePanel.handle_event(&key, &mut app.state.branch.branch_scope),
+        PanelEnum::Commits => CommitPanel::new().handle_event(&key, &mut app.state.commit),
+        PanelEnum::Diff => DiffPanel.handle_event(&key, &mut app.state.diff),
     }
 }
 
@@ -288,7 +273,6 @@ fn execute_command(app: &mut App, cmd: Command) {
             let offset = ui::diff_panel::diff_line_offset(
                 app.state.diff.commit_info.as_ref(),
                 &app.state.diff.file_entries,
-                &app.state.theme,
             );
             if let Some(entry) = app.state.diff.file_entries.get(index) {
                 app.state.diff.diff_scroll = entry.diff_line + offset;
@@ -301,7 +285,6 @@ fn execute_command(app: &mut App, cmd: Command) {
                 let offset = ui::diff_panel::diff_line_offset(
                     app.state.diff.commit_info.as_ref(),
                     &app.state.diff.file_entries,
-                    &app.state.theme,
                 );
                 if let Some(entry) = app
                     .state
@@ -320,7 +303,6 @@ fn execute_command(app: &mut App, cmd: Command) {
                     let offset = ui::diff_panel::diff_line_offset(
                         app.state.diff.commit_info.as_ref(),
                         &app.state.diff.file_entries,
-                        &app.state.theme,
                     );
                     if let Some(entry) = app
                         .state
@@ -609,7 +591,7 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
             .saturating_sub(areas.diff.y)
             .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
         let meta_offset = if let Some(ref info) = app.state.diff.commit_info {
-            ui::diff_panel::build_metadata_lines(info, &app.state.theme).len()
+            ui::diff_panel::count_metadata_lines(info)
         } else {
             0
         };
@@ -620,7 +602,6 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
                 let offset = ui::diff_panel::diff_line_offset(
                     app.state.diff.commit_info.as_ref(),
                     &app.state.diff.file_entries,
-                    &app.state.theme,
                 );
                 if let Some(entry) = app.state.diff.file_entries.get(file_idx) {
                     app.state.diff.diff_scroll = entry.diff_line + offset;

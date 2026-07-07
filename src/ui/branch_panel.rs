@@ -1,4 +1,5 @@
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -7,8 +8,8 @@ use ratatui::{
 };
 
 use crate::app::commands::Command;
-use crate::app::state::AppState;
 use crate::models::*;
+use crate::state::branch::BranchState;
 use crate::theme::Theme;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
@@ -17,27 +18,26 @@ use crate::ui::render_ctx::RenderCtx;
 pub struct BranchPanel;
 
 impl Panel for BranchPanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
+    type State = BranchState;
+
+    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
         let _ = render(
             frame,
             area,
-            &state.branch.branch_tree,
-            state.branch.branch_index,
+            &state.branch_tree,
+            state.branch_index,
             ctx.is_focused(crate::models::Panel::Branches),
             ctx.debug_label,
             ctx.theme,
         );
     }
 
-    fn handle_event(&mut self, event: &Event, state: &AppState) -> Vec<Command> {
-        let Event::Key(key) = event else {
-            return Vec::new();
-        };
+    fn handle_event(&mut self, key: &KeyEvent, state: &mut Self::State) -> Vec<Command> {
         match key.code {
             KeyCode::Up => vec![Command::MoveUp],
             KeyCode::Down => vec![Command::MoveDown],
             KeyCode::Right => {
-                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                if let Some(item) = state.branch_tree.get(state.branch_index) {
                     if item.expandable && !item.expanded {
                         return vec![Command::ToggleBranchNode {
                             key: item.key.clone(),
@@ -48,7 +48,7 @@ impl Panel for BranchPanel {
                 Vec::new()
             }
             KeyCode::Left => {
-                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                if let Some(item) = state.branch_tree.get(state.branch_index) {
                     if item.expandable && item.expanded {
                         return vec![Command::ToggleBranchNode {
                             key: item.key.clone(),
@@ -59,7 +59,7 @@ impl Panel for BranchPanel {
                 Vec::new()
             }
             KeyCode::Char(' ') => {
-                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                if let Some(item) = state.branch_tree.get(state.branch_index) {
                     if item.expandable {
                         return vec![Command::ToggleBranchNode {
                             key: item.key.clone(),
@@ -70,7 +70,7 @@ impl Panel for BranchPanel {
                 Vec::new()
             }
             KeyCode::Enter => {
-                if let Some(item) = state.branch.branch_tree.get(state.branch.branch_index) {
+                if let Some(item) = state.branch_tree.get(state.branch_index) {
                     if item.is_branch {
                         return vec![Command::SelectBranch(item.full_path.clone())];
                     } else if item.expandable {

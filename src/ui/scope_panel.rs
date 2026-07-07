@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -53,7 +53,6 @@ pub fn render(
 }
 
 use crate::app::commands::Command;
-use crate::app::state::AppState;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
 
@@ -61,22 +60,22 @@ use crate::ui::render_ctx::RenderCtx;
 pub struct ScopePanel;
 
 impl Panel for ScopePanel {
-    fn render(&self, area: Rect, frame: &mut Frame, state: &AppState, ctx: &RenderCtx) {
+    type State = BranchScope;
+
+    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
         render(
             frame,
             area,
-            state.branch.branch_scope,
+            *state,
             ctx.is_focused(crate::models::Panel::Scope),
             ctx.debug_label,
             ctx.theme,
         );
     }
 
-    fn handle_event(&mut self, event: &Event, _state: &AppState) -> Vec<Command> {
-        if let Event::Key(key) = event {
-            if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
-                return vec![Command::CycleScope];
-            }
+    fn handle_event(&mut self, key: &KeyEvent, _state: &mut Self::State) -> Vec<Command> {
+        if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
+            return vec![Command::CycleScope];
         }
         Vec::new()
     }
