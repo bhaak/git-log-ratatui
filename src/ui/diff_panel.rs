@@ -57,10 +57,13 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     let start = (ctx.diff_scroll.saturating_add(1)).min(total);
     let end = (ctx.diff_scroll.saturating_add(visible)).min(total);
 
-    // ratatui Paragraph internally computes `area.height + scroll.y` (both u16).
-    // Prevent overflow by capping the scroll value.
-    let safe_max = (u16::MAX as usize).saturating_sub(area.height as usize);
-    let scroll_y = ctx.diff_scroll.min(total).min(safe_max) as u16;
+    // Slice the content to the visible window instead of using Paragraph scroll.
+    // This avoids ratatui's internal u16 arithmetic with potentially large scroll values.
+    let visible_lines: Vec<Line> = all_lines
+        .into_iter()
+        .skip(ctx.diff_scroll.min(total))
+        .take(visible)
+        .collect();
 
     let diff_title = if let Some(hash) = ctx.short_hash {
         format!(" Diff - {}", hash)
@@ -80,14 +83,12 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
         String::new()
     };
 
-    let paragraph = Paragraph::new(all_lines)
-        .block(
-            Block::default()
-                .title(format!("{}{}{}", diff_title, debug_part, scroll_info))
-                .borders(Borders::ALL)
-                .border_style(border_style),
-        )
-        .scroll((scroll_y, 0));
+    let paragraph = Paragraph::new(visible_lines).block(
+        Block::default()
+            .title(format!("{}{}{}", diff_title, debug_part, scroll_info))
+            .borders(Borders::ALL)
+            .border_style(border_style),
+    );
 
     frame.render_widget(paragraph, area);
     total
