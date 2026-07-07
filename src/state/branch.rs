@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::models::*;
+use crate::ui;
 
-/// Branch panel state — tree, selection, scope, and expanded node tracking.
+/// Branch panel state — tree, selection, scope, expanded node tracking, and scrollbar.
 pub struct BranchState {
     pub all_branches: BranchData,
     pub branch_tree: Vec<TreeItem>,
@@ -12,6 +13,8 @@ pub struct BranchState {
     pub selected_branch: Option<String>,
     pub branch_list_offset: usize,
     pub branches_loaded: bool,
+    /// Scrollbar for the branch tree list.
+    pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
 
 impl BranchState {
@@ -28,6 +31,7 @@ impl BranchState {
             selected_branch: None,
             branch_list_offset: 0,
             branches_loaded: false,
+            scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }
 }

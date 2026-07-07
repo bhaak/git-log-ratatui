@@ -127,7 +127,7 @@ pub struct SearchPanel;
 impl Panel for SearchPanel {
     type State = SearchState;
 
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
         let branch_label = ctx.selected_branch.unwrap_or("all branches");
         let title = format!("Git Log - {} [{}]", ctx.repo_path, branch_label);
         render(

@@ -397,7 +397,7 @@ fn page_up(app: &mut App) {
             search::clamp_selection(&mut app.state);
         }
         PanelEnum::Diff => {
-            let page = app.state.ui.diff_scrollbar.viewport_length().max(1);
+            let page = app.state.diff.scrollbar.viewport_length().max(1);
             app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(page);
         }
         _ => {}
@@ -415,7 +415,7 @@ fn page_down(app: &mut App) {
                 .min(search::visible_count(&app.state).saturating_sub(1));
         }
         PanelEnum::Diff => {
-            let page = app.state.ui.diff_scrollbar.viewport_length().max(1);
+            let page = app.state.diff.scrollbar.viewport_length().max(1);
             app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_add(page);
         }
         _ => {}
@@ -503,8 +503,8 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
 
     if let Some(_new_pos) = app
         .state
-        .ui
-        .branch_scrollbar
+        .branch
+        .scrollbar
         .click_to_index(branch_visible_area, click_pos)
     {
         app.state.ui.dragging = None;
@@ -514,8 +514,8 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
     }
     if let Some(_new_pos) = app
         .state
-        .ui
-        .table_scrollbar
+        .commit
+        .scrollbar
         .click_to_index(areas.table, click_pos)
     {
         app.state.ui.dragging = None;
@@ -525,8 +525,8 @@ pub(crate) fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
     }
     if let Some(new_pos) = app
         .state
-        .ui
-        .diff_scrollbar
+        .diff
+        .scrollbar
         .click_to_index(areas.diff, click_pos)
     {
         app.state.ui.dragging = None;
@@ -654,22 +654,22 @@ fn handle_mouse_drag(app: &mut App, col: u16, row: u16) {
             PanelEnum::Branches => {
                 let _ = app
                     .state
-                    .ui
-                    .branch_scrollbar
+                    .branch
+                    .scrollbar
                     .click_to_index(branch_visible_area, (col, row));
             }
             PanelEnum::Commits => {
                 let _ = app
                     .state
-                    .ui
-                    .table_scrollbar
+                    .commit
+                    .scrollbar
                     .click_to_index(areas.table, (col, row));
             }
             PanelEnum::Diff => {
                 if let Some(new_pos) = app
                     .state
-                    .ui
-                    .diff_scrollbar
+                    .diff
+                    .scrollbar
                     .click_to_index(areas.diff, (col, row))
                 {
                     app.state.diff.diff_scroll = new_pos;

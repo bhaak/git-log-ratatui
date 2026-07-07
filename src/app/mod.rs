@@ -651,7 +651,7 @@ mod tests {
             let mut terminal = Terminal::new(TestBackend::new(2, 10)).unwrap();
             terminal
                 .draw(|f| {
-                    app.state.ui.branch_scrollbar.render(
+                    app.state.branch.scrollbar.render(
                         f,
                         Rect::new(1, 0, 1, 10),
                         50,

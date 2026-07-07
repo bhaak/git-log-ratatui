@@ -2,8 +2,9 @@ use ratatui::widgets::TableState;
 
 use crate::app::cache::CommitCache;
 use crate::models::Commit;
+use crate::ui;
 
-/// Commit table state — all commit data, filtering, selection, graph mode, and lazy loading.
+/// Commit table state — all commit data, filtering, selection, graph mode, lazy loading, and scrollbar.
 pub struct CommitTableState {
     pub all_commits: Vec<Commit>,
     pub filtered_commits: Option<Vec<Commit>>,
@@ -16,6 +17,8 @@ pub struct CommitTableState {
     pub commit_limit: usize,
     pub all_commits_loaded: bool,
     pub loading_more: bool,
+    /// Scrollbar for the commit table.
+    pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
 
 impl CommitTableState {
@@ -32,6 +35,7 @@ impl CommitTableState {
             commit_limit,
             all_commits_loaded: false,
             loading_more: false,
+            scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }
 }

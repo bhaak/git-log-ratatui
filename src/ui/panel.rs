@@ -16,7 +16,7 @@ pub trait Panel {
     type State;
 
     /// Render the panel into the given area.
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx);
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx);
 
     /// Handle a keyboard event. Returns a list of Commands to execute on AppState.
     fn handle_event(&mut self, event: &KeyEvent, state: &mut Self::State) -> Vec<Command>;

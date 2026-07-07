@@ -1,6 +1,7 @@
 use crate::models::*;
+use crate::ui;
 
-/// Diff panel state — commit metadata, diff lines, file listing, and scroll position.
+/// Diff panel state — commit metadata, diff lines, file listing, scroll position, and scrollbar.
 pub struct DiffState {
     pub commit_info: Option<CommitInfo>,
     pub diff_lines: Vec<String>,
@@ -9,6 +10,8 @@ pub struct DiffState {
     pub diff_scroll: usize,
     pub last_selected_hash: Option<String>,
     pub diff_pending: bool,
+    /// Scrollbar for the diff panel.
+    pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
 
 impl DiffState {
@@ -21,6 +24,7 @@ impl DiffState {
             diff_scroll: 0,
             last_selected_hash: None,
             diff_pending: false,
+            scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::models::Panel;
 use crate::ui;
 
-/// Global UI state — focus, layout, drag tracking, scrollbars, and status.
+/// Global UI state — focus, layout, drag tracking, and status.
 pub struct UiState {
     pub focus: Panel,
     pub branch_width_pct: u16,
@@ -10,9 +10,6 @@ pub struct UiState {
     pub scrollbar_drag: Option<Panel>,
     pub last_size: Option<(u16, u16)>,
     pub last_mouse_pos: Option<(u16, u16)>,
-    pub branch_scrollbar: ui::scrollbar_view::ScrollbarView,
-    pub table_scrollbar: ui::scrollbar_view::ScrollbarView,
-    pub diff_scrollbar: ui::scrollbar_view::ScrollbarView,
     pub status_message: Option<String>,
     pub poll_interval_ms: u8,
     pub dirty: bool,
@@ -28,9 +25,6 @@ impl UiState {
             scrollbar_drag: None,
             last_size: None,
             last_mouse_pos: None,
-            branch_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            table_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
-            diff_scrollbar: ui::scrollbar_view::ScrollbarView::new(),
             status_message: None,
             poll_interval_ms: poll_min_ms,
             dirty: true,

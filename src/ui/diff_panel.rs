@@ -15,6 +15,7 @@ use crate::models::*;
 use crate::state::diff::DiffState;
 use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
+use crate::ui::scrollbar_view::ScrollbarView;
 
 /// Render context for the diff panel.
 pub struct DiffPanelCtx<'a> {
@@ -319,7 +320,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
 
 /// Count metadata lines without theme dependency (for offset calculations).
 pub fn count_metadata_lines(commit_info: &CommitInfo) -> usize {
-    let mut count = 5; // subject + hash + parents + author + author_date
+    let mut count = 5;
     if commit_info.committer_name != commit_info.author_name
         || commit_info.committer_email != commit_info.author_email
     {
@@ -330,7 +331,7 @@ pub fn count_metadata_lines(commit_info: &CommitInfo) -> usize {
     {
         count += 1;
     }
-    count + 1 // blank line separator
+    count + 1
 }
 
 /// Calculate the offset of the first diff line in the rendered output
@@ -419,12 +420,12 @@ mod tests {
 
         let has_committer = lines
             .iter()
-            .any(|l| l.spans.len() > 1 && l.spans[1].content.contains("Committer <c@d.com>"));
+            .any(|l| !l.spans.is_empty() && l.spans[1].content.contains("Committer <c@d.com>"));
         assert!(has_committer, "should have committer line");
 
         let has_committer_date = lines
             .iter()
-            .any(|l| l.spans.len() > 1 && l.spans[1].content.contains("2024-06-15"));
+            .any(|l| !l.spans.is_empty() && l.spans[1].content.contains("2024-06-15"));
         assert!(has_committer_date, "should have committer date line");
     }
 
@@ -482,7 +483,7 @@ mod tests {
                 old_name: None,
             },
         ];
-        assert_eq!(diff_line_offset(Some(&info), files), 10); // 6 + 1 + 2 + 1
+        assert_eq!(diff_line_offset(Some(&info), files), 10);
     }
 
     #[test]
@@ -508,7 +509,9 @@ pub struct DiffPanel;
 impl panel_mod::Panel for DiffPanel {
     type State = DiffState;
 
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
+        let (content_area, scrollbar_area) = ScrollbarView::split(area);
+
         let short_hash = state.commit_info.as_ref().map(|info| {
             &info.hash[..std::cmp::min(crate::ui::commit_table::SHORT_HASH_LEN, info.hash.len())]
         });
@@ -523,7 +526,22 @@ impl panel_mod::Panel for DiffPanel {
             debug_label: ctx.debug_label,
             theme: ctx.theme,
         };
-        let _ = render(frame, area, &diff_ctx);
+        let total_lines = render(frame, content_area, &diff_ctx);
+
+        let focus_style = if ctx.is_focused(Panel::Diff) {
+            Style::default().fg(ctx.theme.focused_border)
+        } else {
+            Style::default().fg(ctx.theme.unfocused_border)
+        };
+        let visible = (content_area.height.saturating_sub(PANEL_BORDER_H)) as usize;
+        state.scrollbar.render(
+            frame,
+            scrollbar_area,
+            total_lines,
+            visible,
+            state.diff_scroll,
+            focus_style,
+        );
     }
 
     fn handle_event(&mut self, key: &KeyEvent, state: &mut Self::State) -> Vec<Command> {

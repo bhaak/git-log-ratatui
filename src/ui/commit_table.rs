@@ -14,9 +14,10 @@ use crate::models::*;
 use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
-use crate::ui::layout::TABLE_OVERHEAD;
+use crate::ui::layout::{self, TABLE_OVERHEAD};
 use crate::ui::panel::Panel as PanelTrait;
 use crate::ui::render_ctx::RenderCtx;
+use crate::ui::scrollbar_view::ScrollbarView;
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
@@ -602,7 +603,9 @@ impl Default for CommitPanel {
 impl PanelTrait for CommitPanel {
     type State = CommitTableState;
 
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
+        let (content_area, scrollbar_area) = ScrollbarView::split(area);
+
         let commits = state
             .filtered_commits
             .as_deref()
@@ -618,7 +621,25 @@ impl PanelTrait for CommitPanel {
             debug_label: ctx.debug_label,
             theme: ctx.theme,
         };
-        render(frame, area, &table_ctx, &mut self.table_state.borrow_mut());
+        let mut ts = state.table_state.clone();
+        render(frame, content_area, &table_ctx, &mut ts);
+        state.table_state = ts;
+
+        let focus_style = if ctx.is_focused(Panel::Commits) {
+            Style::default().fg(ctx.theme.focused_border)
+        } else {
+            Style::default().fg(ctx.theme.unfocused_border)
+        };
+        let visible = (content_area.height.saturating_sub(layout::TABLE_OVERHEAD)) as usize;
+        let item_count = commits.len();
+        state.scrollbar.render(
+            frame,
+            scrollbar_area,
+            item_count,
+            visible,
+            state.table_state.offset(),
+            focus_style,
+        );
     }
 
     fn handle_event(&mut self, key: &KeyEvent, _state: &mut Self::State) -> Vec<Command> {

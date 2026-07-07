@@ -11,8 +11,10 @@ use crate::app::commands::Command;
 use crate::models::*;
 use crate::state::branch::BranchState;
 use crate::theme::Theme;
+use crate::ui::layout;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
+use crate::ui::scrollbar_view::ScrollbarView;
 
 /// Wrapper struct implementing the Panel trait for the branch tree view.
 pub struct BranchPanel;
@@ -20,15 +22,34 @@ pub struct BranchPanel;
 impl Panel for BranchPanel {
     type State = BranchState;
 
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
-        let _ = render(
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
+        let (content_area, scrollbar_area) = ScrollbarView::split(area);
+
+        let list_state = render_tree(
             frame,
-            area,
+            content_area,
             &state.branch_tree,
             state.branch_index,
             ctx.is_focused(crate::models::Panel::Branches),
             ctx.debug_label,
             ctx.theme,
+        );
+
+        state.branch_list_offset = list_state.offset();
+
+        let focus_style = if ctx.is_focused(crate::models::Panel::Branches) {
+            Style::default().fg(ctx.theme.focused_border)
+        } else {
+            Style::default().fg(ctx.theme.unfocused_border)
+        };
+        let visible = (content_area.height.saturating_sub(layout::PANEL_BORDER_H)) as usize;
+        state.scrollbar.render(
+            frame,
+            scrollbar_area,
+            state.branch_tree.len(),
+            visible,
+            list_state.offset(),
+            focus_style,
         );
     }
 
@@ -102,8 +123,9 @@ impl Panel for BranchPanel {
     }
 }
 
-/// Render the branch panel with a hierarchical tree view.
-pub fn render(
+/// Render the branch panel content with a hierarchical tree view.
+/// Returns the ListState for offset tracking.
+fn render_tree(
     frame: &mut Frame,
     area: Rect,
     tree_items: &[TreeItem],

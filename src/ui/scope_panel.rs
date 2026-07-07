@@ -62,7 +62,7 @@ pub struct ScopePanel;
 impl Panel for ScopePanel {
     type State = BranchScope;
 
-    fn render(&self, area: Rect, frame: &mut Frame, state: &Self::State, ctx: &RenderCtx) {
+    fn render(&self, area: Rect, frame: &mut Frame, state: &mut Self::State, ctx: &RenderCtx) {
         render(
             frame,
             area,
