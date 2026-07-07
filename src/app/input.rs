@@ -316,7 +316,6 @@ pub(crate) fn execute_command(app: &mut App, cmd: Command) {
             app.state.branch.branch_index = index;
             if is_branch {
                 app.request_commits(Some(full_path));
-                app.state.ui.focus = PanelEnum::Commits;
             } else if is_expandable {
                 app.state.branch.expanded_nodes.insert(key, !is_expanded);
                 branches::rebuild_branch_tree(&mut app.state);
