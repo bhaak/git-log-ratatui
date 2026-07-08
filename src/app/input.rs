@@ -1,4 +1,4 @@
-use crate::app::commands::Command;
+use crate::app::commands::{Command, Effect};
 use crate::clipboard;
 use crate::error::AppError;
 use crate::ui;
@@ -20,7 +20,6 @@ use crossterm::terminal::{
 };
 use ratatui::layout::Rect;
 
-use super::branches;
 use super::search;
 use super::App;
 use super::{POLL_BACKOFF_STEP, POLL_INTERVAL_DEFAULT, POLL_INTERVAL_MAX};
@@ -165,146 +164,91 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
     }
 }
 
-// --- Command execution ---
+// --- Command dispatching ---
+//
+// Commands are routed to state handlers which return `Effect` values.
+// Cross-state commands (navigation, scope cycling, branch selection) are
+// orchestrated here since they need access to multiple state fields.
+// Effects are then processed by the app-level dispatcher.
 
 pub(crate) fn execute_command(app: &mut App, cmd: Command) {
-    use Command::*;
+    let effects = dispatch(&mut app.state, &cmd);
+    process_effects(effects, app);
+}
+
+fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
+    use crate::view::Panel;
 
     match cmd {
-        SetSearch(query, cursor) => {
-            app.state.search.search_query = query;
-            app.state.search.cursor_pos = cursor;
-            search::apply_search_filter(&mut app.state);
+        // Search commands → SearchState (PasteSearch also sets focus)
+        Command::SetSearch(..) | Command::ClearSearch => state.search.handle_command(cmd),
+        Command::PasteSearch(_) => {
+            let effects = state.search.handle_command(cmd);
+            state.ui.focus = crate::view::Panel::Search;
+            effects
         }
-        ClearSearch => {
-            app.state.search.search_query.clear();
-            app.state.search.cursor_pos = 0;
-            search::apply_search_filter(&mut app.state);
+        // UI commands → UiState
+        Command::SetFocus(_)
+        | Command::FocusNext
+        | Command::FocusPrev
+        | Command::InitiateDragVertical
+        | Command::InitiateDragHorizontal
+        | Command::EndDrag
+        | Command::InitiateScrollbarDrag(_)
+        | Command::EndScrollbarDrag
+        | Command::SetBranchWidthPct(_)
+        | Command::SetDiffHeightPct(_) => state.ui.handle_command(cmd),
+        // Diff panel commands → DiffState
+        Command::ScrollDiff(_)
+        | Command::JumpToDiffFile(_)
+        | Command::SelectNextFile
+        | Command::SelectPrevFile
+        | Command::ScrollToAbsolute(_) => state.diff.handle_command(cmd),
+        // Commit table commands → CommitTableState (ShowCommitDiff also sets focus)
+        Command::CopyHashShort | Command::CopyHashFull | Command::SelectCommitIndex(_) => {
+            state.commit.handle_command(cmd)
         }
-        MoveUp => move_up(app),
-        MoveDown => move_down(app),
-        PageUp => page_up(app),
-        PageDown => page_down(app),
-        SetFocus(panel) => {
-            app.state.ui.focus = panel;
+        Command::ShowCommitDiff => {
+            let effects = state.commit.handle_command(cmd);
+            state.ui.focus = crate::view::Panel::Diff;
+            effects
         }
-        FocusNext => {
-            app.state.ui.focus = app.state.ui.focus.next();
-        }
-        FocusPrev => {
-            app.state.ui.focus = app.state.ui.focus.prev();
-        }
-        SelectBranch(name) => {
-            app.request_commits(Some(name));
-            app.state.ui.focus = PanelEnum::Commits;
-        }
-        ToggleBranchNode { key, expanded } => {
-            app.state.branch.expanded_nodes.insert(key, expanded);
-            branches::rebuild_branch_tree(&mut app.state);
-        }
-        CycleScope => {
-            app.state.branch.branch_scope = app.state.branch.branch_scope.next();
-            app.state.branch.branch_index = 0;
-            app.state.branch.expanded_nodes.clear();
-            app.state.search.search_query.clear();
-            app.state.search.cursor_pos = 0;
-            app.state.branch.selected_branch = None;
-            app.request_branches();
-            app.request_commits(None);
-        }
-        ToggleGraph => {
-            app.toggle_simplified_graph();
-        }
-        CopyHashShort => copy_hash(app, true),
-        CopyHashFull => copy_hash(app, false),
-        PasteSearch(text) => {
-            app.state.search.search_query = text;
-            app.state.search.cursor_pos = app.state.search.search_query.len();
-            search::apply_search_filter(&mut app.state);
-            app.state.ui.focus = PanelEnum::Search;
-        }
-        ScrollDiff(delta) => {
-            if delta > 0 {
-                app.state.diff.diff_scroll =
-                    app.state.diff.diff_scroll.saturating_add(delta as usize);
-            } else {
-                app.state.diff.diff_scroll =
-                    app.state.diff.diff_scroll.saturating_sub((-delta) as usize);
-            }
-        }
-        JumpToDiffFile(index) => {
-            let offset = ui::diff_panel::diff_line_offset(
-                app.state.diff.commit_info.as_ref(),
-                &app.state.diff.file_entries,
-            );
-            if let Some(entry) = app.state.diff.file_entries.get(index) {
-                app.state.diff.diff_scroll = entry.diff_line + offset;
-            }
-        }
-        SelectNextFile => select_next_file(app),
-        SelectPrevFile => select_prev_file(app),
-        JumpToTop => match app.state.ui.focus {
-            PanelEnum::Branches => {
-                app.state.branch.branch_index = 0;
-            }
-            PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-                app.state.commit.selected_index = 0;
-                search::clamp_selection(&mut app.state);
-            }
-            PanelEnum::Commits => {}
-            PanelEnum::Diff => {
-                app.state.diff.diff_scroll = 0;
-            }
-            _ => {}
+        // Branch panel commands → BranchState
+        Command::ToggleBranchNode { .. } => state.branch.handle_command(cmd),
+        // Focus-dependent navigation
+        Command::MoveUp
+        | Command::MoveDown
+        | Command::PageUp
+        | Command::PageDown
+        | Command::JumpToTop
+        | Command::JumpToBottom => match state.ui.focus {
+            Panel::Branches => state.branch.handle_command(cmd),
+            Panel::Diff => state.diff.handle_command(cmd),
+            Panel::Commits => dispatch_commit_navigation(state, cmd),
+            _ => vec![],
         },
-        JumpToBottom => match app.state.ui.focus {
-            PanelEnum::Branches => {
-                app.state.branch.branch_index =
-                    app.state.branch.branch_tree.len().saturating_sub(1);
-            }
-            PanelEnum::Commits => {
-                let count = search::visible_count(&app.state);
-                if count > 0 {
-                    app.state.commit.selected_index = count.saturating_sub(1);
-                    search::clamp_selection(&mut app.state);
-                }
-            }
-            PanelEnum::Diff => {
-                app.state.diff.diff_scroll = usize::MAX;
-            }
-            _ => {}
-        },
-        ShowCommitDiff => {
-            app.state.ui.focus = PanelEnum::Diff;
+        // Multi-state orchestration
+        Command::CycleScope => {
+            state.branch.branch_scope = state.branch.branch_scope.next();
+            state.branch.branch_index = 0;
+            state.branch.expanded_nodes.clear();
+            state.search.search_query.clear();
+            state.search.cursor_pos = 0;
+            state.branch.selected_branch = None;
+            vec![
+                Effect::RequestBranches,
+                Effect::RequestCommits(None),
+                Effect::ApplySearchFilter,
+                Effect::SetDirty,
+            ]
         }
-        InitiateDragVertical => {
-            app.state.ui.dragging = Some(ui::layout::DragDirection::Vertical);
+        Command::SelectBranch(name) => {
+            state.branch.selected_branch = Some(name.clone());
+            state.ui.focus = Panel::Commits;
+            vec![Effect::RequestCommits(Some(name.clone())), Effect::SetDirty]
         }
-        InitiateDragHorizontal => {
-            app.state.ui.dragging = Some(ui::layout::DragDirection::Horizontal);
-        }
-        EndDrag => {
-            app.state.ui.dragging = None;
-        }
-        InitiateScrollbarDrag(panel) => {
-            app.state.ui.dragging = None;
-            app.state.ui.focus = panel;
-            app.state.ui.scrollbar_drag = Some(panel);
-        }
-        EndScrollbarDrag => {
-            app.state.ui.scrollbar_drag = None;
-        }
-        SetBranchWidthPct(pct) => {
-            app.state.ui.branch_width_pct = pct;
-        }
-        SetDiffHeightPct(pct) => {
-            app.state.ui.diff_height_pct = pct;
-        }
-        SelectCommitIndex(idx) => {
-            app.state.commit.selected_index = idx;
-            search::clamp_selection(&mut app.state);
-        }
-        MouseClickBranch {
+        Command::ToggleGraph => vec![Effect::ToggleGraph, Effect::SetDirty],
+        Command::MouseClickBranch {
             index,
             full_path,
             is_branch,
@@ -312,177 +256,65 @@ pub(crate) fn execute_command(app: &mut App, cmd: Command) {
             is_expanded,
             key,
         } => {
-            app.state.branch.branch_index = index;
-            if is_branch {
-                app.request_commits(Some(full_path));
-            } else if is_expandable {
-                app.state.branch.expanded_nodes.insert(key, !is_expanded);
-                branches::rebuild_branch_tree(&mut app.state);
-            }
-        }
-        ScrollToAbsolute(pos) => {
-            app.state.diff.diff_scroll = pos;
-        }
-        Quit => {} // handled outside
-    }
-}
-
-fn copy_hash(app: &mut App, short: bool) {
-    if search::visible_count(&app.state) > 0 {
-        let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
-        if let Some(c) = app
-            .state
-            .commit
-            .filtered_commits
-            .as_deref()
-            .unwrap_or(&app.state.commit.all_commits)
-            .get(ci)
-        {
-            let hash = if short && c.hash.len() > ui::commit_table::SHORT_HASH_LEN {
-                &c.hash[..ui::commit_table::SHORT_HASH_LEN]
+            state.branch.branch_index = *index;
+            if *is_branch {
+                state.branch.selected_branch = Some(full_path.clone());
+                vec![
+                    Effect::RequestCommits(Some(full_path.clone())),
+                    Effect::SetDirty,
+                ]
+            } else if *is_expandable {
+                state
+                    .branch
+                    .expanded_nodes
+                    .insert(key.clone(), !is_expanded);
+                vec![Effect::RebuildBranchTree, Effect::SetDirty]
             } else {
-                &c.hash
-            };
-            let _ = clipboard::copy_to_clipboard(hash);
-        }
-    }
-}
-
-fn select_next_file(app: &mut App) {
-    if !app.state.diff.file_entries.is_empty() {
-        app.state.diff.selected_file_index =
-            (app.state.diff.selected_file_index + 1) % app.state.diff.file_entries.len();
-        let offset = ui::diff_panel::diff_line_offset(
-            app.state.diff.commit_info.as_ref(),
-            &app.state.diff.file_entries,
-        );
-        if let Some(entry) = app
-            .state
-            .diff
-            .file_entries
-            .get(app.state.diff.selected_file_index)
-        {
-            app.state.diff.diff_scroll = entry.diff_line + offset;
-        }
-    }
-}
-
-fn select_prev_file(app: &mut App) {
-    if !app.state.diff.file_entries.is_empty() {
-        if app.state.diff.selected_file_index > 0 {
-            app.state.diff.selected_file_index -= 1;
-            let offset = ui::diff_panel::diff_line_offset(
-                app.state.diff.commit_info.as_ref(),
-                &app.state.diff.file_entries,
-            );
-            if let Some(entry) = app
-                .state
-                .diff
-                .file_entries
-                .get(app.state.diff.selected_file_index)
-            {
-                app.state.diff.diff_scroll = entry.diff_line + offset;
+                vec![Effect::SetDirty]
             }
-        } else {
-            app.state.diff.diff_scroll = 0;
-            app.state.diff.selected_file_index = 0;
         }
+        Command::Quit => vec![],
     }
 }
 
-fn move_down(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            app.state.branch.branch_index = cycle_forward(
-                app.state.branch.branch_index,
-                app.state.branch.branch_tree.len(),
-            );
+/// Navigation within the commit table needs `visible_count` from the search state,
+/// so it is orchestrated here rather than inside CommitTableState::handle_command.
+fn dispatch_commit_navigation(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
+    let visible = super::search::visible_count(state);
+
+    match cmd {
+        Command::MoveUp => {
+            state.commit.selected_index =
+                commit_cycle_backward(state.commit.selected_index, visible);
         }
-        PanelEnum::Commits => {
-            app.state.commit.selected_index = cycle_forward(
-                app.state.commit.selected_index,
-                search::visible_count(&app.state),
-            );
+        Command::MoveDown => {
+            state.commit.selected_index =
+                commit_cycle_forward(state.commit.selected_index, visible);
         }
-        PanelEnum::Diff => {
-            app.state.diff.selected_file_index = cycle_forward(
-                app.state.diff.selected_file_index,
-                app.state.diff.file_entries.len(),
-            );
+        Command::PageUp if visible > 0 => {
+            state.commit.selected_index =
+                state.commit.selected_index.saturating_sub(super::PAGE_SIZE);
+            super::search::clamp_selection(state);
+        }
+        Command::PageDown if visible > 0 => {
+            state.commit.selected_index =
+                (state.commit.selected_index + super::PAGE_SIZE).min(visible.saturating_sub(1));
+            super::search::clamp_selection(state);
+        }
+        Command::JumpToTop if visible > 0 => {
+            state.commit.selected_index = 0;
+            super::search::clamp_selection(state);
+        }
+        Command::JumpToBottom if visible > 0 => {
+            state.commit.selected_index = visible.saturating_sub(1);
+            super::search::clamp_selection(state);
         }
         _ => {}
     }
+    vec![Effect::SetDirty]
 }
 
-fn move_up(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            app.state.branch.branch_index = cycle_backward(
-                app.state.branch.branch_index,
-                app.state.branch.branch_tree.len(),
-            );
-        }
-        PanelEnum::Commits => {
-            app.state.commit.selected_index = cycle_backward(
-                app.state.commit.selected_index,
-                search::visible_count(&app.state),
-            );
-        }
-        PanelEnum::Diff => {
-            app.state.diff.selected_file_index = cycle_backward(
-                app.state.diff.selected_file_index,
-                app.state.diff.file_entries.len(),
-            );
-        }
-        _ => {}
-    }
-}
-
-fn page_up(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            app.state.branch.branch_index = app
-                .state
-                .branch
-                .branch_index
-                .saturating_sub(super::PAGE_SIZE);
-        }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            app.state.commit.selected_index = app
-                .state
-                .commit
-                .selected_index
-                .saturating_sub(super::PAGE_SIZE);
-            search::clamp_selection(&mut app.state);
-        }
-        PanelEnum::Diff => {
-            let page = app.state.diff.scrollbar.viewport_length().max(1);
-            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_sub(page);
-        }
-        _ => {}
-    }
-}
-
-fn page_down(app: &mut App) {
-    match app.state.ui.focus {
-        PanelEnum::Branches => {
-            app.state.branch.branch_index = (app.state.branch.branch_index + super::PAGE_SIZE)
-                .min(app.state.branch.branch_tree.len().saturating_sub(1));
-        }
-        PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
-            app.state.commit.selected_index = (app.state.commit.selected_index + super::PAGE_SIZE)
-                .min(search::visible_count(&app.state).saturating_sub(1));
-        }
-        PanelEnum::Diff => {
-            let page = app.state.diff.scrollbar.viewport_length().max(1);
-            app.state.diff.diff_scroll = app.state.diff.diff_scroll.saturating_add(page);
-        }
-        _ => {}
-    }
-}
-
-/// Cycle index forward with wrapping. Returns 0 if len is 0.
-fn cycle_forward(current: usize, len: usize) -> usize {
+fn commit_cycle_forward(current: usize, len: usize) -> usize {
     if len == 0 {
         0
     } else {
@@ -490,14 +322,57 @@ fn cycle_forward(current: usize, len: usize) -> usize {
     }
 }
 
-/// Cycle index backward with wrapping. Returns 0 if len is 0.
-fn cycle_backward(current: usize, len: usize) -> usize {
+fn commit_cycle_backward(current: usize, len: usize) -> usize {
     if len == 0 {
         0
     } else if current > 0 {
         current - 1
     } else {
         len - 1
+    }
+}
+
+/// Process side effects returned by state command handlers.
+fn process_effects(effects: Vec<Effect>, app: &mut App) {
+    use crate::clipboard;
+    use crate::ui::commit_table::SHORT_HASH_LEN;
+
+    for effect in effects {
+        match effect {
+            Effect::RequestBranches => app.request_branches(),
+            Effect::RequestCommits(branch) => app.request_commits(branch),
+            Effect::ToggleGraph => app.toggle_simplified_graph(),
+            Effect::CopySelectedHash { short } => {
+                if super::search::visible_count(&app.state) == 0 {
+                    continue;
+                }
+                let ci =
+                    super::search::visible_to_filtered(&app.state, app.state.commit.selected_index);
+                let hash_opt = app
+                    .state
+                    .commit
+                    .filtered_commits
+                    .as_deref()
+                    .unwrap_or(&app.state.commit.all_commits)
+                    .get(ci)
+                    .map(|c| {
+                        if short && c.hash.len() > SHORT_HASH_LEN {
+                            &c.hash[..SHORT_HASH_LEN]
+                        } else {
+                            c.hash.as_str()
+                        }
+                    });
+                if let Some(hash) = hash_opt {
+                    let _ = clipboard::copy_to_clipboard(hash);
+                }
+            }
+            Effect::RebuildBranchTree => super::branches::rebuild_branch_tree(&mut app.state),
+            Effect::ApplySearchFilter => {
+                super::search::apply_search_filter(&mut app.state);
+                super::search::clamp_selection(&mut app.state);
+            }
+            Effect::SetDirty => app.state.ui.dirty = true,
+        }
     }
 }
 

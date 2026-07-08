@@ -78,3 +78,23 @@ pub enum Command {
     /// Quit the application.
     Quit,
 }
+
+/// Side effects produced by command handlers, processed by the app dispatcher.
+/// These encapsulate operations that require App-level access (workers, cross-state).
+#[derive(Debug)]
+pub(crate) enum Effect {
+    /// Request the branch worker to fetch branches.
+    RequestBranches,
+    /// Request the commit worker to fetch commits for an optional branch.
+    RequestCommits(Option<String>),
+    /// Toggle between full and simplified graph mode.
+    ToggleGraph,
+    /// Copy the hash of the currently selected commit (short or full).
+    CopySelectedHash { short: bool },
+    /// Rebuild the branch tree from current branch data.
+    RebuildBranchTree,
+    /// Apply the current search query as a filter on commit data.
+    ApplySearchFilter,
+    /// Mark the UI as dirty (needs re-render).
+    SetDirty,
+}

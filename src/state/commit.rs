@@ -1,6 +1,7 @@
 use ratatui::widgets::TableState;
 
 use crate::app::cache::CommitCache;
+use crate::app::commands::{Command, Effect};
 use crate::ui;
 use crate::view::CommitRow as Commit;
 
@@ -36,6 +37,21 @@ impl CommitTableState {
             all_commits_loaded: false,
             loading_more: false,
             scrollbar: ui::scrollbar_view::ScrollbarView::new(),
+        }
+    }
+
+    /// Handle commit-table commands that require only local state.
+    /// Navigation commands are handled by the dispatcher due to cross-state `visible_count`.
+    pub(crate) fn handle_command(&mut self, cmd: &Command) -> Vec<Effect> {
+        match cmd {
+            Command::CopyHashShort => vec![Effect::CopySelectedHash { short: true }],
+            Command::CopyHashFull => vec![Effect::CopySelectedHash { short: false }],
+            Command::SelectCommitIndex(idx) => {
+                self.selected_index = *idx;
+                vec![Effect::SetDirty]
+            }
+            Command::ShowCommitDiff => vec![Effect::SetDirty],
+            _ => vec![],
         }
     }
 }
