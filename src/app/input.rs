@@ -243,6 +243,10 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             ]
         }
         Command::SelectBranch(name) => {
+            if state.branch.selected_branch.as_deref() == Some(name.as_str()) {
+                state.ui.focus = Panel::Commits;
+                return vec![Effect::SetDirty];
+            }
             state.branch.selected_branch = Some(name.clone());
             state.ui.focus = Panel::Commits;
             vec![Effect::RequestCommits(Some(name.clone())), Effect::SetDirty]
@@ -258,6 +262,9 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         } => {
             state.branch.branch_index = *index;
             if *is_branch {
+                if state.branch.selected_branch.as_deref() == Some(full_path.as_str()) {
+                    return vec![Effect::SetDirty];
+                }
                 state.branch.selected_branch = Some(full_path.clone());
                 vec![
                     Effect::RequestCommits(Some(full_path.clone())),
