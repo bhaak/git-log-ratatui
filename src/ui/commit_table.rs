@@ -145,6 +145,15 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     *state.offset_mut() = offset;
 
     let end = (offset + viewport_height).min(total);
+    // Compute date range for staleness stretching: today = brightest, oldest = darkest
+    let dates: Vec<i64> = ctx
+        .commits
+        .iter()
+        .filter_map(|c| date_to_days(&c.date))
+        .collect();
+    let min_days = dates.iter().min().copied().unwrap_or(0);
+    let max_days = current_epoch_days();
+
     let window = if offset < end {
         &ctx.commits[offset..end]
     } else {
@@ -224,7 +233,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
             ));
             let date_span = Line::from(Span::styled(
                 &commit.date,
-                Style::default().fg(age_color(&commit.date, ctx.theme)),
+                Style::default().fg(age_color(&commit.date, ctx.theme, min_days, max_days)),
             ));
 
             Row::new(vec![
@@ -391,11 +400,10 @@ fn hash_color(hash: &str) -> Color {
     )
 }
 
-/// Derive a greyscale color from a commit date string to indicate staleness.
-/// Recent commits are bright white, older commits fade to darker grey.
-/// Uses the same formula as the git-overview-branches Ruby script:
-///   staleness = max(255 - ceil(ln(1 + age_days)) * 12, 75)
-pub(crate) fn age_color(date_str: &str, theme: &Theme) -> Color {
+/// Derive a greyscale color from a commit date string, stretched between
+/// the newest and oldest visible commits. Newest = bright white (255),
+/// oldest = dark grey (75). When all commits have the same date, returns white.
+pub(crate) fn age_color(date_str: &str, theme: &Theme, min_days: i64, max_days: i64) -> Color {
     if date_str.len() < 10 {
         return theme.commit_secondary;
     }
@@ -408,14 +416,32 @@ pub(crate) fn age_color(date_str: &str, theme: &Theme) -> Color {
         None => return theme.commit_secondary,
     };
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let current_days = (now.as_secs() / 86400) as i64;
-
-    let age_days = (current_days - commit_days).max(0) as f64;
-    let staleness = (255.0 - (1.0_f64 + age_days).ln().ceil() * 12.0).max(75.0) as u8;
+    if max_days <= min_days {
+        return Color::Rgb(255, 255, 255);
+    }
+    let range = (max_days - min_days) as f64;
+    let t = (commit_days - min_days) as f64 / range;
+    let staleness = (75.0 + t * 180.0) as u8;
     Color::Rgb(staleness, staleness, staleness)
+}
+
+/// Parse "YYYY-MM-DD" prefix from a date string back to epoch days.
+fn date_to_days(date_str: &str) -> Option<i64> {
+    if date_str.len() < 10 {
+        return None;
+    }
+    let year: i64 = date_str[0..4].parse().ok()?;
+    let month: u32 = date_str[5..7].parse().ok()?;
+    let day: u32 = date_str[8..10].parse().ok()?;
+    ymd_to_days(year, month, day)
+}
+
+fn current_epoch_days() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    (secs / 86400) as i64
 }
 
 fn graph_only_decorations(commit: &Commit) -> String {
@@ -559,14 +585,14 @@ mod tests {
     }
 
     #[test]
-    fn test_age_color_recent_is_bright() {
+    fn test_age_color_newest_is_bright() {
         let theme = make_theme();
-        let today = chrono_or_system_now();
-        let date = format!("{} 00:00", today);
-        let c = age_color(&date, &theme);
+        let min_d = ymd_to_days(2024, 1, 1).unwrap();
+        let max_d = ymd_to_days(2024, 12, 31).unwrap();
+        let c = age_color("2024-12-31 00:00", &theme, min_d, max_d);
         match c {
             Color::Rgb(r, g, b) => {
-                assert!(r > 200, "recent date should be bright, got r={r}");
+                assert_eq!(r, 255, "newest should be 255");
                 assert_eq!(r, g);
                 assert_eq!(r, b);
             }
@@ -575,15 +601,33 @@ mod tests {
     }
 
     #[test]
-    fn test_age_color_old_is_darker() {
+    fn test_age_color_oldest_is_75() {
         let theme = make_theme();
-        let c1 = age_color("2024-07-01 00:00", &theme);
-        let c2 = age_color("2020-01-01 00:00", &theme);
+        let min_d = ymd_to_days(2024, 1, 1).unwrap();
+        let max_d = ymd_to_days(2024, 12, 31).unwrap();
+        let c = age_color("2024-01-01 00:00", &theme, min_d, max_d);
+        match c {
+            Color::Rgb(r, g, b) => {
+                assert_eq!(r, 75, "oldest should be 75");
+                assert_eq!(r, g);
+                assert_eq!(r, b);
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn test_age_color_mid_range() {
+        let theme = make_theme();
+        let min_d = ymd_to_days(2024, 1, 1).unwrap();
+        let max_d = ymd_to_days(2024, 12, 31).unwrap();
+        let c1 = age_color("2024-07-01 00:00", &theme, min_d, max_d);
+        let c2 = age_color("2024-01-01 00:00", &theme, min_d, max_d);
         match (c1, c2) {
             (Color::Rgb(r1, _, _), Color::Rgb(r2, _, _)) => {
                 assert!(
                     r1 > r2,
-                    "older date (2020) should be darker than newer (2024): r1={r1} r2={r2}"
+                    "older date (Jan) should be darker than newer (Jul): r1={r1} r2={r2}"
                 );
             }
             _ => panic!("expected Rgb"),
@@ -591,38 +635,20 @@ mod tests {
     }
 
     #[test]
-    fn test_age_color_floor_is_75() {
+    fn test_age_color_single_date_returns_white() {
         let theme = make_theme();
-        let c = age_color("1990-01-01 00:00", &theme);
-        match c {
-            Color::Rgb(r, g, b) => {
-                assert!(r >= 75, "staleness should not go below 75, got r={r}");
-                assert_eq!(r, g);
-                assert_eq!(r, b);
-            }
-            _ => panic!("expected Rgb"),
-        }
+        let d = ymd_to_days(2024, 7, 1).unwrap();
+        let c = age_color("2024-07-01 00:00", &theme, d, d);
+        assert_eq!(c, Color::Rgb(255, 255, 255));
     }
 
     #[test]
     fn test_age_color_short_string_falls_back() {
         let theme = make_theme();
-        let c = age_color("abc", &theme);
+        let c = age_color("abc", &theme, 0, 0);
         assert_eq!(c, theme.commit_secondary);
     }
 
-    fn chrono_or_system_now() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let days = (secs / 86400) as i64;
-        let (y, m, d) = crate::time_format::days_to_ymd(days);
-        format!("{:04}-{:02}-{:02}", y, m, d)
-    }
-
-    #[test]
     fn test_build_hash_span_merge() {
         let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", true, vec![]);

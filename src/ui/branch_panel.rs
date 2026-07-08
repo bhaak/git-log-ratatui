@@ -11,6 +11,7 @@ use ratatui::{
 use crate::app::commands::Command;
 use crate::state::branch::BranchState;
 use crate::theme::Theme;
+use crate::time_format::ymd_to_days;
 use crate::ui::layout;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
@@ -151,13 +152,20 @@ fn render_tree(
         Style::default().fg(theme.unfocused_border)
     };
 
+    let item_dates: Vec<i64> = tree_items
+        .iter()
+        .filter_map(|item| item.last_commit_date.as_deref().and_then(date_to_days))
+        .collect();
+    let min_days = item_dates.iter().min().copied().unwrap_or(0);
+    let max_days = current_epoch_days();
+
     let items: Vec<Line> = tree_items
         .iter()
         .map(|item| {
             let color = if staleness_enabled {
                 item.last_commit_date
                     .as_deref()
-                    .map(|d| crate::ui::commit_table::age_color(d, theme))
+                    .map(|d| crate::ui::commit_table::age_color(d, theme, min_days, max_days))
                     .unwrap_or(theme.commit_secondary)
             } else {
                 theme.commit_secondary
@@ -197,4 +205,23 @@ fn render_tree(
     frame.render_stateful_widget(list, area, &mut state);
 
     state
+}
+
+/// Parse "YYYY-MM-DD" prefix from a date string back to epoch days.
+fn date_to_days(date_str: &str) -> Option<i64> {
+    if date_str.len() < 10 {
+        return None;
+    }
+    let year: i64 = date_str[0..4].parse().ok()?;
+    let month: u32 = date_str[5..7].parse().ok()?;
+    let day: u32 = date_str[8..10].parse().ok()?;
+    ymd_to_days(year, month, day)
+}
+
+fn current_epoch_days() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    (secs / 86400) as i64
 }
