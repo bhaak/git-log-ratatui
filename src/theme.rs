@@ -31,6 +31,7 @@ pub struct Theme {
     pub search_cursor_fg: Color,
     pub search_cursor_bg: Color,
     pub help_title: Color,
+    #[allow(dead_code)]
     pub scrollbar_thumb: Color,
     #[allow(dead_code)]
     pub scrollbar_track: Color,

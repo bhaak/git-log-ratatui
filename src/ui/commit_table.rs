@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table, TableState},
     Frame,
@@ -341,9 +341,26 @@ fn build_hash_span(commit: &Commit, theme: &Theme) -> Line<'static> {
                 .fg(theme.commit_merge)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(theme.scrollbar_thumb)
+            Style::default().fg(hash_color(&commit.hash))
         },
     ))
+}
+
+/// Derive a unique, readable color from a git commit hash (first 6 hex digits).
+/// Maps 0-255 per channel to 50-250 to prevent too-dark colors.
+fn hash_color(hash: &str) -> Color {
+    if hash.len() < 6 {
+        return Color::Rgb(128, 128, 128);
+    }
+    let r = u8::from_str_radix(&hash[0..2], 16).unwrap_or(128);
+    let g = u8::from_str_radix(&hash[2..4], 16).unwrap_or(128);
+    let b = u8::from_str_radix(&hash[4..6], 16).unwrap_or(128);
+
+    Color::Rgb(
+        ((r as u32 * 200 / 255) + 50) as u8,
+        ((g as u32 * 200 / 255) + 50) as u8,
+        ((b as u32 * 200 / 255) + 50) as u8,
+    )
 }
 
 fn graph_only_decorations(commit: &Commit) -> String {
@@ -400,7 +417,7 @@ mod tests {
         let span = build_hash_span(&c, &theme);
         let expected = Span::styled(
             "abc1234".to_string(),
-            Style::default().fg(theme.scrollbar_thumb),
+            Style::default().fg(hash_color("abc1234567890abcdef")),
         );
         assert_eq!(span, Line::from(expected));
     }
@@ -408,13 +425,48 @@ mod tests {
     #[test]
     fn test_build_hash_span_short_hash() {
         let theme = make_theme();
-        let c = make_commit("abc", "", false, vec![]);
+        let c = make_commit("abc123", "", false, vec![]);
         let span = build_hash_span(&c, &theme);
         let expected = Span::styled(
-            "abc".to_string(),
-            Style::default().fg(theme.scrollbar_thumb),
+            "abc123".to_string(),
+            Style::default().fg(hash_color("abc123")),
         );
         assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_hash_color_derives_unique_values() {
+        let c1 = hash_color("aa00000000000000000000000000000000000000");
+        let c2 = hash_color("bb00000000000000000000000000000000000000");
+        let c3 = hash_color("0000aa0000000000000000000000000000000000");
+        assert_ne!(c1, c2);
+        assert_ne!(c1, c3);
+        assert_ne!(c2, c3);
+    }
+
+    #[test]
+    fn test_hash_color_respects_minimum_brightness() {
+        let c = hash_color("0000000000000000000000000000000000000000");
+        match c {
+            Color::Rgb(r, g, b) => {
+                assert!(r >= 50, "r={r} should be >= 50");
+                assert!(g >= 50, "g={g} should be >= 50");
+                assert!(b >= 50, "b={b} should be >= 50");
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn test_hash_color_short_hash_falls_back_to_grey() {
+        let c = hash_color("abc");
+        assert_eq!(c, Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_hash_color_empty_hash_falls_back_to_grey() {
+        let c = hash_color("");
+        assert_eq!(c, Color::Rgb(128, 128, 128));
     }
 
     #[test]
