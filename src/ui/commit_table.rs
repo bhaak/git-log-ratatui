@@ -41,6 +41,8 @@ pub struct CommitTableCtx<'a> {
     pub simplified_graph: bool,
     /// Optional debug frame timing label shown in the panel title.
     pub debug_label: Option<&'a str>,
+    /// When true, derive hash column color from commit hash hex digits.
+    pub hash_color_enabled: bool,
     /// Color theme.
     pub theme: &'a Theme,
 }
@@ -182,7 +184,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .map(|commit| {
             let graph_span =
                 build_graph_span(commit, col_graph as usize, ctx.simplified_graph, ctx.theme);
-            let hash_span = build_hash_span(commit, ctx.theme);
+            let hash_span = build_hash_span(commit, ctx);
 
             let subject_span = if commit.graph_only {
                 Line::from(Span::styled(
@@ -327,7 +329,7 @@ fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     Line::from(Span::styled(ch.to_string(), Style::default().fg(color)))
 }
 
-fn build_hash_span(commit: &Commit, theme: &Theme) -> Line<'static> {
+fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'static> {
     let short_hash = if commit.hash.len() > SHORT_HASH_LEN {
         &commit.hash[..SHORT_HASH_LEN]
     } else {
@@ -338,10 +340,12 @@ fn build_hash_span(commit: &Commit, theme: &Theme) -> Line<'static> {
         short_hash.to_string(),
         if commit.merge {
             Style::default()
-                .fg(theme.commit_merge)
+                .fg(ctx.theme.commit_merge)
                 .add_modifier(Modifier::BOLD)
-        } else {
+        } else if ctx.hash_color_enabled {
             Style::default().fg(hash_color(&commit.hash))
+        } else {
+            Style::default().fg(ctx.theme.scrollbar_thumb)
         },
     ))
 }
@@ -395,6 +399,21 @@ mod tests {
         Theme::default()
     }
 
+    fn make_ctx<'a>(theme: &'a Theme, commits: &'a [Commit]) -> CommitTableCtx<'a> {
+        CommitTableCtx {
+            commits,
+            visible_index: 0,
+            is_focused: true,
+            visible_to_commit: &[],
+            total_loaded: 0,
+            search_active: false,
+            simplified_graph: false,
+            hash_color_enabled: true,
+            debug_label: None,
+            theme,
+        }
+    }
+
     fn make_commit(hash: &str, graph: &str, merge: bool, decorations: Vec<Decoration>) -> Commit {
         Commit {
             hash: hash.to_string(),
@@ -414,7 +433,9 @@ mod tests {
     fn test_build_hash_span_long_hash() {
         let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", false, vec![]);
-        let span = build_hash_span(&c, &theme);
+        let commits = [c.clone()];
+        let ctx = make_ctx(&theme, &commits);
+        let span = build_hash_span(&c, &ctx);
         let expected = Span::styled(
             "abc1234".to_string(),
             Style::default().fg(hash_color("abc1234567890abcdef")),
@@ -426,10 +447,27 @@ mod tests {
     fn test_build_hash_span_short_hash() {
         let theme = make_theme();
         let c = make_commit("abc123", "", false, vec![]);
-        let span = build_hash_span(&c, &theme);
+        let commits = [c.clone()];
+        let ctx = make_ctx(&theme, &commits);
+        let span = build_hash_span(&c, &ctx);
         let expected = Span::styled(
             "abc123".to_string(),
             Style::default().fg(hash_color("abc123")),
+        );
+        assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_build_hash_span_disabled_uses_scrollbar_thumb() {
+        let theme = make_theme();
+        let c = make_commit("abc1234567890abcdef", "", false, vec![]);
+        let commits = [c.clone()];
+        let mut ctx = make_ctx(&theme, &commits);
+        ctx.hash_color_enabled = false;
+        let span = build_hash_span(&c, &ctx);
+        let expected = Span::styled(
+            "abc1234".to_string(),
+            Style::default().fg(theme.scrollbar_thumb),
         );
         assert_eq!(span, Line::from(expected));
     }
@@ -473,7 +511,9 @@ mod tests {
     fn test_build_hash_span_merge() {
         let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", true, vec![]);
-        let span = build_hash_span(&c, &theme);
+        let commits = [c.clone()];
+        let ctx = make_ctx(&theme, &commits);
+        let span = build_hash_span(&c, &ctx);
         let expected = Span::styled(
             "abc1234".to_string(),
             Style::default()
@@ -594,6 +634,7 @@ mod tests {
             total_loaded: commits.len(),
             search_active: false,
             simplified_graph: false,
+            hash_color_enabled: true,
             debug_label: None,
             theme: &theme,
         };
@@ -672,6 +713,7 @@ impl PanelTrait for CommitPanel {
             total_loaded: state.all_commits.len(),
             search_active: ctx.search_active,
             simplified_graph: state.simplified_graph,
+            hash_color_enabled: state.hash_color_enabled,
             debug_label: ctx.debug_label,
             theme: ctx.theme,
         };

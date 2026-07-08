@@ -78,6 +78,8 @@ pub struct BehaviorConfig {
     pub simplified_graph_default: bool,
     #[serde(default)]
     pub debug_default: bool,
+    #[serde(default = "default_true")]
+    pub hash_color_enabled: bool,
 }
 
 impl Default for LayoutConfig {
@@ -97,6 +99,7 @@ impl Default for BehaviorConfig {
             poll_max_ms: default_poll_max_ms(),
             simplified_graph_default: false,
             debug_default: false,
+            hash_color_enabled: default_true(),
         }
     }
 }
@@ -130,6 +133,10 @@ fn default_poll_min_ms() -> u8 {
 
 fn default_poll_max_ms() -> u8 {
     200
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[cfg(test)]

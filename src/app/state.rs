@@ -28,7 +28,11 @@ impl AppState {
             last_frame_time_ms: 0,
             theme: Arc::clone(&config.theme),
             branch: BranchState::new(),
-            commit: CommitTableState::new(simplified_graph, config.behavior.commit_batch_size),
+            commit: CommitTableState::new(
+                simplified_graph,
+                config.behavior.commit_batch_size,
+                config.behavior.hash_color_enabled,
+            ),
             diff: DiffState::new(),
             search: SearchState::new(),
             ui: UiState::new(

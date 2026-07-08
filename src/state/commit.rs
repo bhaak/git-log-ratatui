@@ -18,12 +18,14 @@ pub struct CommitTableState {
     pub commit_limit: usize,
     pub all_commits_loaded: bool,
     pub loading_more: bool,
+    /// Whether to derive hash column colors from commit hash hex digits.
+    pub hash_color_enabled: bool,
     /// Scrollbar for the commit table.
     pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
 
 impl CommitTableState {
-    pub fn new(simplified_graph: bool, commit_limit: usize) -> Self {
+    pub fn new(simplified_graph: bool, commit_limit: usize, hash_color_enabled: bool) -> Self {
         CommitTableState {
             all_commits: Vec::new(),
             filtered_commits: None,
@@ -36,6 +38,7 @@ impl CommitTableState {
             commit_limit,
             all_commits_loaded: false,
             loading_more: false,
+            hash_color_enabled,
             scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }
@@ -61,7 +64,7 @@ mod tests {
     use super::*;
 
     fn make_state() -> CommitTableState {
-        CommitTableState::new(false, 500)
+        CommitTableState::new(false, 500, false)
     }
 
     #[test]
