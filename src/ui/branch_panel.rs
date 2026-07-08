@@ -8,13 +8,13 @@ use ratatui::{
 };
 
 use crate::app::commands::Command;
-use crate::models::*;
 use crate::state::branch::BranchState;
 use crate::theme::Theme;
 use crate::ui::layout;
 use crate::ui::panel::Panel;
 use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
+use crate::view::TreeItem;
 
 /// Wrapper struct implementing the Panel trait for the branch tree view.
 pub struct BranchPanel;
@@ -30,14 +30,14 @@ impl Panel for BranchPanel {
             content_area,
             &state.branch_tree,
             state.branch_index,
-            ctx.is_focused(crate::models::Panel::Branches),
+            ctx.is_focused(crate::view::Panel::Branches),
             ctx.debug_label,
             ctx.theme,
         );
 
         state.branch_list_offset = list_state.offset();
 
-        let focus_style = if ctx.is_focused(crate::models::Panel::Branches) {
+        let focus_style = if ctx.is_focused(crate::view::Panel::Branches) {
             Style::default().fg(ctx.theme.focused_border)
         } else {
             Style::default().fg(ctx.theme.unfocused_border)

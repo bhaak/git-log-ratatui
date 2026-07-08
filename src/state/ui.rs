@@ -1,5 +1,5 @@
-use crate::models::Panel;
 use crate::ui;
+use crate::view::Panel;
 
 /// Global UI state — focus, layout, drag tracking, and status.
 pub struct UiState {

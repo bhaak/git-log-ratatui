@@ -1,7 +1,8 @@
 use git_log_ratatui::app::search;
 use git_log_ratatui::app::state::AppState;
 use git_log_ratatui::config::Config;
-use git_log_ratatui::models::{BranchScope, Commit, Panel};
+use git_log_ratatui::domain::BranchScope;
+use git_log_ratatui::view::{CommitRow as Commit, Panel};
 
 /// Helper: create a minimal AppState for testing.
 fn test_state() -> AppState {

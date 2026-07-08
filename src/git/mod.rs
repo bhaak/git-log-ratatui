@@ -54,7 +54,7 @@ mod tests {
     fn test_fetch_commits_on_current_repo() {
         let git = GitRepository::open(".").expect("failed to open repository");
         let commits = git
-            .fetch_commits(None, crate::models::BranchScope::All, None)
+            .fetch_commits(None, crate::domain::BranchScope::All, None)
             .expect("fetch_commits failed");
         assert!(!commits.is_empty(), "expected at least one commit");
 
@@ -113,7 +113,7 @@ mod tests {
         let commits = git
             .fetch_commits(
                 Some("feature/test"),
-                crate::models::BranchScope::Local,
+                crate::domain::BranchScope::Local,
                 None,
             )
             .expect("fetch_commits for feature/test failed");
@@ -135,7 +135,7 @@ mod tests {
         let commits_simple = git
             .fetch_commits_simplified(
                 Some("feature/test"),
-                crate::models::BranchScope::Local,
+                crate::domain::BranchScope::Local,
                 None,
             )
             .expect("fetch_commits_simplified for feature/test failed");
@@ -155,7 +155,7 @@ mod tests {
         );
 
         let main_commits = git
-            .fetch_commits_simplified(Some("main"), crate::models::BranchScope::Local, None)
+            .fetch_commits_simplified(Some("main"), crate::domain::BranchScope::Local, None)
             .expect("fetch_commits_simplified for main failed");
         assert!(
             !main_commits.is_empty(),

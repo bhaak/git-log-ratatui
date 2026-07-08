@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use crate::models::*;
+use crate::domain::BranchNode;
+use crate::view::TreeItem;
 
 /// Build a hierarchical tree from a flat list of branch names.
 pub fn build_branch_tree(branches: &[String]) -> BranchNode {

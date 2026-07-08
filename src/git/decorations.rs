@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use crate::domain::{BranchScope, Decoration, DecorationKind};
 use crate::error::AppError;
-use crate::models::*;
 use crate::theme::Theme;
 
 use super::GitRepository;

@@ -1,7 +1,6 @@
 use crate::app::commands::Command;
 use crate::clipboard;
 use crate::error::AppError;
-use crate::models::Panel as PanelEnum;
 use crate::ui;
 use crate::ui::branch_panel::BranchPanel;
 use crate::ui::commit_table::CommitPanel;
@@ -9,6 +8,7 @@ use crate::ui::diff_panel::DiffPanel;
 use crate::ui::panel::Panel;
 use crate::ui::scope_panel::ScopePanel;
 use crate::ui::search_panel::SearchPanel;
+use crate::view::Panel as PanelEnum;
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -247,12 +247,11 @@ pub(crate) fn execute_command(app: &mut App, cmd: Command) {
             PanelEnum::Branches => {
                 app.state.branch.branch_index = 0;
             }
-            PanelEnum::Commits => {
-                if search::visible_count(&app.state) > 0 {
-                    app.state.commit.selected_index = 0;
-                    search::clamp_selection(&mut app.state);
-                }
+            PanelEnum::Commits if search::visible_count(&app.state) > 0 => {
+                app.state.commit.selected_index = 0;
+                search::clamp_selection(&mut app.state);
             }
+            PanelEnum::Commits => {}
             PanelEnum::Diff => {
                 app.state.diff.diff_scroll = 0;
             }
@@ -778,13 +777,8 @@ fn scroll_at(app: &App, col: u16, row: u16, direction: i32) -> Vec<Command> {
     let (_full, areas, _branch_visible) = compute_mouse_areas(app);
     let pos = (col, row);
 
-    if ui::layout::rect_contains(&areas.branch, pos) {
-        if direction > 0 {
-            vec![Command::MoveDown]
-        } else {
-            vec![Command::MoveUp]
-        }
-    } else if ui::layout::rect_contains(&areas.table, pos) {
+    if ui::layout::rect_contains(&areas.branch, pos) || ui::layout::rect_contains(&areas.table, pos)
+    {
         if direction > 0 {
             vec![Command::MoveDown]
         } else {

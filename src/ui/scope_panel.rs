@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::models::BranchScope;
+use crate::domain::BranchScope;
 use crate::theme::Theme;
 
 /// Render the scope panel showing the current branch scope.
@@ -67,7 +67,7 @@ impl Panel for ScopePanel {
             frame,
             area,
             *state,
-            ctx.is_focused(crate::models::Panel::Scope),
+            ctx.is_focused(crate::view::Panel::Scope),
             ctx.debug_label,
             ctx.theme,
         );

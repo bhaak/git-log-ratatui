@@ -370,7 +370,8 @@ impl App {
 mod tests {
     use super::search;
     use super::*;
-    use crate::models::*;
+    use crate::view::CommitRow as Commit;
+    use crate::view::TreeItem;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
 

@@ -10,7 +10,7 @@ use ratatui::{
 use std::cell::RefCell;
 
 use crate::app::commands::Command;
-use crate::models::*;
+use crate::domain::DecorationKind;
 use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
@@ -18,6 +18,7 @@ use crate::ui::layout::{self, TABLE_OVERHEAD};
 use crate::ui::panel::Panel as PanelTrait;
 use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
+use crate::view::{CommitRow as Commit, Panel};
 
 const COL_GRAPH_MAX: u16 = 12;
 const COL_HASH: u16 = 8;
@@ -370,6 +371,7 @@ fn decoration_style(kind: &DecorationKind, theme: &Theme) -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{Decoration, DecorationKind};
     use crate::theme::Theme;
 
     fn make_theme() -> Theme {

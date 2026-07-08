@@ -1,8 +1,8 @@
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use git_log_ratatui::domain::BranchScope;
 use git_log_ratatui::git::GitRepository;
-use git_log_ratatui::models::BranchScope;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -305,7 +305,7 @@ fn test_decorations_on_commits() {
 
     let has_tag = deco_map.values().any(|decos| {
         decos.iter().any(|d| {
-            d.label == "v1.0" && matches!(d.kind, git_log_ratatui::models::DecorationKind::Tag)
+            d.label == "v1.0" && matches!(d.kind, git_log_ratatui::domain::DecorationKind::Tag)
         })
     });
     assert!(has_tag, "should have a 'v1.0' tag decoration");
@@ -313,7 +313,7 @@ fn test_decorations_on_commits() {
     let has_local_branch = deco_map.values().any(|decos| {
         decos
             .iter()
-            .any(|d| matches!(d.kind, git_log_ratatui::models::DecorationKind::LocalBranch))
+            .any(|d| matches!(d.kind, git_log_ratatui::domain::DecorationKind::LocalBranch))
     });
     assert!(
         has_local_branch,
@@ -324,7 +324,7 @@ fn test_decorations_on_commits() {
         decos.iter().any(|d| {
             matches!(
                 d.kind,
-                git_log_ratatui::models::DecorationKind::RemoteBranch
+                git_log_ratatui::domain::DecorationKind::RemoteBranch
             )
         })
     });

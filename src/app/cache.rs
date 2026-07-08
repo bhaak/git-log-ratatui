@@ -1,4 +1,4 @@
-use crate::models::Commit;
+use crate::view::CommitRow as Commit;
 
 /// Cache for full and simplified commit graph modes, enabling instant toggling.
 pub struct CommitCache {

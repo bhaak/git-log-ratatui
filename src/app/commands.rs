@@ -1,4 +1,4 @@
-use crate::models::Panel;
+use crate::view::Panel;
 
 /// Commands produced by panel event handlers (keyboard and mouse).
 /// The app-level dispatcher executes these on AppState.

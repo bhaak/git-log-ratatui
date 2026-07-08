@@ -5,11 +5,12 @@ use git_graph::graph::GitGraph;
 use rayon::prelude::*;
 use tracing::{debug, debug_span};
 
+use crate::domain::{BranchScope, Decoration};
 use crate::error::AppError;
 use crate::graph::create_graph_settings;
-use crate::models::*;
 use crate::theme::Theme;
 use crate::time_format::time_to_string;
+use crate::view::CommitRow;
 
 use super::graph_conv::build_commits_from_graph;
 use super::GitRepository;
@@ -22,7 +23,7 @@ impl GitRepository {
         branch: Option<&str>,
         scope: BranchScope,
         limit: Option<usize>,
-    ) -> Result<Vec<Commit>, AppError> {
+    ) -> Result<Vec<CommitRow>, AppError> {
         let _span = debug_span!("fetch_commits", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
 
@@ -48,7 +49,7 @@ impl GitRepository {
         branch: Option<&str>,
         scope: BranchScope,
         limit: Option<usize>,
-    ) -> Result<Vec<Commit>, AppError> {
+    ) -> Result<Vec<CommitRow>, AppError> {
         let _span = debug_span!("fetch_commits_simplified", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
         let branch_tip_colors = self.build_branch_tip_colors(scope, &Theme::default())?;
@@ -66,7 +67,7 @@ impl GitRepository {
             self.push_scope_refs(&mut revwalk, scope)?;
         }
 
-        let mut commits: Vec<Commit> = Vec::new();
+        let mut commits: Vec<CommitRow> = Vec::new();
         for oid_result in revwalk {
             let oid = oid_result?;
             if let Some(max) = limit {
@@ -88,7 +89,7 @@ impl GitRepository {
                 '●'.to_string()
             };
 
-            commits.push(Commit {
+            commits.push(CommitRow {
                 hash: oid.to_string(),
                 graph,
                 graph_colors: vec![lane],
@@ -138,7 +139,7 @@ impl GitRepository {
     /// Fill in author, date, subject, merge status, and decorations from git2.
     fn enrich_commits(
         &self,
-        commits: &mut [Commit],
+        commits: &mut [CommitRow],
         decoration_map: &HashMap<git2::Oid, Vec<Decoration>>,
     ) {
         let repo_path = self.repo_path.clone();

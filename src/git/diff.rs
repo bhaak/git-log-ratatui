@@ -1,6 +1,6 @@
 use crate::diff_format::append_diff_line;
+use crate::domain::{CommitInfo, FileEntry};
 use crate::error::AppError;
-use crate::models::*;
 use crate::time_format::time_to_string_with_seconds;
 
 use super::GitRepository;

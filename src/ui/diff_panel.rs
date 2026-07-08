@@ -10,12 +10,13 @@ use ratatui::{
 use crate::diff_pairing::{
     build_pair_maps, diff_paths, find_next_added_line, find_prev_removed_line,
 };
+use crate::domain::{CommitInfo, FileEntry};
 use crate::lcs;
-use crate::models::*;
 use crate::state::diff::DiffState;
 use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
 use crate::ui::scrollbar_view::ScrollbarView;
+use crate::view::Panel;
 
 /// Render context for the diff panel.
 pub struct DiffPanelCtx<'a> {

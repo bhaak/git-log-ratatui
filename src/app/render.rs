@@ -97,20 +97,20 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     );
     let commit_panel = ui::commit_table::CommitPanel::new();
     let (help_keys, label) = match app.state.ui.focus {
-        crate::models::Panel::Branches => (
+        crate::view::Panel::Branches => (
             ui::branch_panel::BranchPanel.help_keys(),
             ui::branch_panel::BranchPanel.label(),
         ),
-        crate::models::Panel::Search => (
+        crate::view::Panel::Search => (
             ui::search_panel::SearchPanel.help_keys(),
             ui::search_panel::SearchPanel.label(),
         ),
-        crate::models::Panel::Scope => (
+        crate::view::Panel::Scope => (
             ui::scope_panel::ScopePanel.help_keys(),
             ui::scope_panel::ScopePanel.label(),
         ),
-        crate::models::Panel::Commits => (commit_panel.help_keys(), commit_panel.label()),
-        crate::models::Panel::Diff => (
+        crate::view::Panel::Commits => (commit_panel.help_keys(), commit_panel.label()),
+        crate::view::Panel::Diff => (
             ui::diff_panel::DiffPanel.help_keys(),
             ui::diff_panel::DiffPanel.label(),
         ),

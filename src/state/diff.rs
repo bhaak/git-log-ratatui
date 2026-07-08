@@ -1,4 +1,4 @@
-use crate::models::*;
+use crate::domain::{CommitInfo, FileEntry};
 use crate::ui;
 
 /// Diff panel state — commit metadata, diff lines, file listing, scroll position, and scrollbar.

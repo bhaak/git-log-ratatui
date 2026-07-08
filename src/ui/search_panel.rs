@@ -137,7 +137,7 @@ impl Panel for SearchPanel {
             state.cursor_pos,
             branch_label,
             &title,
-            ctx.is_focused(crate::models::Panel::Search),
+            ctx.is_focused(crate::view::Panel::Search),
             ctx.debug_label,
             ctx.theme,
         );

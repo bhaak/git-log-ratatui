@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::models::*;
+use crate::domain::{BranchData, BranchScope};
 use crate::ui;
+use crate::view::TreeItem;
 
 /// Branch panel state — tree, selection, scope, expanded node tracking, and scrollbar.
 pub struct BranchState {

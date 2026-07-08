@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use git2::Oid;
 use git_graph::graph::GitGraph;
 
-use crate::models::Commit;
 use crate::theme::Theme;
+use crate::view::CommitRow;
 
-pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
+pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
     let mut commits = Vec::with_capacity(graph.commits.len());
 
     let num_cols = graph
@@ -147,7 +147,7 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
             }
         }
 
-        commits.push(Commit {
+        commits.push(CommitRow {
             hash: info.oid.to_string(),
             graph: line,
             graph_colors: colors,
@@ -167,8 +167,8 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<Commit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::BranchScope;
     use crate::graph::create_graph_settings;
-    use crate::models::BranchScope;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

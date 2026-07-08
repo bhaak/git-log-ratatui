@@ -1,23 +1,17 @@
-/// A commit entry produced by the git-graph crate, enriched with git2 metadata.
+/// A commit entry with pure git metadata (no UI/graph data).
+/// Exists as a semantic domain type; CommitRow in the view layer
+/// extends this with rendering-specific fields.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct Commit {
     pub hash: String,
     pub author: String,
     pub date: String,
     pub subject: String,
-    /// Unicode graph line from git-graph (already box-drawing characters).
-    pub graph: String,
-    /// Lane color index per character position (same length as graph).
-    /// 255 = no lane (space). Otherwise lane_index % LANE_COLORS.len() picks the color.
-    pub graph_colors: Vec<u8>,
     /// True if this is a merge commit (has multiple parents).
     pub merge: bool,
-    /// True if this row is a graph-only continuation line (no commit).
-    pub graph_only: bool,
     /// Branch/tag/HEAD decorations resolved via git2 references.
     pub decorations: Vec<Decoration>,
-    /// Index of the first row in the expanded table for this decoration block.
-    pub deco_line: usize,
 }
 
 /// A single decoration on a commit (HEAD, branch, tag).

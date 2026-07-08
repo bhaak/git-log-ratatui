@@ -1,6 +1,7 @@
+use crate::domain::{BranchData, BranchScope, CommitInfo, FileEntry};
 use crate::error::AppError;
 use crate::git::GitRepository;
-use crate::models::*;
+use crate::view::CommitRow as Commit;
 use crate::worker::BackgroundWorker;
 
 // --- Branch worker ---

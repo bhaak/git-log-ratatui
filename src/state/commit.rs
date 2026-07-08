@@ -1,8 +1,8 @@
 use ratatui::widgets::TableState;
 
 use crate::app::cache::CommitCache;
-use crate::models::Commit;
 use crate::ui;
+use crate::view::CommitRow as Commit;
 
 /// Commit table state — all commit data, filtering, selection, graph mode, lazy loading, and scrollbar.
 pub struct CommitTableState {

@@ -1,5 +1,5 @@
+use crate::domain::{BranchData, BranchEntry, BranchScope};
 use crate::error::AppError;
-use crate::models::*;
 
 use super::GitRepository;
 

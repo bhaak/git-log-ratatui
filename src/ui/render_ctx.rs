@@ -1,5 +1,5 @@
-use crate::models::Panel;
 use crate::theme::Theme;
+use crate::view::Panel;
 
 /// Shared rendering context passed to every panel.
 pub struct RenderCtx<'a> {

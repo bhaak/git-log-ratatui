@@ -5,7 +5,7 @@ use git_graph::settings::{
     BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
 };
 
-use crate::models::BranchScope;
+use crate::domain::BranchScope;
 
 fn base_settings(include_remote: bool) -> Settings {
     Settings {

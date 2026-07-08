@@ -1,6 +1,7 @@
 use crate::app::state::AppState;
-use crate::models::*;
+use crate::domain::BranchScope;
 use crate::tree;
+use crate::view::TreeItem;
 
 pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     let local_section_key = "__local__";
