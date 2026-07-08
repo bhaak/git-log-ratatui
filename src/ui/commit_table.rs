@@ -273,6 +273,15 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     frame.render_stateful_widget(table, area, &mut local_state);
 }
 
+fn is_branch_head(commit: &Commit) -> bool {
+    commit.decorations.iter().any(|d| {
+        matches!(
+            d.kind,
+            DecorationKind::LocalBranch | DecorationKind::RemoteBranch
+        )
+    })
+}
+
 fn build_graph_span(
     commit: &Commit,
     graph_width: usize,
@@ -299,12 +308,20 @@ fn build_graph_span(
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(chars.len());
 
     for (i, &ch) in chars.iter().enumerate() {
+        let display_ch = if is_branch_head(commit) && (ch == '\u{25CF}' || ch == '\u{25CB}') {
+            '\u{29BF}'
+        } else {
+            ch
+        };
         let color = if i < commit.graph_colors.len() && commit.graph_colors[i] != 255 {
             theme.graph_colors[(commit.graph_colors[i] as usize) % theme.graph_colors.len()]
         } else {
             theme.commit_secondary
         };
-        spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
+        spans.push(Span::styled(
+            display_ch.to_string(),
+            Style::default().fg(color),
+        ));
     }
 
     let current_width = spans.len();
@@ -318,7 +335,13 @@ fn build_graph_span(
 fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     let lane = commit.graph_colors.iter().find(|&&c| c != 255).copied();
 
-    let ch = if commit.merge { '○' } else { '●' };
+    let ch = if is_branch_head(commit) {
+        '\u{29BF}'
+    } else if commit.merge {
+        '○'
+    } else {
+        '●'
+    };
     let color = if commit.merge {
         theme.commit_merge
     } else if let Some(l) = lane {
@@ -654,6 +677,61 @@ mod tests {
         let span = build_simplified_graph(&c, &theme);
         let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
         assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_build_simplified_graph_branch_head() {
+        let theme = make_theme();
+        let mut c = make_commit(
+            "",
+            "●",
+            false,
+            vec![Decoration {
+                label: "main".into(),
+                kind: DecorationKind::LocalBranch,
+            }],
+        );
+        c.graph_colors = vec![2];
+        let span = build_simplified_graph(&c, &theme);
+        let expected = Span::styled(
+            "\u{29BF}".to_string(),
+            Style::default().fg(theme.graph_colors[2]),
+        );
+        assert_eq!(span, Line::from(expected));
+    }
+
+    #[test]
+    fn test_is_branch_head_true_for_local_branch() {
+        let c = make_commit(
+            "",
+            "",
+            false,
+            vec![Decoration {
+                label: "main".into(),
+                kind: DecorationKind::LocalBranch,
+            }],
+        );
+        assert!(is_branch_head(&c));
+    }
+
+    #[test]
+    fn test_is_branch_head_false_for_tag_only() {
+        let c = make_commit(
+            "",
+            "",
+            false,
+            vec![Decoration {
+                label: "v1.0".into(),
+                kind: DecorationKind::Tag,
+            }],
+        );
+        assert!(!is_branch_head(&c));
+    }
+
+    #[test]
+    fn test_is_branch_head_false_for_no_decorations() {
+        let c = make_commit("", "", false, vec![]);
+        assert!(!is_branch_head(&c));
     }
 
     #[test]
