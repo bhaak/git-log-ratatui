@@ -1,16 +1,8 @@
-use std::time::Instant;
-
-use ratatui::widgets::TableState;
-use tracing::{debug, error};
-
 use crate::config::Config;
 use crate::error::AppError;
 
 use crate::workers;
-use crate::workers::{
-    BranchCommand, BranchResult, BranchWorker, CommitCommand, CommitResult, CommitWorker,
-    DiffCommand, DiffResult, DiffWorker,
-};
+use crate::workers::{BranchWorker, CommitWorker, DiffWorker};
 use state::AppState;
 
 pub mod branches;
@@ -18,12 +10,14 @@ pub mod cache;
 pub mod commands;
 mod input;
 mod render;
+mod runner;
 pub mod search;
 pub mod state;
 mod viewport;
+mod worker_mgr;
 
 pub(crate) const PAGE_SIZE: usize = 10;
-const INITIAL_COMMIT_LIMIT: usize = 5000;
+pub(super) const INITIAL_COMMIT_LIMIT: usize = 5000;
 pub(crate) const COMMIT_LIMIT_INCREMENT: usize = 5000;
 pub(crate) const POLL_INTERVAL_DEFAULT: u8 = 10;
 pub(crate) const POLL_INTERVAL_MAX: u8 = 200;
@@ -31,9 +25,9 @@ pub(crate) const POLL_BACKOFF_STEP: u8 = 10;
 
 pub struct App {
     pub state: AppState,
-    branch_worker: BranchWorker,
-    commit_worker: CommitWorker,
-    diff_worker: DiffWorker,
+    pub(super) branch_worker: BranchWorker,
+    pub(super) commit_worker: CommitWorker,
+    pub(super) diff_worker: DiffWorker,
 }
 
 impl App {
@@ -57,319 +51,13 @@ impl App {
             diff_worker,
         })
     }
-
-    pub fn run(
-        &mut self,
-        terminal: &mut ratatui::Terminal<impl ratatui::backend::Backend>,
-    ) -> Result<(), AppError> {
-        self.request_branches();
-        self.request_commits(None);
-
-        loop {
-            let frame_start = if self.state.debug {
-                Some(Instant::now())
-            } else {
-                None
-            };
-            if self.process_git_results() {
-                self.state.ui.dirty = true;
-            }
-            if self.state.ui.dirty {
-                let draw_result = terminal.draw(|frame| render::render(self, frame));
-                if let Err(e) = draw_result {
-                    return Err(format!("Render error: {}", e).into());
-                }
-                if let Some(start) = frame_start {
-                    self.state.last_frame_time_ms = start.elapsed().as_millis() as u64;
-                }
-                self.state.ui.dirty = false;
-            }
-            match input::handle_event(self)? {
-                input::EventOutcome::Quit => break,
-                input::EventOutcome::Continue => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Non-interactive profiling mode: load branches, commits, and diff repeatedly, print timings.
-    pub fn run_profile(&mut self, iterations: u32) -> Result<(), AppError> {
-        let total = Instant::now();
-        let mut branch_total = 0u128;
-        let mut commit_total = 0u128;
-        let mut diff_total = 0u128;
-
-        for i in 0..iterations {
-            // Phase 1: Load branches
-            let t0 = Instant::now();
-            self.request_branches();
-            match self.branch_worker.recv() {
-                Some(BranchResult::Branches(branches)) => {
-                    self.state.branch.all_branches = branches;
-                }
-                Some(BranchResult::Error(e)) => return Err(e),
-                None => return Err("Branch worker disconnected".into()),
-            }
-            branch_total += t0.elapsed().as_millis();
-
-            // Phase 2: Load commits with graph
-            let t0 = Instant::now();
-            self.request_commits(None);
-            match self.commit_worker.recv() {
-                Some(CommitResult::Commits(commits)) => {
-                    self.state.commit.all_commits = commits;
-                }
-                Some(CommitResult::Error(e)) => return Err(e),
-                None => return Err("Commit worker disconnected".into()),
-            }
-            commit_total += t0.elapsed().as_millis();
-
-            // Phase 3: Load diff for first commit (if any)
-            let first_hash = self
-                .state
-                .commit
-                .all_commits
-                .first()
-                .map(|c| c.hash.clone());
-            if let Some(hash) = first_hash {
-                let t0 = Instant::now();
-                self.request_diff(&hash);
-                match self.diff_worker.recv() {
-                    Some(DiffResult::Diff {
-                        commit_info,
-                        diff_lines,
-                        file_entries,
-                    }) => {
-                        self.state.diff.commit_info = Some(*commit_info);
-                        self.state.diff.diff_lines = diff_lines;
-                        self.state.diff.file_entries = file_entries;
-                    }
-                    Some(DiffResult::Error(e)) => return Err(e),
-                    None => return Err("Diff worker disconnected".into()),
-                }
-                diff_total += t0.elapsed().as_millis();
-            }
-
-            if i == 0 {
-                println!(
-                    "Total branches: {}",
-                    self.state.branch.all_branches.entries.len()
-                );
-                println!("Total commits:  {}", self.state.commit.all_commits.len());
-            }
-        }
-
-        let total_ms = total.elapsed().as_millis();
-        let n = iterations as u128;
-
-        println!(
-            "Iterations: {iterations} | avg (ms): branches={} commits={} diff={} total={total_ms}",
-            branch_total / n,
-            commit_total / n,
-            diff_total / n
-        );
-
-        Ok(())
-    }
-
-    // --- Worker communication (per-window threads) ---
-
-    fn request_branches(&mut self) {
-        debug!(
-            "Requesting branches (scope={:?})",
-            self.state.branch.branch_scope
-        );
-        self.state.branch.branches_loaded = false;
-        self.branch_worker.send(BranchCommand::FetchBranches {
-            scope: self.state.branch.branch_scope,
-        });
-    }
-
-    fn request_commits(&mut self, branch: Option<String>) {
-        debug!("Requesting commits (branch={:?})", branch);
-        self.state.commit.commits_loaded = false;
-        self.state.commit.all_commits.clear();
-        self.state.commit.filtered_commits = None;
-        self.state.commit.visible_to_commit.clear();
-        self.state.commit.selected_index = 0;
-        self.state.diff.commit_info = None;
-        self.state.diff.diff_lines = Vec::new();
-        self.state.diff.file_entries = Vec::new();
-        self.state.diff.last_selected_hash = None;
-        self.state.commit.table_state = TableState::default();
-        self.state.commit.commit_limit = INITIAL_COMMIT_LIMIT;
-        self.state.commit.all_commits_loaded = false;
-        self.state.commit.loading_more = false;
-        self.state.branch.selected_branch = branch.clone();
-        self.state.ui.status_message = Some("Loading commits...".to_string());
-        self.state.commit.cache.invalidate();
-        if !self.commit_worker.send(CommitCommand::FetchCommits {
-            branch,
-            scope: self.state.branch.branch_scope,
-            limit: Some(self.state.commit.commit_limit),
-            simplified: self.state.commit.simplified_graph,
-        }) {
-            self.state.ui.status_message =
-                Some("Commit worker disconnected — restart required".to_string());
-        }
-    }
-
-    /// Toggle between full (git-graph) and simplified (git2 revwalk) graphs.
-    /// Saves the current commit list to a cache so re-toggling is instant.
-    fn toggle_simplified_graph(&mut self) {
-        if self.state.commit.simplified_graph {
-            self.state
-                .commit
-                .cache
-                .set(true, self.state.commit.all_commits.clone());
-        } else {
-            self.state
-                .commit
-                .cache
-                .set(false, self.state.commit.all_commits.clone());
-        }
-
-        self.state.commit.simplified_graph = !self.state.commit.simplified_graph;
-
-        if let Some(cached) = self
-            .state
-            .commit
-            .cache
-            .get(self.state.commit.simplified_graph)
-        {
-            self.state.commit.all_commits = cached;
-            self.state.commit.commits_loaded = true;
-            search::apply_search_filter(&mut self.state);
-            return;
-        }
-
-        // Cache miss: fetch from the worker thread.
-        let branch = self.state.branch.selected_branch.clone();
-        self.request_commits(branch);
-    }
-
-    fn request_diff(&mut self, hash: &str) {
-        self.state.diff.diff_pending = true;
-        self.diff_worker.send(DiffCommand::FetchDiff {
-            hash: hash.to_string(),
-        });
-    }
-
-    /// Poll all three worker channels for results (non-blocking, parallel streams).
-    /// Returns true if any worker produced data that requires a redraw.
-    fn process_git_results(&mut self) -> bool {
-        let mut changed = false;
-        changed |= self.poll_branch_results();
-        changed |= self.poll_commit_results();
-        changed |= self.poll_diff_results();
-        changed
-    }
-
-    fn poll_branch_results(&mut self) -> bool {
-        let mut changed = false;
-        while let Some(result) = self.branch_worker.try_recv() {
-            changed = true;
-            match result {
-                BranchResult::Branches(branches) => {
-                    self.state.branch.all_branches = branches;
-                    branches::rebuild_branch_tree(&mut self.state);
-                    self.state.branch.branches_loaded = true;
-                }
-                BranchResult::Error(err) => {
-                    error!("Branch worker error: {}", err);
-                    self.state.ui.status_message = Some(err.to_string());
-                }
-            }
-        }
-        changed
-    }
-
-    fn poll_commit_results(&mut self) -> bool {
-        let mut changed = false;
-        while let Some(result) = self.commit_worker.try_recv() {
-            changed = true;
-            match result {
-                CommitResult::Commits(commits) => {
-                    let prev_len = self.state.commit.all_commits.len();
-                    self.state.commit.all_commits = commits;
-                    if self.state.commit.loading_more {
-                        self.state.commit.loading_more = false;
-                        if self.state.commit.all_commits.len() <= prev_len {
-                            self.state.commit.all_commits_loaded = true;
-                        }
-                        search::reapply_filter_preserving_selection(&mut self.state);
-                    } else {
-                        search::apply_search_filter(&mut self.state);
-                    }
-                    self.state.commit.commits_loaded = true;
-                    self.state.ui.status_message = None;
-                    self.state.commit.cache.set(
-                        self.state.commit.simplified_graph,
-                        self.state.commit.all_commits.clone(),
-                    );
-                    if !self
-                        .state
-                        .commit
-                        .filtered_commits
-                        .as_deref()
-                        .unwrap_or(&self.state.commit.all_commits)
-                        .is_empty()
-                        && self.state.diff.commit_info.is_none()
-                    {
-                        let hash = self
-                            .state
-                            .commit
-                            .filtered_commits
-                            .as_deref()
-                            .unwrap_or(&self.state.commit.all_commits)[0]
-                            .hash
-                            .clone();
-                        if !hash.is_empty() {
-                            self.request_diff(&hash);
-                        }
-                    }
-                }
-                CommitResult::Error(err) => {
-                    error!("Commit worker error: {}", err);
-                    self.state.ui.status_message = Some(err.to_string());
-                }
-            }
-        }
-        changed
-    }
-
-    fn poll_diff_results(&mut self) -> bool {
-        let mut changed = false;
-        while let Some(result) = self.diff_worker.try_recv() {
-            changed = true;
-            match result {
-                DiffResult::Diff {
-                    commit_info,
-                    diff_lines,
-                    file_entries,
-                } => {
-                    self.state.diff.commit_info = Some(*commit_info);
-                    self.state.diff.diff_lines = diff_lines;
-                    self.state.diff.file_entries = file_entries;
-                    self.state.diff.diff_scroll = 0;
-                    self.state.diff.selected_file_index = 0;
-                    self.state.diff.diff_pending = false;
-                }
-                DiffResult::Error(err) => {
-                    error!("Diff worker error: {}", err);
-                    self.state.ui.status_message = Some(err.to_string());
-                }
-            }
-        }
-        changed
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::search;
     use super::*;
+    use crate::config::Config;
     use crate::view::CommitRow as Commit;
     use crate::view::TreeItem;
     use ratatui::layout::Rect;
