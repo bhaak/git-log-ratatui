@@ -7,6 +7,7 @@
   - changes to TODO.md and AGENTS.md always in their own, per-file separate commit
   - never use —, always use -
   - add documentation to README.md
+  - update STRUCTURE.md if the architectural design changes
 
 * Code
   - run cargo fmt after each step
