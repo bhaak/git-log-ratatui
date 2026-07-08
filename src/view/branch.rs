@@ -11,4 +11,6 @@ pub struct TreeItem {
     pub tree_prefix: String,
     /// Unique key for this node in the expanded/collapsed map.
     pub key: String,
+    /// Last commit date as "YYYY-MM-DD HH:MM" for staleness coloring, None if unavailable.
+    pub last_commit_date: Option<String>,
 }

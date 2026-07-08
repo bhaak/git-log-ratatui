@@ -16,6 +16,8 @@ pub struct BranchState {
     pub selected_branch: Option<String>,
     pub branch_list_offset: usize,
     pub branches_loaded: bool,
+    /// Whether to show staleness greyscale on branch and tag names.
+    pub branch_staleness_enabled: bool,
     /// Scrollbar for the branch tree list.
     pub scrollbar: ui::scrollbar_view::ScrollbarView,
 }
@@ -27,6 +29,7 @@ impl BranchState {
                 default_branch: None,
                 entries: Vec::new(),
                 tags: Vec::new(),
+                tags_dates: Vec::new(),
             },
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),
@@ -35,6 +38,7 @@ impl BranchState {
             selected_branch: None,
             branch_list_offset: 0,
             branches_loaded: false,
+            branch_staleness_enabled: true,
             scrollbar: ui::scrollbar_view::ScrollbarView::new(),
         }
     }
@@ -105,6 +109,7 @@ mod tests {
                 is_branch: true,
                 full_path: "a".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -115,6 +120,7 @@ mod tests {
                 is_branch: true,
                 full_path: "b".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "b".into(),
             },
         ];
@@ -135,6 +141,7 @@ mod tests {
                 is_branch: true,
                 full_path: "a".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -145,6 +152,7 @@ mod tests {
                 is_branch: true,
                 full_path: "b".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "b".into(),
             },
         ];
@@ -173,6 +181,7 @@ mod tests {
     fn test_page_down_clamped() {
         let mut state = make_state();
         state.branch_tree = vec![TreeItem {
+            last_commit_date: None,
             name: "a".into(),
             depth: 0,
             expandable: false,
@@ -207,6 +216,7 @@ mod tests {
                 is_branch: true,
                 full_path: "a".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -217,6 +227,7 @@ mod tests {
                 is_branch: true,
                 full_path: "b".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "b".into(),
             },
             TreeItem {
@@ -227,6 +238,7 @@ mod tests {
                 is_branch: true,
                 full_path: "c".into(),
                 tree_prefix: "".into(),
+                last_commit_date: None,
                 key: "c".into(),
             },
         ];
@@ -252,6 +264,7 @@ mod tests {
     fn test_move_returns_set_dirty_effect() {
         let mut state = make_state();
         state.branch_tree = vec![TreeItem {
+            last_commit_date: None,
             name: "a".into(),
             depth: 0,
             expandable: false,

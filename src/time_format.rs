@@ -28,7 +28,40 @@ pub fn time_to_string_with_seconds(time: Time) -> String {
     format!("{}:{:02}", time_to_string(time), second)
 }
 
-fn days_to_ymd(mut days: i64) -> (i64, u32, u32) {
+fn is_leap(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+/// Convert year/month/day back to days since Unix epoch.
+/// Inverse of days_to_ymd. Returns None for invalid dates.
+pub(crate) fn ymd_to_days(year: i64, month: u32, day: u32) -> Option<i64> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let mut days: i64 = 0;
+    for y in EPOCH_YEAR..year {
+        days += if is_leap(y) {
+            DAYS_PER_LEAP_YEAR
+        } else {
+            DAYS_PER_YEAR
+        };
+    }
+    let month_days = if is_leap(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    for m in 1..month {
+        days += month_days[(m - 1) as usize] as i64;
+    }
+    if day > month_days[(month - 1) as usize] {
+        return None;
+    }
+    days += (day - 1) as i64;
+    Some(days)
+}
+
+pub(crate) fn days_to_ymd(mut days: i64) -> (i64, u32, u32) {
     let mut year = EPOCH_YEAR;
     loop {
         let days_in_year = if is_leap(year) {
@@ -56,10 +89,6 @@ fn days_to_ymd(mut days: i64) -> (i64, u32, u32) {
         month += 1;
     }
     (year, month, (days + 1) as u32)
-}
-
-fn is_leap(year: i64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 #[cfg(test)]
@@ -104,5 +133,35 @@ mod tests {
         assert!(!is_leap(2023));
         assert!(is_leap(2000));
         assert!(!is_leap(1900));
+    }
+
+    #[test]
+    fn test_ymd_to_days_epoch() {
+        assert_eq!(ymd_to_days(1970, 1, 1), Some(0));
+    }
+
+    #[test]
+    fn test_ymd_to_days_roundtrip() {
+        assert_eq!(ymd_to_days(2024, 1, 1), Some(19723));
+        let (y, m, d) = days_to_ymd(19723);
+        assert_eq!((y, m, d), (2024, 1, 1));
+    }
+
+    #[test]
+    fn test_ymd_to_days_invalid_month() {
+        assert_eq!(ymd_to_days(2024, 13, 1), None);
+        assert_eq!(ymd_to_days(2024, 0, 1), None);
+    }
+
+    #[test]
+    fn test_ymd_to_days_invalid_day() {
+        assert_eq!(ymd_to_days(2024, 2, 30), None);
+        assert_eq!(ymd_to_days(2023, 2, 29), None);
+    }
+
+    #[test]
+    fn test_ymd_to_days_leap_day() {
+        let feb28 = ymd_to_days(2024, 2, 28).unwrap();
+        assert_eq!(ymd_to_days(2024, 2, 29), Some(feb28 + 1));
     }
 }

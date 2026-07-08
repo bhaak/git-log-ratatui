@@ -1,5 +1,6 @@
 use crate::domain::{BranchData, BranchEntry, BranchScope};
 use crate::error::AppError;
+use crate::time_format::time_to_string;
 
 use super::GitRepository;
 
@@ -10,9 +11,15 @@ impl GitRepository {
         let default_branch = self.detect_default_branch();
         let mut entries = Vec::new();
 
-        let collect = |entries: &mut Vec<BranchEntry>, names: Vec<String>, is_remote: bool| {
-            for name in names {
-                entries.push(BranchEntry { name, is_remote });
+        let collect = |entries: &mut Vec<BranchEntry>,
+                       names: Vec<(String, Option<String>)>,
+                       is_remote: bool| {
+            for (name, date) in names {
+                entries.push(BranchEntry {
+                    name,
+                    is_remote,
+                    last_commit_date: date,
+                });
             }
         };
 
@@ -45,26 +52,37 @@ impl GitRepository {
             }
         }
 
-        let tags = self.fetch_tags()?;
+        let (tags, tags_dates) = self.fetch_tags_with_dates()?;
 
         Ok(BranchData {
             default_branch,
             entries,
             tags,
+            tags_dates,
         })
     }
 
-    /// Fetch all tag names from the repository.
-    fn fetch_tags(&self) -> Result<Vec<String>, AppError> {
+    /// Fetch tag names with their last commit dates.
+    fn fetch_tags_with_dates(&self) -> Result<(Vec<String>, Vec<Option<String>>), AppError> {
         let tag_names = self.repo.tag_names(None)?;
         let mut tags = Vec::new();
+        let mut dates = Vec::new();
         for name in tag_names.iter().flatten() {
             tags.push(name.to_string());
+            let date = self
+                .repo
+                .find_reference(&format!("refs/tags/{name}"))
+                .ok()
+                .and_then(|r| r.peel_to_commit().ok().map(|c| time_to_string(c.time())));
+            dates.push(date);
         }
-        Ok(tags)
+        Ok((tags, dates))
     }
 
-    fn list_branches(&self, filter: Option<git2::BranchType>) -> Result<Vec<String>, AppError> {
+    fn list_branches(
+        &self,
+        filter: Option<git2::BranchType>,
+    ) -> Result<Vec<(String, Option<String>)>, AppError> {
         let mut branches = Vec::new();
         let iter = self.repo.branches(filter)?;
 
@@ -73,7 +91,12 @@ impl GitRepository {
             if let Ok(Some(name)) = branch.name() {
                 let name = name.to_string();
                 if !name.contains("HEAD") {
-                    branches.push(name);
+                    let date = branch
+                        .get()
+                        .peel_to_commit()
+                        .ok()
+                        .map(|c| time_to_string(c.time()));
+                    branches.push((name, date));
                 }
             }
         }

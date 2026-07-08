@@ -80,6 +80,8 @@ pub struct BehaviorConfig {
     pub debug_default: bool,
     #[serde(default = "default_true")]
     pub hash_color_enabled: bool,
+    #[serde(default = "default_true")]
+    pub branch_staleness_enabled: bool,
 }
 
 impl Default for LayoutConfig {
@@ -100,6 +102,7 @@ impl Default for BehaviorConfig {
             simplified_graph_default: false,
             debug_default: false,
             hash_color_enabled: default_true(),
+            branch_staleness_enabled: default_true(),
         }
     }
 }

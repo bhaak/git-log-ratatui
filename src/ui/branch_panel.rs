@@ -3,6 +3,7 @@ use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListState},
     Frame,
 };
@@ -30,6 +31,7 @@ impl Panel for BranchPanel {
             content_area,
             &state.branch_tree,
             state.branch_index,
+            state.branch_staleness_enabled,
             ctx.is_focused(crate::view::Panel::Branches),
             ctx.debug_label,
             ctx.theme,
@@ -128,11 +130,13 @@ impl Panel for BranchPanel {
 
 /// Render the branch panel content with a hierarchical tree view.
 /// Returns the ListState for offset tracking.
+#[allow(clippy::too_many_arguments)]
 fn render_tree(
     frame: &mut Frame,
     area: Rect,
     tree_items: &[TreeItem],
     selected_index: usize,
+    staleness_enabled: bool,
     is_focused: bool,
     debug_label: Option<&str>,
     theme: &Theme,
@@ -147,9 +151,19 @@ fn render_tree(
         Style::default().fg(theme.unfocused_border)
     };
 
-    let items: Vec<String> = tree_items
+    let items: Vec<Line> = tree_items
         .iter()
-        .map(|item| item.name.to_string())
+        .map(|item| {
+            let color = if staleness_enabled {
+                item.last_commit_date
+                    .as_deref()
+                    .map(|d| crate::ui::commit_table::age_color(d, theme))
+                    .unwrap_or(theme.commit_secondary)
+            } else {
+                theme.commit_secondary
+            };
+            Line::from(Span::styled(item.name.clone(), Style::default().fg(color)))
+        })
         .collect();
 
     let title = if let Some(label) = debug_label {

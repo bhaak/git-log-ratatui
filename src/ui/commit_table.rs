@@ -14,6 +14,7 @@ use crate::domain::DecorationKind;
 use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
+use crate::time_format::ymd_to_days;
 use crate::ui::layout::{self, TABLE_OVERHEAD};
 use crate::ui::panel::Panel as PanelTrait;
 use crate::ui::render_ctx::RenderCtx;
@@ -223,7 +224,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
             ));
             let date_span = Line::from(Span::styled(
                 &commit.date,
-                Style::default().fg(ctx.theme.commit_secondary),
+                Style::default().fg(age_color(&commit.date, ctx.theme)),
             ));
 
             Row::new(vec![
@@ -367,6 +368,33 @@ fn hash_color(hash: &str) -> Color {
     )
 }
 
+/// Derive a greyscale color from a commit date string to indicate staleness.
+/// Recent commits are bright white, older commits fade to darker grey.
+/// Uses the same formula as the git-overview-branches Ruby script:
+///   staleness = max(255 - ceil(ln(1 + age_days)) * 12, 75)
+pub(crate) fn age_color(date_str: &str, theme: &Theme) -> Color {
+    if date_str.len() < 10 {
+        return theme.commit_secondary;
+    }
+    let year: i64 = date_str[0..4].parse().unwrap_or(0);
+    let month: u32 = date_str[5..7].parse().unwrap_or(1);
+    let day: u32 = date_str[8..10].parse().unwrap_or(1);
+
+    let commit_days = match ymd_to_days(year, month, day) {
+        Some(d) => d,
+        None => return theme.commit_secondary,
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let current_days = (now.as_secs() / 86400) as i64;
+
+    let age_days = (current_days - commit_days).max(0) as f64;
+    let staleness = (255.0 - (1.0_f64 + age_days).ln().ceil() * 12.0).max(75.0) as u8;
+    Color::Rgb(staleness, staleness, staleness)
+}
+
 fn graph_only_decorations(commit: &Commit) -> String {
     if commit.decorations.is_empty() {
         String::new()
@@ -505,6 +533,70 @@ mod tests {
     fn test_hash_color_empty_hash_falls_back_to_grey() {
         let c = hash_color("");
         assert_eq!(c, Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_age_color_recent_is_bright() {
+        let theme = make_theme();
+        let today = chrono_or_system_now();
+        let date = format!("{} 00:00", today);
+        let c = age_color(&date, &theme);
+        match c {
+            Color::Rgb(r, g, b) => {
+                assert!(r > 200, "recent date should be bright, got r={r}");
+                assert_eq!(r, g);
+                assert_eq!(r, b);
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn test_age_color_old_is_darker() {
+        let theme = make_theme();
+        let c1 = age_color("2024-07-01 00:00", &theme);
+        let c2 = age_color("2020-01-01 00:00", &theme);
+        match (c1, c2) {
+            (Color::Rgb(r1, _, _), Color::Rgb(r2, _, _)) => {
+                assert!(
+                    r1 > r2,
+                    "older date (2020) should be darker than newer (2024): r1={r1} r2={r2}"
+                );
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn test_age_color_floor_is_75() {
+        let theme = make_theme();
+        let c = age_color("1990-01-01 00:00", &theme);
+        match c {
+            Color::Rgb(r, g, b) => {
+                assert!(r >= 75, "staleness should not go below 75, got r={r}");
+                assert_eq!(r, g);
+                assert_eq!(r, b);
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn test_age_color_short_string_falls_back() {
+        let theme = make_theme();
+        let c = age_color("abc", &theme);
+        assert_eq!(c, theme.commit_secondary);
+    }
+
+    fn chrono_or_system_now() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let days = (secs / 86400) as i64;
+        let (y, m, d) = crate::time_format::days_to_ymd(days);
+        format!("{:04}-{:02}-{:02}", y, m, d)
     }
 
     #[test]

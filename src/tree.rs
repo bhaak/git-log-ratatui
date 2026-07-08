@@ -126,6 +126,7 @@ fn flatten_tree_inner(
             full_path: child.full_path.clone(),
             tree_prefix: format!("{}{}", prefix, connector),
             key: node_key.clone(),
+            last_commit_date: None,
         });
 
         if is_expanded {

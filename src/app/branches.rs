@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::app::state::AppState;
 use crate::domain::BranchScope;
 use crate::tree;
@@ -36,6 +38,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         full_path: String::new(),
         tree_prefix: String::new(),
         key: local_section_key.to_string(),
+        last_commit_date: None,
     };
 
     let remote_item = TreeItem {
@@ -47,6 +50,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         full_path: String::new(),
         tree_prefix: String::new(),
         key: remote_section_key.to_string(),
+        last_commit_date: None,
     };
 
     let tags_item = TreeItem {
@@ -58,7 +62,26 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         full_path: String::new(),
         tree_prefix: String::new(),
         key: tags_section_key.to_string(),
+        last_commit_date: None,
     };
+
+    // Build name → date lookup maps
+    let date_map: HashMap<String, Option<String>> = state
+        .branch
+        .all_branches
+        .entries
+        .iter()
+        .map(|e| (e.name.clone(), e.last_commit_date.clone()))
+        .collect();
+
+    let tag_date_map: HashMap<&str, Option<String>> = state
+        .branch
+        .all_branches
+        .tags
+        .iter()
+        .zip(state.branch.all_branches.tags_dates.iter())
+        .map(|(t, d)| (t.as_str(), d.clone()))
+        .collect();
 
     // Separate local and remote branch names
     let local_names: Vec<String> = state
@@ -98,7 +121,10 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         }
 
         if local_expanded {
-            let branch_items = tree::flatten_tree(&local_root, 0, &state.branch.expanded_nodes);
+            let mut branch_items = tree::flatten_tree(&local_root, 0, &state.branch.expanded_nodes);
+            for item in &mut branch_items {
+                item.last_commit_date = date_map.get(&item.full_path).and_then(|d| d.clone());
+            }
             items.extend(branch_items);
         }
     }
@@ -112,7 +138,11 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         tree::sort_tree(&mut remote_root);
 
         if remote_expanded {
-            let branch_items = tree::flatten_tree(&remote_root, 0, &state.branch.expanded_nodes);
+            let mut branch_items =
+                tree::flatten_tree(&remote_root, 0, &state.branch.expanded_nodes);
+            for item in &mut branch_items {
+                item.last_commit_date = date_map.get(&item.full_path).and_then(|d| d.clone());
+            }
             items.extend(branch_items);
         }
     }
@@ -126,11 +156,19 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
 
         if tags_expanded {
             let mut tag_items = tree::flatten_tree(&tag_root, 0, &state.branch.expanded_nodes);
-            // Prefix tag full_paths with refs/tags/ to avoid collisions with same-named branches
+            // Prefix tag full_paths with refs/tags/ to avoid collisions and set dates
             for item in &mut tag_items {
                 if item.is_branch {
-                    item.full_path = format!("refs/tags/{}", item.full_path);
+                    let tag_name = item.full_path.clone();
+                    item.full_path = format!("refs/tags/{}", tag_name);
                 }
+                item.last_commit_date = tag_date_map
+                    .get(
+                        item.full_path
+                            .strip_prefix("refs/tags/")
+                            .unwrap_or(&item.full_path),
+                    )
+                    .and_then(|d| d.clone());
             }
             items.extend(tag_items);
         }

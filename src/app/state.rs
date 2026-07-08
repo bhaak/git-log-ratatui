@@ -27,7 +27,11 @@ impl AppState {
             debug,
             last_frame_time_ms: 0,
             theme: Arc::clone(&config.theme),
-            branch: BranchState::new(),
+            branch: {
+                let mut s = BranchState::new();
+                s.branch_staleness_enabled = config.behavior.branch_staleness_enabled;
+                s
+            },
             commit: CommitTableState::new(
                 simplified_graph,
                 config.behavior.commit_batch_size,

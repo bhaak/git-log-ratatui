@@ -195,6 +195,7 @@ fn test_branch_click_with_scroll_offset() {
     app.state.branch.branch_tree = (0..50)
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
+            last_commit_date: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,
@@ -229,6 +230,7 @@ fn test_branch_click_without_scroll() {
     app.state.branch.branch_tree = (0..10)
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
+            last_commit_date: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,
@@ -270,6 +272,7 @@ fn test_scrollbar_click_does_not_change_selection() {
     app.state.branch.branch_tree = (0..50)
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
+            last_commit_date: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,

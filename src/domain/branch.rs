@@ -37,6 +37,8 @@ impl BranchScope {
 pub struct BranchEntry {
     pub name: String,
     pub is_remote: bool,
+    /// Last commit date as "YYYY-MM-DD HH:MM", None if unresolvable.
+    pub last_commit_date: Option<String>,
 }
 
 /// Complete branch data returned from the git repository.
@@ -46,6 +48,8 @@ pub struct BranchData {
     pub entries: Vec<BranchEntry>,
     /// Tag names from the repository (always fetched, regardless of scope).
     pub tags: Vec<String>,
+    /// Last commit date for each tag (same index as `tags`).
+    pub tags_dates: Vec<Option<String>>,
 }
 
 #[cfg(test)]
