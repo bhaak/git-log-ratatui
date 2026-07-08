@@ -85,6 +85,194 @@ impl Default for BranchState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state() -> BranchState {
+        BranchState::new()
+    }
+
+    #[test]
+    fn test_move_up_wraps_around() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "a".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                key: "b".into(),
+            },
+        ];
+        state.branch_index = 0;
+        state.handle_command(&Command::MoveUp);
+        assert_eq!(state.branch_index, 1);
+    }
+
+    #[test]
+    fn test_move_down_wraps_to_start() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "a".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                key: "b".into(),
+            },
+        ];
+        state.branch_index = 1;
+        state.handle_command(&Command::MoveDown);
+        assert_eq!(state.branch_index, 0);
+    }
+
+    #[test]
+    fn test_move_on_empty_tree_sets_zero() {
+        let mut state = make_state();
+        state.branch_index = 5;
+        state.handle_command(&Command::MoveUp);
+        assert_eq!(state.branch_index, 0);
+    }
+
+    #[test]
+    fn test_page_up() {
+        let mut state = make_state();
+        state.branch_index = 20;
+        state.handle_command(&Command::PageUp);
+        assert_eq!(state.branch_index, 10);
+    }
+
+    #[test]
+    fn test_page_down_clamped() {
+        let mut state = make_state();
+        state.branch_tree = vec![TreeItem {
+            name: "a".into(),
+            depth: 0,
+            expandable: false,
+            expanded: false,
+            is_branch: true,
+            full_path: "a".into(),
+            tree_prefix: "".into(),
+            key: "a".into(),
+        }];
+        state.branch_index = 0;
+        state.handle_command(&Command::PageDown);
+        assert_eq!(state.branch_index, 0);
+    }
+
+    #[test]
+    fn test_jump_to_top() {
+        let mut state = make_state();
+        state.branch_index = 42;
+        state.handle_command(&Command::JumpToTop);
+        assert_eq!(state.branch_index, 0);
+    }
+
+    #[test]
+    fn test_jump_to_bottom() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "a".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                key: "b".into(),
+            },
+            TreeItem {
+                name: "c".into(),
+                depth: 0,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "c".into(),
+                tree_prefix: "".into(),
+                key: "c".into(),
+            },
+        ];
+        state.handle_command(&Command::JumpToBottom);
+        assert_eq!(state.branch_index, 2);
+    }
+
+    #[test]
+    fn test_toggle_branch_node_stores_key_and_returns_rebuild_effect() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::ToggleBranchNode {
+            key: "feature/".into(),
+            expanded: true,
+        });
+        assert_eq!(state.expanded_nodes.get("feature/"), Some(&true));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::RebuildBranchTree)));
+        assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+    }
+
+    #[test]
+    fn test_move_returns_set_dirty_effect() {
+        let mut state = make_state();
+        state.branch_tree = vec![TreeItem {
+            name: "a".into(),
+            depth: 0,
+            expandable: false,
+            expanded: false,
+            is_branch: true,
+            full_path: "a".into(),
+            tree_prefix: "".into(),
+            key: "a".into(),
+        }];
+        let effects = state.handle_command(&Command::MoveDown);
+        assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+    }
+
+    #[test]
+    fn test_unknown_command_returns_empty_effects() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::CopyHashShort);
+        assert!(effects.is_empty());
+    }
+}
+
 fn branch_cycle_forward(current: usize, len: usize) -> usize {
     if len == 0 {
         0

@@ -125,6 +125,168 @@ impl Default for DiffState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::FileEntry;
+
+    fn fixture_file_entries() -> Vec<FileEntry> {
+        vec![
+            FileEntry {
+                name: "a.rs".into(),
+                diff_line: 5,
+                status: '~',
+                old_name: None,
+            },
+            FileEntry {
+                name: "b.rs".into(),
+                diff_line: 20,
+                status: '+',
+                old_name: None,
+            },
+            FileEntry {
+                name: "c.rs".into(),
+                diff_line: 40,
+                status: '-',
+                old_name: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_scroll_diff_positive() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 10;
+        state.handle_command(&Command::ScrollDiff(5));
+        assert_eq!(state.diff_scroll, 15);
+    }
+
+    #[test]
+    fn test_scroll_diff_negative() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 10;
+        state.handle_command(&Command::ScrollDiff(-3));
+        assert_eq!(state.diff_scroll, 7);
+    }
+
+    #[test]
+    fn test_scroll_diff_no_underflow() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 2;
+        state.handle_command(&Command::ScrollDiff(-10));
+        assert_eq!(state.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_jump_to_diff_file() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.handle_command(&Command::JumpToDiffFile(1));
+        // b.rs starts at diff_line 20, offset from metadata adds some lines
+        assert!(state.diff_scroll >= 20);
+    }
+
+    #[test]
+    fn test_select_next_file_wraps() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.selected_file_index = 2;
+        state.handle_command(&Command::SelectNextFile);
+        assert_eq!(state.selected_file_index, 0);
+    }
+
+    #[test]
+    fn test_select_prev_file_from_zero_goes_to_zero_scroll() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.selected_file_index = 0;
+        state.diff_scroll = 50;
+        state.handle_command(&Command::SelectPrevFile);
+        assert_eq!(state.selected_file_index, 0);
+        assert_eq!(state.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_select_prev_file_from_nonzero() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.selected_file_index = 1;
+        state.handle_command(&Command::SelectPrevFile);
+        assert_eq!(state.selected_file_index, 0);
+    }
+
+    #[test]
+    fn test_move_down_in_diff_navigates_files() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.selected_file_index = 0;
+        state.handle_command(&Command::MoveDown);
+        assert_eq!(state.selected_file_index, 1);
+    }
+
+    #[test]
+    fn test_move_up_in_diff_wraps() {
+        let mut state = DiffState::new();
+        state.file_entries = fixture_file_entries();
+        state.selected_file_index = 0;
+        state.handle_command(&Command::MoveUp);
+        assert_eq!(state.selected_file_index, 2);
+    }
+
+    #[test]
+    fn test_page_up_scrolls_by_viewport() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 50;
+        state.handle_command(&Command::PageUp);
+        assert!(state.diff_scroll < 50);
+    }
+
+    #[test]
+    fn test_page_down_scrolls_forward() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 10;
+        state.handle_command(&Command::PageDown);
+        assert!(state.diff_scroll > 10);
+    }
+
+    #[test]
+    fn test_scroll_to_absolute() {
+        let mut state = DiffState::new();
+        state.handle_command(&Command::ScrollToAbsolute(42));
+        assert_eq!(state.diff_scroll, 42);
+    }
+
+    #[test]
+    fn test_jump_to_top_diff() {
+        let mut state = DiffState::new();
+        state.diff_scroll = 100;
+        state.handle_command(&Command::JumpToTop);
+        assert_eq!(state.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_jump_to_bottom_diff_sets_max() {
+        let mut state = DiffState::new();
+        state.handle_command(&Command::JumpToBottom);
+        assert_eq!(state.diff_scroll, usize::MAX);
+    }
+
+    #[test]
+    fn test_select_next_file_empty_does_nothing() {
+        let mut state = DiffState::new();
+        state.selected_file_index = 5;
+        state.handle_command(&Command::SelectNextFile);
+        assert_eq!(state.selected_file_index, 5);
+    }
+
+    #[test]
+    fn test_unknown_command_returns_empty_effects() {
+        let mut state = DiffState::new();
+        let effects = state.handle_command(&Command::CopyHashShort);
+        assert!(effects.is_empty());
+    }
+}
+
 fn cycle_forward(current: usize, len: usize) -> usize {
     if len == 0 {
         0

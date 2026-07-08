@@ -24,7 +24,7 @@ pub const MIN_TERM_HEIGHT: u16 = 8;
 pub const RESIZE_GRAB_RANGE: i32 = 2;
 
 /// Direction of a resize drag operation.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DragDirection {
     /// Dragging the vertical split between branch panel and main area
     Vertical,

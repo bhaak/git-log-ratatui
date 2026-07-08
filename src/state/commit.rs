@@ -55,3 +55,58 @@ impl CommitTableState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state() -> CommitTableState {
+        CommitTableState::new(false, 500)
+    }
+
+    #[test]
+    fn test_copy_hash_short_returns_effect() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::CopyHashShort);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(
+            effects[0],
+            Effect::CopySelectedHash { short: true }
+        ));
+    }
+
+    #[test]
+    fn test_copy_hash_full_returns_effect() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::CopyHashFull);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(
+            effects[0],
+            Effect::CopySelectedHash { short: false }
+        ));
+    }
+
+    #[test]
+    fn test_select_commit_index() {
+        let mut state = make_state();
+        state.selected_index = 0;
+        let effects = state.handle_command(&Command::SelectCommitIndex(5));
+        assert_eq!(state.selected_index, 5);
+        assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+    }
+
+    #[test]
+    fn test_show_commit_diff_returns_set_dirty() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::ShowCommitDiff);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::SetDirty));
+    }
+
+    #[test]
+    fn test_unknown_command_returns_empty_effects() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::MoveUp);
+        assert!(effects.is_empty());
+    }
+}
