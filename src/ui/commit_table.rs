@@ -649,6 +649,7 @@ mod tests {
         assert_eq!(c, theme.commit_secondary);
     }
 
+    #[test]
     fn test_build_hash_span_merge() {
         let theme = make_theme();
         let c = make_commit("abc1234567890abcdef", "", true, vec![]);
