@@ -188,3 +188,75 @@ impl Default for Theme {
         ThemeConfig::default().into_theme()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hex_valid_red() {
+        assert_eq!(parse_hex("#FF0000"), Color::Rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn test_parse_hex_valid_green() {
+        assert_eq!(parse_hex("#00FF00"), Color::Rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn test_parse_hex_valid_blue() {
+        assert_eq!(parse_hex("#0000FF"), Color::Rgb(0, 0, 255));
+    }
+
+    #[test]
+    fn test_parse_hex_valid_mixed() {
+        assert_eq!(parse_hex("#1A2B3C"), Color::Rgb(0x1A, 0x2B, 0x3C));
+    }
+
+    #[test]
+    fn test_parse_hex_valid_lowercase() {
+        assert_eq!(parse_hex("#abcdef"), Color::Rgb(0xAB, 0xCD, 0xEF));
+    }
+
+    #[test]
+    fn test_parse_hex_no_hash_prefix() {
+        assert_eq!(parse_hex("FF0000"), Color::Rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn test_parse_hex_invalid_len_too_short_fallback() {
+        assert_eq!(parse_hex("#FFF"), Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_parse_hex_invalid_len_too_long_fallback() {
+        assert_eq!(parse_hex("#FF0000FF"), Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_parse_hex_empty_string_fallback() {
+        assert_eq!(parse_hex(""), Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_parse_hex_invalid_chars_fallback() {
+        assert_eq!(parse_hex("#GGGGGG"), Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_parse_hex_partial_invalid_chars() {
+        assert_eq!(parse_hex("#FF00ZZ"), Color::Rgb(255, 0, 128));
+    }
+
+    #[test]
+    fn test_theme_config_into_theme_produces_graph_colors() {
+        let theme = ThemeConfig::default().into_theme();
+        assert_eq!(theme.graph_colors.len(), 8);
+    }
+
+    #[test]
+    fn test_theme_default_produces_valid_theme() {
+        let theme = Theme::default();
+        assert_eq!(theme.graph_colors.len(), 8);
+    }
+}
