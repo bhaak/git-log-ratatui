@@ -375,12 +375,9 @@ mod tests {
         let repo = git2::Repository::init(&dir).unwrap();
 
         let result = GitGraph::new(repo, create_graph_settings(BranchScope::All), None, None);
-        match result {
-            Ok(graph) => {
-                let commits = build_commits_from_graph(&graph);
-                assert!(commits.is_empty(), "empty repo should produce no commits");
-            }
-            Err(_) => {}
+        if let Ok(graph) = result {
+            let commits = build_commits_from_graph(&graph);
+            assert!(commits.is_empty(), "empty repo should produce no commits");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

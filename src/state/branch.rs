@@ -89,6 +89,24 @@ impl Default for BranchState {
     }
 }
 
+fn branch_cycle_forward(current: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else {
+        (current + 1) % len
+    }
+}
+
+fn branch_cycle_backward(current: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else if current > 0 {
+        current - 1
+    } else {
+        len - 1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,23 +301,5 @@ mod tests {
         let mut state = make_state();
         let effects = state.handle_command(&Command::CopyHashShort);
         assert!(effects.is_empty());
-    }
-}
-
-fn branch_cycle_forward(current: usize, len: usize) -> usize {
-    if len == 0 {
-        0
-    } else {
-        (current + 1) % len
-    }
-}
-
-fn branch_cycle_backward(current: usize, len: usize) -> usize {
-    if len == 0 {
-        0
-    } else if current > 0 {
-        current - 1
-    } else {
-        len - 1
     }
 }

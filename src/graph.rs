@@ -42,10 +42,10 @@ mod tests {
     fn test_create_graph_settings_all_scope() {
         let settings = create_graph_settings(BranchScope::All);
         assert!(settings.include_remote);
-        assert_eq!(settings.reverse_commit_order, false);
-        assert_eq!(settings.debug, false);
-        assert_eq!(settings.compact, false);
-        assert_eq!(settings.colored, false);
+        assert!(!settings.reverse_commit_order);
+        assert!(!settings.debug);
+        assert!(!settings.compact);
+        assert!(!settings.colored);
     }
 
     #[test]
