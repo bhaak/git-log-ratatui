@@ -14,6 +14,7 @@ pub struct UiState {
     pub status_message: Option<String>,
     pub poll_interval_ms: u8,
     pub dirty: bool,
+    pub needs_terminal_reset: bool,
 }
 
 impl UiState {
@@ -29,6 +30,7 @@ impl UiState {
             status_message: None,
             poll_interval_ms: poll_min_ms,
             dirty: true,
+            needs_terminal_reset: false,
         }
     }
 

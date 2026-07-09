@@ -31,6 +31,10 @@ impl App {
                 self.state.ui.dirty = true;
             }
             if self.state.ui.dirty {
+                if self.state.ui.needs_terminal_reset {
+                    let _ = terminal.clear();
+                    self.state.ui.needs_terminal_reset = false;
+                }
                 let draw_result = terminal.draw(|frame| render::render(self, frame));
                 if let Err(e) = draw_result {
                     return Err(format!("Render error: {}", e).into());

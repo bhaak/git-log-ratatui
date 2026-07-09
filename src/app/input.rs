@@ -383,8 +383,8 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
     }
 }
 
-fn suspend(_app: &mut App) {
-    let _ = execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen,);
+fn suspend(app: &mut App) {
+    let _ = execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
     disable_raw_mode().ok();
 
     #[cfg(unix)]
@@ -393,7 +393,10 @@ fn suspend(_app: &mut App) {
     }
 
     enable_raw_mode().ok();
-    let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture,);
+    let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture);
+
+    app.state.ui.needs_terminal_reset = true;
+    app.state.ui.dirty = true;
 }
 
 // --- Mouse handling (produces Commands, does not mutate state) ---
