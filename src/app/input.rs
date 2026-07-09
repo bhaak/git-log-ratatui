@@ -10,7 +10,7 @@ use crate::ui::scope_panel::ScopePanel;
 use crate::ui::search_panel::SearchPanel;
 use crate::view::Panel as PanelEnum;
 
-use crossterm::cursor::Hide;
+use crossterm::cursor::{Hide, Show};
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseEventKind,
@@ -387,6 +387,8 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
 fn suspend(app: &mut App) {
     let _ = execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
     disable_raw_mode().ok();
+
+    let _ = execute!(std::io::stdout(), Show);
 
     #[cfg(unix)]
     unsafe {
