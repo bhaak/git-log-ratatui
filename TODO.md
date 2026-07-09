@@ -1,6 +1,6 @@
 * General
-- [ ] after suspend, no cursor is shown
-- [ ] fg does not fully restore the UI
+- [X] after suspend, no cursor is shown
+- [X] fg does not fully restore the UI
 - [ ] PageUp/PageDown - 1 line
 
 * Commits Panel
