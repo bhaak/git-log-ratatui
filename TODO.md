@@ -1,18 +1,23 @@
-
+* General
 - [ ] after suspend, no cursor is shown
 - [ ] fg does not fully restore the UI
-- [X] +/-/~/→ in green, red, yellow, blue? for added, removed, changed, and moved
+- [ ] PageUp/PageDown - 1 line
 
-- [X] / is shown in tree view
-
+* Commits Panel
 - [ ] show commit in local timezone or with timezone info
-- [X] diffworker shows diffs faster
+
+* Diff Panel
 - [ ] word wrap in diff
 - [ ] handle text overflow in diff
+- [X] diffworker shows diffs faster
 - [ ] if I click anywhere in the diff panel, it jumps around
-- [ ] PageUp/PageDown - 1 line
-- [ ] Tags for Remote/Local Branches
+- [ ] word wrap or navigation with <-/->
 
-*** Features
+* Branch Panel
+- [X] / is shown in tree view
+- [X] +/-/~/→ in green, red, yellow, blue? for added, removed, changed, and moved
+- [X] Tags for Remote/Local Branches
+
+* Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
 - [ ] everything keyboard capable. ? opens extended help, with global and local keybindings
