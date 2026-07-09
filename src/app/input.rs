@@ -10,6 +10,7 @@ use crate::ui::scope_panel::ScopePanel;
 use crate::ui::search_panel::SearchPanel;
 use crate::view::Panel as PanelEnum;
 
+use crossterm::cursor::Hide;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseEventKind,
@@ -393,7 +394,12 @@ fn suspend(app: &mut App) {
     }
 
     enable_raw_mode().ok();
-    let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture);
+    let _ = execute!(
+        std::io::stdout(),
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        Hide
+    );
 
     app.state.ui.needs_terminal_reset = true;
     app.state.ui.dirty = true;
