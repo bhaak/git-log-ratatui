@@ -145,6 +145,11 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialize config-path tests that mutate env vars to prevent
+    /// interleaving in the parallel test runner.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_branch_width_matches_layout() {
@@ -206,6 +211,7 @@ mod tests {
 
     #[test]
     fn test_config_path_with_xdg_set() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", "/custom/xdg");
         let path = config_path();
         assert!(path
@@ -216,6 +222,7 @@ mod tests {
 
     #[test]
     fn test_config_path_falls_back_to_home() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("XDG_CONFIG_HOME");
         std::env::set_var("HOME", "/home/testuser");
         let path = config_path();
@@ -227,6 +234,7 @@ mod tests {
 
     #[test]
     fn test_config_path_no_vars_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("XDG_CONFIG_HOME");
         std::env::remove_var("HOME");
         let path = config_path();
@@ -235,6 +243,7 @@ mod tests {
 
     #[test]
     fn test_config_load_returns_default_when_no_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Set a non-existent path to force fallback
         std::env::set_var("XDG_CONFIG_HOME", "/nonexistent/path/that/does/not/exist");
         let config = Config::load();

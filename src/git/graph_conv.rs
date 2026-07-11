@@ -195,7 +195,12 @@ mod tests {
             cfg.set_str("user.name", "Test").unwrap();
             cfg.set_str("user.email", "test@test.com").unwrap();
 
-            TempRepo { dir, _repo: repo }
+            let tr = TempRepo { dir, _repo: repo };
+            // git-graph with start_point=None looks for refs/heads/master.
+            // Ensure a master branch exists so graph tests work regardless of
+            // the system default branch name.
+            tr.root_commit("refs/heads/master");
+            tr
         }
 
         fn repo(&self) -> &git2::Repository {

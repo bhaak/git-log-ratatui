@@ -19,12 +19,6 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     }
 
     let theme = Arc::clone(&app.state.theme);
-    let debug_label = if app.state.debug {
-        Some(app.state.metrics.format_summary())
-    } else {
-        None
-    };
-    let debug_label = debug_label.as_deref();
 
     let areas = ui::layout::compute_areas(
         full,
@@ -52,7 +46,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     let selected_branch_owned = app.state.branch.selected_branch.clone();
     let ctx = ui::render_ctx::RenderCtx {
         focus: app.state.ui.focus,
-        debug_label,
+        debug_label: None,
         theme: &theme,
         repo_path: &app.state.repo_path,
         selected_branch: selected_branch_owned.as_deref(),
@@ -82,8 +76,22 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         &ctx,
     );
 
-    // Commit table panel
-    ui::commit_table::CommitPanel::new().render(areas.table, frame, &mut app.state.commit, &ctx);
+    // Commit table panel — only this panel shows debug metrics in the title.
+    let debug_label = if app.state.debug {
+        Some(app.state.metrics.format_summary())
+    } else {
+        None
+    };
+    let commit_ctx = ui::render_ctx::RenderCtx {
+        debug_label: debug_label.as_deref(),
+        ..ctx
+    };
+    ui::commit_table::CommitPanel::new().render(
+        areas.table,
+        frame,
+        &mut app.state.commit,
+        &commit_ctx,
+    );
 
     // Diff panel
     ui::diff_panel::DiffPanel.render(areas.diff, frame, &mut app.state.diff, &ctx);
