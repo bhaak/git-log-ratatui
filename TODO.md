@@ -5,6 +5,7 @@
 - [ ] consistent UI
 - [ ]  n/p working in every panel, in as much that makes sense
 - [ ]  up/down in branches panel showing commits without typing enter
+- [ ] show uncommited changes like a commit?
 
 * Commits Panel
 - [ ] show commit in local timezone or with timezone info
