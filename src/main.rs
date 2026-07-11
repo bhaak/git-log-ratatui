@@ -59,17 +59,22 @@ fn main() -> Result<(), AppError> {
         eprintln!("{}", output);
     }));
 
+    let cli = Cli::parse();
+
     // Initialize tracing: logs to /tmp/git-log-ratatui.log.
-    // Set RUST_LOG to control verbosity (default: info).
+    // Set RUST_LOG to control verbosity. In debug mode the default is
+    // `debug`, otherwise `info`.
+    let default_level = if cli.debug { "debug" } else { "info" };
     let file = std::fs::File::create("/tmp/git-log-ratatui.log");
     if let Ok(f) = file {
         let _ = tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+            .with_env_filter(
+                EnvFilter::from_default_env().add_directive(default_level.parse().unwrap()),
+            )
             .with_writer(f)
             .try_init();
     }
 
-    let cli = Cli::parse();
     let path = cli.path.unwrap_or_else(|| ".".to_string());
 
     // Resolve to absolute path

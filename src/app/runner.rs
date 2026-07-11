@@ -40,7 +40,9 @@ impl App {
                     return Err(format!("Render error: {}", e).into());
                 }
                 if let Some(start) = frame_start {
-                    self.state.last_frame_time_ms = start.elapsed().as_millis() as u64;
+                    let frame_dur = start.elapsed();
+                    self.state.last_frame_time_ms = frame_dur.as_millis() as u64;
+                    self.state.metrics.record_frame(frame_dur);
                 }
                 self.state.ui.dirty = false;
             }

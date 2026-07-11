@@ -9,6 +9,7 @@ pub mod branches;
 pub mod cache;
 pub mod commands;
 mod input;
+pub mod metrics;
 mod render;
 mod runner;
 pub mod search;

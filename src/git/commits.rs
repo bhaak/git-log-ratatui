@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 use git_graph::graph::GitGraph;
 use rayon::prelude::*;
@@ -24,6 +25,7 @@ impl GitRepository {
         scope: BranchScope,
         limit: Option<usize>,
     ) -> Result<Vec<CommitRow>, AppError> {
+        let t0 = Instant::now();
         let _span = debug_span!("fetch_commits", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
 
@@ -35,9 +37,19 @@ impl GitRepository {
 
         let graph = GitGraph::new(repo, settings, start_point, limit)?;
 
+        let graph_done = t0.elapsed();
         let mut commits = build_commits_from_graph(&graph);
+        let enrich_t0 = Instant::now();
         self.enrich_commits(&mut commits, &decoration_map);
-        debug!("Fetched {} commits (git-graph)", commits.len());
+        let enrich_done = enrich_t0.elapsed();
+        let total = t0.elapsed();
+        debug!(
+            "commits(git-graph): {} in {}ms (graph={}ms enrich={}ms)",
+            commits.len(),
+            total.as_millis(),
+            graph_done.as_millis(),
+            enrich_done.as_millis()
+        );
         Ok(commits)
     }
 
@@ -50,6 +62,7 @@ impl GitRepository {
         scope: BranchScope,
         limit: Option<usize>,
     ) -> Result<Vec<CommitRow>, AppError> {
+        let t0 = Instant::now();
         let _span = debug_span!("fetch_commits_simplified", ?branch, ?scope, ?limit).entered();
         let decoration_map = self.build_decoration_map()?;
         let branch_tip_colors = self.build_branch_tip_colors(scope, &Theme::default())?;
@@ -103,8 +116,18 @@ impl GitRepository {
             });
         }
 
+        let walk_done = t0.elapsed();
+        let enrich_t0 = Instant::now();
         self.enrich_commits(&mut commits, &decoration_map);
-        debug!("Fetched {} commits (simplified)", commits.len());
+        let enrich_done = enrich_t0.elapsed();
+        let total = t0.elapsed();
+        debug!(
+            "commits(simplified): {} in {}ms (walk={}ms enrich={}ms)",
+            commits.len(),
+            total.as_millis(),
+            walk_done.as_millis(),
+            enrich_done.as_millis()
+        );
         Ok(commits)
     }
 
@@ -142,6 +165,7 @@ impl GitRepository {
         commits: &mut [CommitRow],
         decoration_map: &HashMap<git2::Oid, Vec<Decoration>>,
     ) {
+        let t0 = Instant::now();
         let repo_path = self.repo_path.clone();
 
         commits.par_iter_mut().for_each_init(
@@ -182,5 +206,10 @@ impl GitRepository {
             commit.deco_line = expanded_idx;
             expanded_idx += 1;
         }
+        debug!(
+            "enrich_commits: {} in {}ms",
+            commits.len(),
+            t0.elapsed().as_millis()
+        );
     }
 }

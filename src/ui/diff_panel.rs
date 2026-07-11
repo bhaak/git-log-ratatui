@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+use std::time::Instant;
 
 use crate::diff_pairing::{
     build_pair_maps, diff_paths, find_next_added_line, find_prev_removed_line,
@@ -103,6 +104,8 @@ fn build_all_lines<'a>(
     selected_file_index: usize,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
+    let t0 = Instant::now();
+    let total_lines = diff_lines.len();
     let mut lines = Vec::new();
 
     if diff_lines.is_empty() {
@@ -251,6 +254,12 @@ fn build_all_lines<'a>(
             )));
         }
     }
+
+    tracing::debug!(
+        "build_all_lines: {} lines in {}ms",
+        total_lines,
+        t0.elapsed().as_millis()
+    );
 
     lines
 }

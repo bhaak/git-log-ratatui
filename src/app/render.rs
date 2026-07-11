@@ -20,7 +20,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
 
     let theme = Arc::clone(&app.state.theme);
     let debug_label = if app.state.debug {
-        Some(format!("{}ms", app.state.last_frame_time_ms))
+        Some(app.state.metrics.format_summary())
     } else {
         None
     };

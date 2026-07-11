@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::diff_format::append_diff_line;
 use crate::domain::{CommitInfo, FileEntry};
 use crate::error::AppError;
@@ -8,6 +10,7 @@ use super::GitRepository;
 impl GitRepository {
     /// Fetch structured commit metadata using git2.
     pub fn fetch_commit_info(&self, hash: &str) -> Result<CommitInfo, AppError> {
+        let t0 = Instant::now();
         let oid = git2::Oid::from_str(hash)?;
         let commit = self.repo.find_commit(oid)?;
 
@@ -26,6 +29,8 @@ impl GitRepository {
             time_to_string_with_seconds(committer_time)
         };
 
+        tracing::debug!("commit_info({hash}): {}ms", t0.elapsed().as_millis());
+
         Ok(CommitInfo {
             hash: hash.to_string(),
             subject: commit.summary().unwrap_or("").to_string(),
@@ -41,6 +46,7 @@ impl GitRepository {
 
     /// Fetch diff for a commit using git2.
     pub fn fetch_diff(&self, hash: &str) -> Result<(Vec<String>, Vec<FileEntry>), AppError> {
+        let t0 = Instant::now();
         let oid = git2::Oid::from_str(hash)?;
         let commit = self.repo.find_commit(oid)?;
         let tree = commit.tree()?;
@@ -98,6 +104,13 @@ impl GitRepository {
             );
             true
         })?;
+
+        tracing::debug!(
+            "diff({hash}): {} lines, {} files in {}ms",
+            diff_lines.len(),
+            file_entries.len(),
+            t0.elapsed().as_millis()
+        );
 
         Ok((diff_lines, file_entries))
     }

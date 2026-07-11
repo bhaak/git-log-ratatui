@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::domain::{BranchData, BranchEntry, BranchScope};
 use crate::error::AppError;
 use crate::time_format::time_to_string;
@@ -8,6 +10,7 @@ impl GitRepository {
     /// Fetch all branch entries for the given scope, including branch type info
     /// and the full tag list. Tags are always returned regardless of scope.
     pub fn fetch_branches(&self, scope: BranchScope) -> Result<BranchData, AppError> {
+        let t0 = Instant::now();
         let default_branch = self.detect_default_branch();
         let mut entries = Vec::new();
 
@@ -53,6 +56,14 @@ impl GitRepository {
         }
 
         let (tags, tags_dates) = self.fetch_tags_with_dates()?;
+
+        let elapsed = t0.elapsed();
+        tracing::debug!(
+            "branches: {} entries, {} tags in {}ms",
+            entries.len(),
+            tags.len(),
+            elapsed.as_millis()
+        );
 
         Ok(BranchData {
             default_branch,

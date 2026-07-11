@@ -4,6 +4,8 @@ use crate::config::Config;
 use crate::state::*;
 use crate::theme::Theme;
 
+use super::metrics::DebugMetrics;
+
 /// Pure application state -- all data fields without workers or rendering logic.
 /// Lives inside App as `App.state`, accessible via `App::state()` / `App::state_mut()`.
 pub struct AppState {
@@ -16,6 +18,8 @@ pub struct AppState {
     pub diff: DiffState,
     pub search: SearchState,
     pub ui: UiState,
+    /// Performance metrics collected in debug mode.
+    pub metrics: DebugMetrics,
 }
 
 impl AppState {
@@ -44,6 +48,7 @@ impl AppState {
                 config.layout.diff_height_pct,
                 config.behavior.poll_min_ms,
             ),
+            metrics: DebugMetrics::new(),
         }
     }
 }

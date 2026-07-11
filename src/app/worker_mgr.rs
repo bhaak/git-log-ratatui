@@ -4,6 +4,8 @@
 //! following the project convention. This module handles sending commands
 //! to workers and polling their results via non-blocking mpsc channels.
 
+use std::time::Instant;
+
 use ratatui::widgets::TableState;
 use tracing::{debug, error};
 
@@ -25,6 +27,7 @@ impl App {
             self.state.branch.branch_scope
         );
         self.state.branch.branches_loaded = false;
+        self.state.metrics.branch_request_time = Some(Instant::now());
         self.branch_worker.send(BranchCommand::FetchBranches {
             scope: self.state.branch.branch_scope,
         });
@@ -48,6 +51,7 @@ impl App {
         self.state.branch.selected_branch = branch.clone();
         self.state.ui.status_message = Some("Loading commits...".to_string());
         self.state.commit.cache.invalidate();
+        self.state.metrics.commit_request_time = Some(Instant::now());
         if !self.commit_worker.send(CommitCommand::FetchCommits {
             branch,
             scope: self.state.branch.branch_scope,
@@ -95,6 +99,7 @@ impl App {
 
     pub(crate) fn request_diff(&mut self, hash: &str) {
         self.state.diff.diff_pending = true;
+        self.state.metrics.diff_request_time = Some(Instant::now());
         self.diff_worker.send(DiffCommand::FetchDiff {
             hash: hash.to_string(),
         });
@@ -103,10 +108,12 @@ impl App {
     /// Poll all three worker channels for results (non-blocking, parallel streams).
     /// Returns true if any worker produced data that requires a redraw.
     pub(crate) fn process_git_results(&mut self) -> bool {
+        let t0 = Instant::now();
         let mut changed = false;
         changed |= self.poll_branch_results();
         changed |= self.poll_commit_results();
         changed |= self.poll_diff_results();
+        self.state.metrics.last_poll = Some(t0.elapsed());
         changed
     }
 
@@ -114,8 +121,12 @@ impl App {
         let mut changed = false;
         while let Some(result) = self.branch_worker.try_recv() {
             changed = true;
+            if let Some(t) = self.state.metrics.branch_request_time.take() {
+                self.state.metrics.last_branch_fetch = Some(t.elapsed());
+            }
             match result {
                 BranchResult::Branches(branches) => {
+                    self.state.metrics.last_branch_count = branches.entries.len();
                     self.state.branch.all_branches = branches;
                     branches::rebuild_branch_tree(&mut self.state);
                     self.state.branch.branches_loaded = true;
@@ -133,8 +144,12 @@ impl App {
         let mut changed = false;
         while let Some(result) = self.commit_worker.try_recv() {
             changed = true;
+            if let Some(t) = self.state.metrics.commit_request_time.take() {
+                self.state.metrics.last_commit_fetch = Some(t.elapsed());
+            }
             match result {
                 CommitResult::Commits(commits) => {
+                    self.state.metrics.last_commit_count = commits.len() as u64;
                     let prev_len = self.state.commit.all_commits.len();
                     self.state.commit.all_commits = commits;
                     if self.state.commit.loading_more {
@@ -187,12 +202,17 @@ impl App {
         let mut changed = false;
         while let Some(result) = self.diff_worker.try_recv() {
             changed = true;
+            if let Some(t) = self.state.metrics.diff_request_time.take() {
+                self.state.metrics.last_diff = Some(t.elapsed());
+            }
             match result {
                 DiffResult::Diff {
                     commit_info,
                     diff_lines,
                     file_entries,
                 } => {
+                    self.state.metrics.last_diff_lines = diff_lines.len();
+                    self.state.metrics.last_diff_files = file_entries.len();
                     self.state.diff.commit_info = Some(*commit_info);
                     self.state.diff.diff_lines = diff_lines;
                     self.state.diff.file_entries = file_entries;
