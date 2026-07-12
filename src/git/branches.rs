@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::domain::{BranchData, BranchEntry, BranchScope};
+use crate::domain::{BranchData, BranchEntry, BranchScope, StashEntry};
 use crate::error::AppError;
 use crate::time_format::time_to_string;
 
@@ -60,12 +60,14 @@ impl GitRepository {
         }
 
         let (tags, tags_dates) = self.fetch_tags_with_dates()?;
+        let stashes = self.fetch_stashes();
 
         let elapsed = t0.elapsed();
         tracing::debug!(
-            "branches: {} entries, {} tags in {}ms",
+            "branches: {} entries, {} tags, {} stashes in {}ms",
             entries.len(),
             tags.len(),
+            stashes.len(),
             elapsed.as_millis()
         );
 
@@ -74,6 +76,7 @@ impl GitRepository {
             entries,
             tags,
             tags_dates,
+            stashes,
         })
     }
 
@@ -97,6 +100,33 @@ impl GitRepository {
             dates.push(date_data);
         }
         Ok((tags, dates))
+    }
+
+    /// Fetch stash entries: index, message, OID, and timestamps.
+    fn fetch_stashes(&self) -> Vec<StashEntry> {
+        use std::path::Path;
+        let mut stashes = Vec::new();
+        let repo_path = self.repo_path.clone();
+        if let Ok(mut repo) = git2::Repository::open(Path::new(&repo_path)) {
+            let mut raw: Vec<(usize, String, git2::Oid)> = Vec::new();
+            let _ = repo.stash_foreach(|index, message, &oid| {
+                raw.push((index, message.to_string(), oid));
+                true
+            });
+            for (index, message, oid) in raw {
+                let commit = repo.find_commit(oid).ok();
+                let epoch_days = commit.as_ref().map(|c| c.time().seconds() / 86400);
+                let last_commit_date = commit.as_ref().map(|c| time_to_string(c.time()));
+                stashes.push(StashEntry {
+                    index,
+                    message,
+                    oid: oid.to_string(),
+                    last_commit_date,
+                    epoch_days,
+                });
+            }
+        }
+        stashes
     }
 
     #[allow(clippy::type_complexity)]

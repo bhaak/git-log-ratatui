@@ -30,6 +30,7 @@ impl BranchState {
                 entries: Vec::new(),
                 tags: Vec::new(),
                 tags_dates: Vec::new(),
+                stashes: Vec::new(),
             },
             branch_tree: Vec::new(),
             expanded_nodes: BTreeMap::new(),

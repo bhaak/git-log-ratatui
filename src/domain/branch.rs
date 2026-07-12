@@ -43,6 +43,16 @@ pub struct BranchEntry {
     pub epoch_days: Option<i64>,
 }
 
+/// A single stash entry with its metadata.
+#[derive(Debug, Clone)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
+    pub oid: String,
+    pub last_commit_date: Option<String>,
+    pub epoch_days: Option<i64>,
+}
+
 /// Complete branch data returned from the git repository.
 #[derive(Debug, Clone)]
 pub struct BranchData {
@@ -53,6 +63,8 @@ pub struct BranchData {
     /// Last commit date for each tag (same index as `tags`).
     /// Each entry is `(date_string, epoch_days)`.
     pub tags_dates: Vec<Option<(String, i64)>>,
+    /// Stash entries from the repository (always fetched).
+    pub stashes: Vec<StashEntry>,
 }
 
 #[cfg(test)]

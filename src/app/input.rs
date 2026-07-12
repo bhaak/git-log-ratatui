@@ -20,6 +20,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::layout::Rect;
+use ratatui::widgets::TableState;
 
 use super::search;
 use super::App;
@@ -244,6 +245,26 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             ]
         }
         Command::SelectBranch(name) => {
+            if name.starts_with("stash@{") {
+                let stash_entry = state
+                    .branch
+                    .all_branches
+                    .stashes
+                    .iter()
+                    .find(|s| format!("stash@{{{}}}", s.index) == *name);
+                if let Some(stash) = stash_entry {
+                    state.branch.selected_branch = Some(name.clone());
+                    state.commit.all_commits.clear();
+                    state.commit.filtered_commits = None;
+                    state.commit.visible_to_commit.clear();
+                    state.commit.selected_index = 0;
+                    state.commit.table_state = TableState::default();
+                    state.commit.commits_loaded = true;
+                    state.commit.all_commits_loaded = true;
+                    return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
+                }
+                return vec![Effect::SetDirty];
+            }
             if state.branch.selected_branch.as_deref() == Some(name.as_str()) {
                 state.ui.focus = Panel::Commits;
                 return vec![Effect::SetDirty];
@@ -263,6 +284,26 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         } => {
             state.branch.branch_index = *index;
             if *is_branch {
+                if full_path.starts_with("stash@{") {
+                    let stash_entry = state
+                        .branch
+                        .all_branches
+                        .stashes
+                        .iter()
+                        .find(|s| format!("stash@{{{}}}", s.index) == *full_path);
+                    if let Some(stash) = stash_entry {
+                        state.branch.selected_branch = Some(full_path.clone());
+                        state.commit.all_commits.clear();
+                        state.commit.filtered_commits = None;
+                        state.commit.visible_to_commit.clear();
+                        state.commit.selected_index = 0;
+                        state.commit.table_state = TableState::default();
+                        state.commit.commits_loaded = true;
+                        state.commit.all_commits_loaded = true;
+                        return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
+                    }
+                    return vec![Effect::SetDirty];
+                }
                 if state.branch.selected_branch.as_deref() == Some(full_path.as_str()) {
                     return vec![Effect::SetDirty];
                 }
@@ -375,6 +416,7 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
                 }
             }
             Effect::RebuildBranchTree => super::branches::rebuild_branch_tree(&mut app.state),
+            Effect::RequestDiff(hash) => app.request_diff(&hash),
             Effect::ApplySearchFilter => {
                 super::search::apply_search_filter(&mut app.state);
                 super::search::clamp_selection(&mut app.state);

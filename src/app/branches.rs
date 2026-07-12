@@ -9,6 +9,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     let local_section_key = "__local__";
     let remote_section_key = "__remote__";
     let tags_section_key = "__tags__";
+    let stashes_section_key = "__stashes__";
 
     let local_expanded = state
         .branch
@@ -26,6 +27,12 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         .branch
         .expanded_nodes
         .get(tags_section_key)
+        .copied()
+        .unwrap_or(true);
+    let stashes_expanded = state
+        .branch
+        .expanded_nodes
+        .get(stashes_section_key)
         .copied()
         .unwrap_or(true);
 
@@ -64,6 +71,19 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         full_path: String::new(),
         tree_prefix: String::new(),
         key: tags_section_key.to_string(),
+        last_commit_date: None,
+        epoch_days: None,
+    };
+
+    let stashes_item = TreeItem {
+        name: "Stashes".to_string(),
+        depth: 0,
+        expandable: true,
+        expanded: stashes_expanded,
+        is_branch: false,
+        full_path: String::new(),
+        tree_prefix: String::new(),
+        key: stashes_section_key.to_string(),
         last_commit_date: None,
         epoch_days: None,
     };
@@ -201,6 +221,41 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
                     .and_then(|d| *d);
             }
             items.extend(tag_items);
+        }
+    }
+
+    // Stashes section (always shown when there are stashes, regardless of scope)
+    if !state.branch.all_branches.stashes.is_empty() {
+        items.push(stashes_item);
+
+        if stashes_expanded {
+            let stash_count = state.branch.all_branches.stashes.len();
+            for (i, stash) in state.branch.all_branches.stashes.iter().enumerate() {
+                let is_last = i == stash_count - 1;
+                let connector = if is_last {
+                    "\u{2514}\u{2500}"
+                } else {
+                    "\u{251C}\u{2500}"
+                };
+                let stash_name = if stash.message.is_empty() {
+                    format!("stash@{{{}}}", stash.index)
+                } else {
+                    format!("stash@{{{}}}: {}", stash.index, stash.message)
+                };
+                let display_name = format!("{}  {}", connector, stash_name);
+                items.push(TreeItem {
+                    name: display_name,
+                    depth: 1,
+                    expandable: false,
+                    expanded: false,
+                    is_branch: true,
+                    full_path: format!("stash@{{{}}}", stash.index),
+                    tree_prefix: format!("{} ", connector),
+                    key: stash.oid.clone(),
+                    last_commit_date: stash.last_commit_date.clone(),
+                    epoch_days: stash.epoch_days,
+                });
+            }
         }
     }
 

@@ -93,6 +93,8 @@ pub(crate) enum Effect {
     CopySelectedHash { short: bool },
     /// Rebuild the branch tree from current branch data.
     RebuildBranchTree,
+    /// Request diff for a specific commit/stash OID.
+    RequestDiff(String),
     /// Apply the current search query as a filter on commit data.
     ApplySearchFilter,
     /// Mark the UI as dirty (needs re-render).
