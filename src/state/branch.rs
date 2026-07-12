@@ -128,6 +128,7 @@ mod tests {
                 full_path: "a".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -139,6 +140,7 @@ mod tests {
                 full_path: "b".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "b".into(),
             },
         ];
@@ -160,6 +162,7 @@ mod tests {
                 full_path: "a".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -171,6 +174,7 @@ mod tests {
                 full_path: "b".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "b".into(),
             },
         ];
@@ -200,6 +204,7 @@ mod tests {
         let mut state = make_state();
         state.branch_tree = vec![TreeItem {
             last_commit_date: None,
+            epoch_days: None,
             name: "a".into(),
             depth: 0,
             expandable: false,
@@ -235,6 +240,7 @@ mod tests {
                 full_path: "a".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "a".into(),
             },
             TreeItem {
@@ -246,6 +252,7 @@ mod tests {
                 full_path: "b".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "b".into(),
             },
             TreeItem {
@@ -257,6 +264,7 @@ mod tests {
                 full_path: "c".into(),
                 tree_prefix: "".into(),
                 last_commit_date: None,
+                epoch_days: None,
                 key: "c".into(),
             },
         ];
@@ -283,6 +291,7 @@ mod tests {
         let mut state = make_state();
         state.branch_tree = vec![TreeItem {
             last_commit_date: None,
+            epoch_days: None,
             name: "a".into(),
             depth: 0,
             expandable: false,

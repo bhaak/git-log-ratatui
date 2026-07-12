@@ -13,4 +13,7 @@ pub struct TreeItem {
     pub key: String,
     /// Last commit date as "YYYY-MM-DD HH:MM" for staleness coloring, None if unavailable.
     pub last_commit_date: Option<String>,
+    /// Pre-computed epoch days for the last commit date, used for staleness coloring
+    /// in the render path to avoid repeated string parsing.
+    pub epoch_days: Option<i64>,
 }

@@ -14,7 +14,6 @@ use crate::domain::DecorationKind;
 use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
-use crate::time_format::ymd_to_days;
 use crate::ui::layout::{self, TABLE_OVERHEAD};
 use crate::ui::panel::Panel as PanelTrait;
 use crate::ui::render_ctx::RenderCtx;
@@ -145,13 +144,15 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     *state.offset_mut() = offset;
 
     let end = (offset + viewport_height).min(total);
-    // Compute date range for staleness stretching: today = brightest, oldest = darkest
-    let dates: Vec<i64> = ctx
+    // Compute date range for staleness stretching: today = brightest, oldest = darkest.
+    // Uses pre-computed epoch_days from CommitRow to avoid string parsing in the render path.
+    let epoches: Vec<i64> = ctx
         .commits
         .iter()
-        .filter_map(|c| date_to_days(&c.date))
+        .map(|c| c.epoch_days)
+        .filter(|&d| d > 0)
         .collect();
-    let min_days = dates.iter().min().copied().unwrap_or(0);
+    let min_days = epoches.iter().min().copied().unwrap_or(0);
     let max_days = current_epoch_days();
 
     let window = if offset < end {
@@ -233,7 +234,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
             ));
             let date_span = Line::from(Span::styled(
                 &commit.date,
-                Style::default().fg(age_color(&commit.date, ctx.theme, min_days, max_days)),
+                Style::default().fg(age_color(commit.epoch_days, min_days, max_days)),
             ));
 
             Row::new(vec![
@@ -400,43 +401,23 @@ fn hash_color(hash: &str) -> Color {
     )
 }
 
-/// Derive a greyscale color from a commit date string, stretched between
+/// Derive a greyscale color from pre-computed epoch days, stretched between
 /// the newest and oldest visible commits. Newest = bright white (255),
 /// oldest = dark grey (75). When all commits have the same date, returns white.
-pub(crate) fn age_color(date_str: &str, theme: &Theme, min_days: i64, max_days: i64) -> Color {
-    if date_str.len() < 10 {
-        return theme.commit_secondary;
-    }
-    let year: i64 = date_str[0..4].parse().unwrap_or(0);
-    let month: u32 = date_str[5..7].parse().unwrap_or(1);
-    let day: u32 = date_str[8..10].parse().unwrap_or(1);
-
-    let commit_days = match ymd_to_days(year, month, day) {
-        Some(d) => d,
-        None => return theme.commit_secondary,
-    };
-
+pub(crate) fn age_color(epoch_days: i64, min_days: i64, max_days: i64) -> Color {
     if max_days <= min_days {
         return Color::Rgb(255, 255, 255);
     }
     let range = (max_days - min_days) as f64;
-    let t = (commit_days - min_days) as f64 / range;
+    if range <= 0.0 {
+        return Color::Rgb(255, 255, 255);
+    }
+    let t = (epoch_days - min_days) as f64 / range;
     let staleness = (75.0 + t * 180.0) as u8;
     Color::Rgb(staleness, staleness, staleness)
 }
 
-/// Parse "YYYY-MM-DD" prefix from a date string back to epoch days.
-fn date_to_days(date_str: &str) -> Option<i64> {
-    if date_str.len() < 10 {
-        return None;
-    }
-    let year: i64 = date_str[0..4].parse().ok()?;
-    let month: u32 = date_str[5..7].parse().ok()?;
-    let day: u32 = date_str[8..10].parse().ok()?;
-    ymd_to_days(year, month, day)
-}
-
-fn current_epoch_days() -> i64 {
+pub(crate) fn current_epoch_days() -> i64 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -471,6 +452,7 @@ mod tests {
     use super::*;
     use crate::domain::{Decoration, DecorationKind};
     use crate::theme::Theme;
+    use crate::time_format::ymd_to_days;
 
     fn make_theme() -> Theme {
         Theme::default()
@@ -503,6 +485,7 @@ mod tests {
             merge,
             decorations,
             deco_line: 0,
+            epoch_days: 0,
         }
     }
 
@@ -586,10 +569,9 @@ mod tests {
 
     #[test]
     fn test_age_color_newest_is_bright() {
-        let theme = make_theme();
         let min_d = ymd_to_days(2024, 1, 1).unwrap();
         let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let c = age_color("2024-12-31 00:00", &theme, min_d, max_d);
+        let c = age_color(max_d, min_d, max_d);
         match c {
             Color::Rgb(r, g, b) => {
                 assert_eq!(r, 255, "newest should be 255");
@@ -602,10 +584,9 @@ mod tests {
 
     #[test]
     fn test_age_color_oldest_is_75() {
-        let theme = make_theme();
         let min_d = ymd_to_days(2024, 1, 1).unwrap();
         let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let c = age_color("2024-01-01 00:00", &theme, min_d, max_d);
+        let c = age_color(min_d, min_d, max_d);
         match c {
             Color::Rgb(r, g, b) => {
                 assert_eq!(r, 75, "oldest should be 75");
@@ -618,11 +599,11 @@ mod tests {
 
     #[test]
     fn test_age_color_mid_range() {
-        let theme = make_theme();
         let min_d = ymd_to_days(2024, 1, 1).unwrap();
         let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let c1 = age_color("2024-07-01 00:00", &theme, min_d, max_d);
-        let c2 = age_color("2024-01-01 00:00", &theme, min_d, max_d);
+        let mid_d = ymd_to_days(2024, 7, 1).unwrap();
+        let c1 = age_color(mid_d, min_d, max_d);
+        let c2 = age_color(min_d, min_d, max_d);
         match (c1, c2) {
             (Color::Rgb(r1, _, _), Color::Rgb(r2, _, _)) => {
                 assert!(
@@ -636,17 +617,15 @@ mod tests {
 
     #[test]
     fn test_age_color_single_date_returns_white() {
-        let theme = make_theme();
         let d = ymd_to_days(2024, 7, 1).unwrap();
-        let c = age_color("2024-07-01 00:00", &theme, d, d);
+        let c = age_color(d, d, d);
         assert_eq!(c, Color::Rgb(255, 255, 255));
     }
 
     #[test]
-    fn test_age_color_short_string_falls_back() {
-        let theme = make_theme();
-        let c = age_color("abc", &theme, 0, 0);
-        assert_eq!(c, theme.commit_secondary);
+    fn test_age_color_zero_range_returns_white() {
+        let c = age_color(1000, 1000, 1000);
+        assert_eq!(c, Color::Rgb(255, 255, 255));
     }
 
     #[test]

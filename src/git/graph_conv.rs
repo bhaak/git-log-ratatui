@@ -158,6 +158,7 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
             merge: info.is_merge,
             decorations: Vec::new(),
             deco_line: 0,
+            epoch_days: 0,
         });
     }
 

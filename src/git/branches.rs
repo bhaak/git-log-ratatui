@@ -15,13 +15,17 @@ impl GitRepository {
         let mut entries = Vec::new();
 
         let collect = |entries: &mut Vec<BranchEntry>,
-                       names: Vec<(String, Option<String>)>,
+                       names: Vec<(String, Option<(String, i64)>)>,
                        is_remote: bool| {
-            for (name, date) in names {
+            for (name, date_data) in names {
+                let (date_str, epoch_days) = date_data
+                    .map(|(s, d)| (Some(s), Some(d)))
+                    .unwrap_or((None, None));
                 entries.push(BranchEntry {
                     name,
                     is_remote,
-                    last_commit_date: date,
+                    last_commit_date: date_str,
+                    epoch_days,
                 });
             }
         };
@@ -73,27 +77,33 @@ impl GitRepository {
         })
     }
 
-    /// Fetch tag names with their last commit dates.
-    fn fetch_tags_with_dates(&self) -> Result<(Vec<String>, Vec<Option<String>>), AppError> {
+    /// Fetch tag names with their last commit dates and epoch days.
+    #[allow(clippy::type_complexity)]
+    fn fetch_tags_with_dates(&self) -> Result<(Vec<String>, Vec<Option<(String, i64)>>), AppError> {
         let tag_names = self.repo.tag_names(None)?;
         let mut tags = Vec::new();
         let mut dates = Vec::new();
         for name in tag_names.iter().flatten() {
             tags.push(name.to_string());
-            let date = self
+            let date_data = self
                 .repo
                 .find_reference(&format!("refs/tags/{name}"))
                 .ok()
-                .and_then(|r| r.peel_to_commit().ok().map(|c| time_to_string(c.time())));
-            dates.push(date);
+                .and_then(|r| {
+                    r.peel_to_commit()
+                        .ok()
+                        .map(|c| (time_to_string(c.time()), c.time().seconds() / 86400))
+                });
+            dates.push(date_data);
         }
         Ok((tags, dates))
     }
 
+    #[allow(clippy::type_complexity)]
     fn list_branches(
         &self,
         filter: Option<git2::BranchType>,
-    ) -> Result<Vec<(String, Option<String>)>, AppError> {
+    ) -> Result<Vec<(String, Option<(String, i64)>)>, AppError> {
         let mut branches = Vec::new();
         let iter = self.repo.branches(filter)?;
 
@@ -102,12 +112,12 @@ impl GitRepository {
             if let Ok(Some(name)) = branch.name() {
                 let name = name.to_string();
                 if !name.contains("HEAD") {
-                    let date = branch
+                    let date_data = branch
                         .get()
                         .peel_to_commit()
                         .ok()
-                        .map(|c| time_to_string(c.time()));
-                    branches.push((name, date));
+                        .map(|c| (time_to_string(c.time()), c.time().seconds() / 86400));
+                    branches.push((name, date_data));
                 }
             }
         }

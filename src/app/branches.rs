@@ -39,6 +39,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         tree_prefix: String::new(),
         key: local_section_key.to_string(),
         last_commit_date: None,
+        epoch_days: None,
     };
 
     let remote_item = TreeItem {
@@ -51,6 +52,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         tree_prefix: String::new(),
         key: remote_section_key.to_string(),
         last_commit_date: None,
+        epoch_days: None,
     };
 
     let tags_item = TreeItem {
@@ -63,6 +65,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         tree_prefix: String::new(),
         key: tags_section_key.to_string(),
         last_commit_date: None,
+        epoch_days: None,
     };
 
     // Build name → date lookup maps
@@ -74,13 +77,31 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         .map(|e| (e.name.clone(), e.last_commit_date.clone()))
         .collect();
 
+    // Build name → epoch_days lookup map for staleness coloring
+    let epoch_map: HashMap<String, Option<i64>> = state
+        .branch
+        .all_branches
+        .entries
+        .iter()
+        .map(|e| (e.name.clone(), e.epoch_days))
+        .collect();
+
     let tag_date_map: HashMap<&str, Option<String>> = state
         .branch
         .all_branches
         .tags
         .iter()
         .zip(state.branch.all_branches.tags_dates.iter())
-        .map(|(t, d)| (t.as_str(), d.clone()))
+        .map(|(t, d)| (t.as_str(), d.as_ref().map(|(s, _)| s.clone())))
+        .collect();
+
+    let tag_epoch_map: HashMap<&str, Option<i64>> = state
+        .branch
+        .all_branches
+        .tags
+        .iter()
+        .zip(state.branch.all_branches.tags_dates.iter())
+        .map(|(t, d)| (t.as_str(), d.as_ref().map(|(_, e)| *e)))
         .collect();
 
     // Separate local and remote branch names
@@ -124,6 +145,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
             let mut branch_items = tree::flatten_tree(&local_root, 0, &state.branch.expanded_nodes);
             for item in &mut branch_items {
                 item.last_commit_date = date_map.get(&item.full_path).and_then(|d| d.clone());
+                item.epoch_days = epoch_map.get(&item.full_path).and_then(|d| *d);
             }
             items.extend(branch_items);
         }
@@ -142,6 +164,7 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
                 tree::flatten_tree(&remote_root, 0, &state.branch.expanded_nodes);
             for item in &mut branch_items {
                 item.last_commit_date = date_map.get(&item.full_path).and_then(|d| d.clone());
+                item.epoch_days = epoch_map.get(&item.full_path).and_then(|d| *d);
             }
             items.extend(branch_items);
         }
@@ -169,6 +192,13 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
                             .unwrap_or(&item.full_path),
                     )
                     .and_then(|d| d.clone());
+                item.epoch_days = tag_epoch_map
+                    .get(
+                        item.full_path
+                            .strip_prefix("refs/tags/")
+                            .unwrap_or(&item.full_path),
+                    )
+                    .and_then(|d| *d);
             }
             items.extend(tag_items);
         }

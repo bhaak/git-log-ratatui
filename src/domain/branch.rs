@@ -39,6 +39,8 @@ pub struct BranchEntry {
     pub is_remote: bool,
     /// Last commit date as "YYYY-MM-DD HH:MM", None if unresolvable.
     pub last_commit_date: Option<String>,
+    /// Pre-computed Unix epoch days (seconds/86400), None if unresolvable.
+    pub epoch_days: Option<i64>,
 }
 
 /// Complete branch data returned from the git repository.
@@ -49,7 +51,8 @@ pub struct BranchData {
     /// Tag names from the repository (always fetched, regardless of scope).
     pub tags: Vec<String>,
     /// Last commit date for each tag (same index as `tags`).
-    pub tags_dates: Vec<Option<String>>,
+    /// Each entry is `(date_string, epoch_days)`.
+    pub tags_dates: Vec<Option<(String, i64)>>,
 }
 
 #[cfg(test)]

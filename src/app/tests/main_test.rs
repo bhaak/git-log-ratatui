@@ -35,6 +35,7 @@ fn test_search_filter_empty_query() {
         graph_only: false,
         decorations: vec![],
         deco_line: 0,
+        epoch_days: 0,
     }];
     app.state.search.search_query.clear();
     search::apply_search_filter(&mut app.state);
@@ -64,6 +65,7 @@ fn test_search_filter_by_subject() {
             graph_only: false,
             decorations: vec![],
             deco_line: 0,
+            epoch_days: 0,
         },
         Commit {
             hash: "def".into(),
@@ -76,6 +78,7 @@ fn test_search_filter_by_subject() {
             graph_only: false,
             decorations: vec![],
             deco_line: 0,
+            epoch_days: 0,
         },
     ];
     app.state.search.search_query = "bug".into();
@@ -104,6 +107,7 @@ fn test_search_filter_case_insensitive() {
         graph_only: false,
         decorations: vec![],
         deco_line: 0,
+        epoch_days: 0,
     }];
     app.state.search.search_query = "bug".into();
     search::apply_search_filter(&mut app.state);
@@ -128,6 +132,7 @@ fn test_visible_mapping_skips_graph_only() {
             graph_only: false,
             decorations: vec![],
             deco_line: 0,
+            epoch_days: 0,
         },
         Commit {
             hash: "".into(),
@@ -140,6 +145,7 @@ fn test_visible_mapping_skips_graph_only() {
             graph_only: true,
             decorations: vec![],
             deco_line: 0,
+            epoch_days: 0,
         },
         Commit {
             hash: "def".into(),
@@ -152,6 +158,7 @@ fn test_visible_mapping_skips_graph_only() {
             graph_only: false,
             decorations: vec![],
             deco_line: 0,
+            epoch_days: 0,
         },
     ]);
     search::build_visible_mapping(&mut app.state);
@@ -181,6 +188,7 @@ fn test_clamp_selection_in_range() {
         graph_only: false,
         decorations: vec![],
         deco_line: 0,
+        epoch_days: 0,
     }]);
     search::build_visible_mapping(&mut app.state);
     app.state.commit.selected_index = 0;
@@ -196,6 +204,7 @@ fn test_branch_click_with_scroll_offset() {
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
             last_commit_date: None,
+            epoch_days: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,
@@ -231,6 +240,7 @@ fn test_branch_click_without_scroll() {
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
             last_commit_date: None,
+            epoch_days: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,
@@ -273,6 +283,7 @@ fn test_scrollbar_click_does_not_change_selection() {
         .map(|i| TreeItem {
             name: format!("branch_{}", i),
             last_commit_date: None,
+            epoch_days: None,
             key: format!("branch_{}", i),
             depth: 0,
             is_branch: true,

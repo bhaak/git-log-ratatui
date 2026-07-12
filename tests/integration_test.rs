@@ -22,6 +22,7 @@ fn commit(hash: &str, subject: &str, graph_only: bool) -> Commit {
         graph_only,
         decorations: vec![],
         deco_line: 0,
+        epoch_days: 0,
     }
 }
 

@@ -113,6 +113,7 @@ impl GitRepository {
                 merge: false,
                 decorations: Vec::new(),
                 deco_line: 0,
+                epoch_days: 0,
             });
         }
 
@@ -189,6 +190,7 @@ impl GitRepository {
 
                 commit.author = git_commit.author().name().unwrap_or("").to_string();
                 commit.date = time_to_string(git_commit.time());
+                commit.epoch_days = git_commit.time().seconds() / 86400;
                 commit.subject = git_commit.summary().unwrap_or("").to_string();
                 commit.merge = git_commit.parent_count() > 1;
 

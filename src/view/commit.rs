@@ -21,6 +21,9 @@ pub struct CommitRow {
     pub decorations: Vec<Decoration>,
     /// Index of the first row in the expanded table for this decoration block.
     pub deco_line: usize,
+    /// Unix epoch days (seconds/86400) pre-computed during enrichment,
+    /// used for staleness coloring in the render path.
+    pub epoch_days: i64,
 }
 
 impl CommitRow {
@@ -44,6 +47,7 @@ impl CommitRow {
             graph_colors,
             graph_only,
             deco_line,
+            epoch_days: 0,
         }
     }
 }

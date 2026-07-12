@@ -34,6 +34,7 @@ fn is_leap(year: i64) -> bool {
 
 /// Convert year/month/day back to days since Unix epoch.
 /// Inverse of days_to_ymd. Returns None for invalid dates.
+#[allow(dead_code)]
 pub(crate) fn ymd_to_days(year: i64, month: u32, day: u32) -> Option<i64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;

@@ -127,6 +127,7 @@ fn flatten_tree_inner(
             tree_prefix: format!("{}{}", prefix, connector),
             key: node_key.clone(),
             last_commit_date: None,
+            epoch_days: None,
         });
 
         if is_expanded {
