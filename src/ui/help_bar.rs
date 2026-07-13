@@ -73,18 +73,21 @@ pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, t
 
     let panel_section = panel_bindings(focus);
 
-    // Calculate modal geometry based on content: fewer sections → shorter modal
-    let section_count = 3; // Global + Navigation + focused panel
-    let modal_h = (3 + section_count * 6) // rough lines per section
-        .min(full_area.height.saturating_sub(2))
-        .max(8);
+    // Calculate total line count to size the modal exactly.
+    // Sections: 3 titles + all items + 3 blank separators + 1 hint.
+    // +4 overhead: 2 block borders + 2 vertical margins.
+    let global_items = 7usize;
+    let nav_items = 5usize;
+    let panel_items = panel_section.1.len();
+    let content_lines = 3 + global_items + 3 + nav_items + panel_items + 1;
+    let modal_h = (content_lines + 4).min(full_area.height.saturating_sub(2) as usize);
     let modal_w = (full_area.width * 7 / 10)
-        .max(48)
+        .max(50)
         .min(full_area.width.saturating_sub(2));
     let modal_x = full_area.x + (full_area.width.saturating_sub(modal_w)) / 2;
-    let modal_y = full_area.y + (full_area.height.saturating_sub(modal_h)) / 2;
+    let modal_y = full_area.y + (full_area.height.saturating_sub(modal_h as u16)) / 2;
 
-    let modal_area = Rect::new(modal_x, modal_y, modal_w, modal_h);
+    let modal_area = Rect::new(modal_x, modal_y, modal_w, modal_h as u16);
 
     frame.render_widget(Clear, modal_area);
 
