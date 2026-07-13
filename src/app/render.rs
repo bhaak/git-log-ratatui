@@ -132,9 +132,9 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         &theme,
     );
 
-    // Help modal overlay — renders on top of everything
+    // Help modal overlay — renders on top of everything, context-sensitive to focus
     if app.state.ui.help_visible {
-        ui::help_bar::render_help_modal(frame, full, &theme);
+        ui::help_bar::render_help_modal(frame, full, app.state.ui.focus, &theme);
     }
 
     let current_hash = if search::visible_count(&app.state) > 0 {
