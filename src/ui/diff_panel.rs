@@ -48,12 +48,14 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
         Style::default().fg(ctx.theme.unfocused_border)
     };
 
+    let content_width = area.width.saturating_sub(PANEL_BORDER_H);
     let all_lines = build_all_lines(
         ctx.commit_info,
         ctx.diff_lines,
         ctx.file_entries,
         ctx.selected_file_index,
         ctx.theme,
+        content_width,
     );
     let total = all_lines.len();
     let visible = area.height.saturating_sub(PANEL_BORDER_H) as usize;
@@ -98,12 +100,14 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
 }
 
 /// Build the complete display: metadata + file list header + file entries + a gap + diff content.
+/// `content_width` is the available text area width (panel width minus borders).
 fn build_all_lines<'a>(
     commit_info: Option<&'a CommitInfo>,
     diff_lines: &'a [String],
     file_entries: &'a [FileEntry],
     selected_file_index: usize,
     theme: &Theme,
+    content_width: u16,
 ) -> Vec<Line<'a>> {
     let t0 = Instant::now();
     let total_lines = diff_lines.len();
@@ -140,6 +144,41 @@ fn build_all_lines<'a>(
                 .add_modifier(Modifier::BOLD),
         )));
 
+        // Compute display names and max width for alignment.
+        let display_names: Vec<String> = file_entries
+            .iter()
+            .map(|entry| {
+                if let Some(ref old) = entry.old_name {
+                    diff_paths(old, &entry.name)
+                } else {
+                    entry.name.clone()
+                }
+            })
+            .collect();
+        let max_name_width = display_names.iter().map(|n| n.len()).max().unwrap_or(0);
+        // Compute max field width for sign+number alignment, per column.
+        let added_strs: Vec<String> = file_entries
+            .iter()
+            .map(|e| format!("+{}", e.lines_added))
+            .collect();
+        let removed_strs: Vec<String> = file_entries
+            .iter()
+            .map(|e| format!("-{}", e.lines_removed))
+            .collect();
+        let added_width = added_strs.iter().map(|s| s.len()).max().unwrap_or(1);
+        let removed_width = removed_strs.iter().map(|s| s.len()).max().unwrap_or(1);
+        // Minimum column width of 2 ("+0", "-0") so the sign always has room.
+        let added_width = added_width.max(2);
+        let removed_width = removed_width.max(2);
+
+        // Compute max visual indicator characters based on available content width.
+        // Line format: "<status> <padded_name> <(+N/-M)><space><indicators>  "
+        // Fixed width: 1(status) + 1(space) + name + 1(space) + count + 1(space) = 4 + name + count
+        // Indicators get the rest, minus 2 chars for right margin.
+        let count_width = added_width + removed_width + 3; // "(+N/-M)"
+        let fixed_prefix = max_name_width + count_width + 4;
+        let max_vis = content_width.saturating_sub(fixed_prefix as u16).min(200) as usize;
+
         for (i, entry) in file_entries.iter().enumerate() {
             let selected = i == selected_file_index;
             let status_color = match entry.status {
@@ -157,31 +196,41 @@ fn build_all_lines<'a>(
                 Style::default().fg(theme.diff_selected_file_border)
             };
             let status_style = Style::default().fg(status_color);
-            let display_name = if let Some(ref old) = entry.old_name {
-                diff_paths(old, &entry.name)
-            } else {
-                entry.name.clone()
-            };
+            let display_name = format!("{:<width$}", display_names[i], width = max_name_width);
             let count_style = Style::default().fg(theme.diff_context);
             let added_style = Style::default().fg(theme.diff_added);
             let removed_style = Style::default().fg(theme.diff_removed);
-            let max_vis = 20;
-            let pluses = entry.lines_added.min(max_vis);
-            let minuses = entry.lines_removed.min(max_vis);
+            let available = max_vis.saturating_sub(2); // at least 2 chars margin
+            let total = entry.lines_added + entry.lines_removed;
+            let (pluses, minuses) = if total == 0 {
+                (0, 0)
+            } else if total <= available {
+                // All indicators fit — show them all.
+                (entry.lines_added, entry.lines_removed)
+            } else {
+                // Scale proportionally, ensuring both sides sum to exactly available.
+                let p = (available * entry.lines_added) / total;
+                (p, available - p)
+            };
             let mut spans = vec![
                 Span::styled(format!("{} ", entry.status), status_style),
                 Span::styled(display_name, name_style),
                 Span::styled(" ", count_style),
                 Span::styled(
-                    format!("(+{}/-{})", entry.lines_added, entry.lines_removed),
+                    format!(
+                        "({:>aw$}/{:>rw$})",
+                        added_strs[i],
+                        removed_strs[i],
+                        aw = added_width,
+                        rw = removed_width
+                    ),
                     count_style,
                 ),
-                Span::styled(" ", count_style),
-                Span::styled("+".repeat(pluses), added_style),
-                Span::styled("-".repeat(minuses), removed_style),
             ];
-            if entry.lines_added > max_vis || entry.lines_removed > max_vis {
-                spans.push(Span::styled("…", count_style));
+            if pluses + minuses > 0 {
+                spans.push(Span::styled(" ", count_style));
+                spans.push(Span::styled("+".repeat(pluses), added_style));
+                spans.push(Span::styled("-".repeat(minuses), removed_style));
             }
             lines.push(Line::from(spans));
         }
@@ -536,6 +585,130 @@ mod tests {
             lines_removed: 1,
         }];
         assert_eq!(diff_line_offset(None, files), 3);
+    }
+
+    #[test]
+    fn test_file_list_shows_line_counts_aligned() {
+        let theme = make_theme();
+        let diff_lines: Vec<String> = vec![
+            "diff --git a/a.rs b/a.rs".into(),
+            "@@ -1,1 +1,1 @@".into(),
+            "-old".into(),
+            "+new".into(),
+        ];
+        let files = &[
+            FileEntry {
+                name: "short.rs".to_string(),
+                diff_line: 0,
+                status: '~',
+                old_name: None,
+                lines_added: 95,
+                lines_removed: 72,
+            },
+            FileEntry {
+                name: "longer_name.rs".to_string(),
+                diff_line: 2,
+                status: '+',
+                old_name: None,
+                lines_added: 1,
+                lines_removed: 0,
+            },
+        ];
+        let lines = build_all_lines(None, &diff_lines, files, 0, &theme, 80);
+
+        // lines[0] = "Changed files:", lines[1,2] = file entries, lines[3] = "", lines[4..] = diff
+        let file_0 = &lines[1];
+        let text_0: String = file_0.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text_0.contains("short.rs"),
+            "should contain file name, got: {text_0}"
+        );
+        assert!(
+            text_0.contains("(+95/-72)"),
+            "should contain count for +95/-72, got: {text_0}"
+        );
+        // With content_width=80: max_vis=53, available=51. +95/-72 scaled = ~29/22.
+        assert!(
+            text_0.contains("+++++++++++++++++++++++++++++"),
+            "should contain scaled plus visual indicator, got: {text_0}"
+        );
+        assert!(
+            text_0.contains("----------------------"),
+            "should contain scaled minus visual indicator, got: {text_0}"
+        );
+
+        let file_1 = &lines[2];
+        let text_1: String = file_1.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text_1.contains("longer_name.rs"),
+            "should contain file name, got: {text_1}"
+        );
+        assert!(
+            text_1.contains("( +1/ -0)"),
+            "should contain right-aligned count for 1/0, got: {text_1}"
+        );
+        // Verify alignment: "short.rs" is 8 chars, "longer_name.rs" is 14 chars.
+        // Both should be padded to 14 so parens start at same column.
+        let pos0 = text_0.find("(").unwrap();
+        let pos1 = text_1.find("(").unwrap();
+        assert_eq!(
+            pos0, pos1,
+            "parentheses should align at column {pos0} vs {pos1}"
+        );
+    }
+
+    #[test]
+    fn test_visual_indicators_truncated_by_content_width() {
+        let theme = make_theme();
+        let diff_lines: Vec<String> = vec![
+            "diff --git a/x b/x".into(),
+            "@@ -1 +1 @@".into(),
+            "-a".into(),
+            "+b".into(),
+        ];
+        let files = &[FileEntry {
+            name: "lib.rs".to_string(),
+            diff_line: 0,
+            status: '~',
+            old_name: None,
+            lines_added: 42,
+            lines_removed: 7,
+        }];
+
+        // With content_width smaller than fixed prefix: max_vis = 0, no visual indicators.
+        let narrow = build_all_lines(None, &diff_lines, files, 0, &theme, 17);
+        let text_narrow: String = narrow[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Verify no content after the closing paren of the count.
+        let close_paren = text_narrow.rfind(')').unwrap();
+        assert_eq!(
+            &text_narrow[close_paren + 1..],
+            "",
+            "no visual indicators after count"
+        );
+
+        // With content_width=30: fixed_prefix=18, max_vis=12, available=10 (after 2-char margin).
+        // +42/-7 → proportion: 10*42/49=8 pluses, 10-8=2 minuses.
+        let wide = build_all_lines(None, &diff_lines, files, 0, &theme, 30);
+        let text_wide: String = wide[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        let close_paren = text_wide.rfind(')').unwrap();
+        let after_count = &text_wide[close_paren + 1..];
+        assert_eq!(
+            after_count, " ++++++++--",
+            "should show proportionally scaled indicators"
+        );
+
+        // With plenty of space: all indicators shown, respecting margin.
+        let roomy = build_all_lines(None, &diff_lines, files, 0, &theme, 120);
+        let text_roomy: String = roomy[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        let cp = text_roomy.rfind(')').unwrap();
+        assert!(
+            text_roomy[cp..].len() <= 118, // content_width=120 minus ~2 margin
+            "should leave at least 2 chars margin"
+        );
+        assert!(
+            text_roomy[cp + 1..].starts_with(" +"),
+            "should start with space and pluses"
+        );
     }
 }
 

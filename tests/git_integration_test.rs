@@ -333,3 +333,43 @@ fn test_decorations_on_commits() {
         "should have at least one remote branch decoration"
     );
 }
+
+// ────────────────────────────────────────────────────────────
+// Test 9: fetch_diff returns correct lines_added / lines_removed per file
+// ────────────────────────────────────────────────────────────
+#[test]
+fn test_fetch_diff_line_counts() {
+    let tr = TempRepo::new("linecounts");
+    tr.write_file(
+        "lib.rs",
+        "fn main() {\n    println!(\"hello\");\n    let x = 1;\n}\n",
+    );
+    tr.commit("initial");
+
+    tr.write_file(
+        "lib.rs",
+        "fn main() {\n    println!(\"hello\");\n    let x = 2;\n    let y = 3;\n}\n",
+    );
+    tr.commit("add y, remove 1");
+
+    let repo = tr.repo();
+    let commits = repo
+        .fetch_commits_simplified(None, BranchScope::Local, None)
+        .unwrap();
+    let hash = &commits.iter().find(|c| !c.hash.is_empty()).unwrap().hash;
+
+    let (_lines, files) = repo.fetch_diff(hash).unwrap();
+    assert!(!files.is_empty(), "should have at least one file entry");
+
+    let lib = files.iter().find(|f| f.name == "lib.rs").unwrap();
+    assert_eq!(
+        lib.lines_added, 2,
+        "should have 2 added lines, got {}",
+        lib.lines_added
+    );
+    assert_eq!(
+        lib.lines_removed, 1,
+        "should have 1 removed line, got {}",
+        lib.lines_removed
+    );
+}
