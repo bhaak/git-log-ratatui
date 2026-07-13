@@ -16,6 +16,7 @@ pub fn diff_tokens_added(line: &str, prev_line: Option<&str>) -> Vec<TokenSpan> 
         Some(prev) => {
             let diff = TextDiff::from_words(prev, line);
             diff.iter_all_changes()
+                .filter(|change| change.tag() != similar::ChangeTag::Delete)
                 .map(|change| TokenSpan {
                     text: change.value().to_string(),
                     changed: change.tag() != similar::ChangeTag::Equal,
@@ -36,6 +37,7 @@ pub fn diff_tokens_removed(line: &str, next_line: Option<&str>) -> Vec<TokenSpan
         Some(next) => {
             let diff = TextDiff::from_words(line, next);
             diff.iter_all_changes()
+                .filter(|change| change.tag() != similar::ChangeTag::Insert)
                 .map(|change| TokenSpan {
                     text: change.value().to_string(),
                     changed: change.tag() != similar::ChangeTag::Equal,
@@ -64,7 +66,6 @@ mod tests {
     #[test]
     fn test_diff_tokens_added_with_prev() {
         let spans = diff_tokens_added("new foo baz", Some("old foo bar"));
-        // similar's from_words tokenization may differ from the old hand-written one
         let changed_words: Vec<&str> = spans
             .iter()
             .filter(|t| t.changed)
@@ -75,15 +76,25 @@ mod tests {
             .filter(|t| !t.changed)
             .map(|t| t.text.as_str())
             .collect();
-        // "foo" should be unchanged
         assert!(
             unchanged_words.contains(&"foo"),
             "expected 'foo' unchanged, got unchanged: {:?}",
             unchanged_words
         );
-        // "new" and "baz" should be changed
         assert!(changed_words.contains(&"new"));
         assert!(changed_words.contains(&"baz"));
+        // Verify NO tokens from the removed (old) line leak in
+        let all_text: String = spans.iter().map(|t| &t.text).cloned().collect();
+        assert!(
+            !all_text.contains("old"),
+            "should not contain 'old': {}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("bar"),
+            "should not contain 'bar': {}",
+            all_text
+        );
     }
 
     #[test]
@@ -110,6 +121,18 @@ mod tests {
         assert!(unchanged_words.contains(&"foo"));
         assert!(changed_words.contains(&"old"));
         assert!(changed_words.contains(&"bar"));
+        // Verify NO tokens from the added (new) line leak in
+        let all_text: String = spans.iter().map(|t| &t.text).cloned().collect();
+        assert!(
+            !all_text.contains("new"),
+            "should not contain 'new': {}",
+            all_text
+        );
+        assert!(
+            !all_text.contains("baz"),
+            "should not contain 'baz': {}",
+            all_text
+        );
     }
 
     #[test]
@@ -127,6 +150,12 @@ mod tests {
         assert!(
             spans.iter().all(|t| t.changed),
             "all tokens should be changed"
+        );
+        let all_text: String = spans.iter().map(|t| &t.text).cloned().collect();
+        assert!(
+            !all_text.contains("world"),
+            "should not contain 'world': {}",
+            all_text
         );
     }
 }
