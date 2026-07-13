@@ -83,6 +83,8 @@ pub enum Command {
     PreviewDiff,
     /// Branch panel: jump to next (1) or previous (-1) sibling at the same tree depth.
     JumpToSibling(i32),
+    /// Toggle the help modal overlay (bound to `?`).
+    ToggleHelp,
     /// Quit the application.
     Quit,
 }

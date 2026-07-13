@@ -106,6 +106,10 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         KeyCode::Char('/') if key.modifiers.is_empty() => {
             return vec![Command::FocusSearchClear];
         }
+        // Help modal: ? toggles it on/off
+        KeyCode::Char('?') if key.modifiers.is_empty() => {
+            return vec![Command::ToggleHelp];
+        }
         // Ctrl+shortcuts
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::CycleScope];
@@ -141,6 +145,14 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             }
         }
         _ => {}
+    }
+
+    // ── Help modal is visible: block all input except ? (toggle off) and Esc (dismiss) ──
+    if app.state.ui.help_visible {
+        return match key.code {
+            KeyCode::Esc => vec![Command::ToggleHelp],
+            _ => Vec::new(),
+        };
     }
 
     // ── Layer 2: Common navigation shortcuts (skip Search — text input mode) ──
@@ -228,6 +240,7 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         | Command::FocusNext
         | Command::FocusPrev
         | Command::GoBack
+        | Command::ToggleHelp
         | Command::InitiateDragVertical
         | Command::InitiateDragHorizontal
         | Command::EndDrag

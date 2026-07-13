@@ -17,6 +17,8 @@ pub struct UiState {
     pub poll_interval_ms: u8,
     pub dirty: bool,
     pub needs_terminal_reset: bool,
+    /// Whether the help modal is currently visible (toggled by `?`).
+    pub help_visible: bool,
 }
 
 impl UiState {
@@ -34,6 +36,7 @@ impl UiState {
             poll_interval_ms: poll_min_ms,
             dirty: true,
             needs_terminal_reset: false,
+            help_visible: false,
         }
     }
 
@@ -65,6 +68,10 @@ impl UiState {
             }
             Command::FocusSearchClear => {
                 self.focus = Panel::Search;
+                vec![Effect::SetDirty]
+            }
+            Command::ToggleHelp => {
+                self.help_visible = !self.help_visible;
                 vec![Effect::SetDirty]
             }
             Command::InitiateDragVertical => {
@@ -221,6 +228,17 @@ mod tests {
         let effects = state.handle_command(&Command::SetDiffHeightPct(50));
         assert_eq!(state.diff_height_pct, 50);
         assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+    }
+
+    #[test]
+    fn test_toggle_help_flips_visibility() {
+        let mut state = UiState::new(20, 35, 10);
+        assert!(!state.help_visible);
+        let effects = state.handle_command(&Command::ToggleHelp);
+        assert!(state.help_visible);
+        assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+        state.handle_command(&Command::ToggleHelp);
+        assert!(!state.help_visible);
     }
 
     #[test]
