@@ -162,14 +162,28 @@ fn build_all_lines<'a>(
             } else {
                 entry.name.clone()
             };
-            lines.push(Line::from(vec![
+            let count_style = Style::default().fg(theme.diff_context);
+            let added_style = Style::default().fg(theme.diff_added);
+            let removed_style = Style::default().fg(theme.diff_removed);
+            let max_vis = 20;
+            let pluses = entry.lines_added.min(max_vis);
+            let minuses = entry.lines_removed.min(max_vis);
+            let mut spans = vec![
                 Span::styled(format!("{} ", entry.status), status_style),
                 Span::styled(display_name, name_style),
+                Span::styled(" ", count_style),
                 Span::styled(
-                    format!(" (+{}/-{})", entry.lines_added, entry.lines_removed),
-                    Style::default().fg(theme.diff_context),
+                    format!("(+{}/-{})", entry.lines_added, entry.lines_removed),
+                    count_style,
                 ),
-            ]));
+                Span::styled(" ", count_style),
+                Span::styled("+".repeat(pluses), added_style),
+                Span::styled("-".repeat(minuses), removed_style),
+            ];
+            if entry.lines_added > max_vis || entry.lines_removed > max_vis {
+                spans.push(Span::styled("…", count_style));
+            }
+            lines.push(Line::from(spans));
         }
 
         lines.push(Line::from(""));
