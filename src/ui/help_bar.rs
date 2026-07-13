@@ -137,7 +137,7 @@ pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, t
 
     // Hint about Tab to see other panels' help
     lines.push(Line::from(Span::styled(
-        "  Tab to another panel, then ? for its keys",
+        "  Tab / Shift+Tab to see other panels' keys",
         Style::default().fg(theme.commit_secondary),
     )));
 
