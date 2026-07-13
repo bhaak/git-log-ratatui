@@ -29,7 +29,9 @@ static SETTINGS_LOCAL_ONLY: LazyLock<Settings> = LazyLock::new(|| base_settings(
 
 pub fn create_graph_settings(scope: BranchScope) -> &'static Settings {
     match scope {
-        BranchScope::All | BranchScope::Remote => &SETTINGS_WITH_REMOTE,
+        BranchScope::All | BranchScope::Remote | BranchScope::Tags | BranchScope::Stash => {
+            &SETTINGS_WITH_REMOTE
+        }
         BranchScope::Local => &SETTINGS_LOCAL_ONLY,
     }
 }
@@ -57,6 +59,18 @@ mod tests {
     #[test]
     fn test_create_graph_settings_remote_scope() {
         let settings = create_graph_settings(BranchScope::Remote);
+        assert!(settings.include_remote);
+    }
+
+    #[test]
+    fn test_create_graph_settings_tags_scope() {
+        let settings = create_graph_settings(BranchScope::Tags);
+        assert!(settings.include_remote);
+    }
+
+    #[test]
+    fn test_create_graph_settings_stash_scope() {
+        let settings = create_graph_settings(BranchScope::Stash);
         assert!(settings.include_remote);
     }
 }

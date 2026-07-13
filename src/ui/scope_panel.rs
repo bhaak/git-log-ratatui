@@ -84,7 +84,7 @@ impl Panel for ScopePanel {
         static KEYS: &[KeyBinding] = &[KeyBinding::new(
             "Enter/Space",
             "cycle scope",
-            "Cycle branch scope (All → Local → Remote)",
+            "Cycle scope (All → Local → Remote → Tags → Stash)",
         )];
         KEYS
     }

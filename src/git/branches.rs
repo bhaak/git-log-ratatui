@@ -57,6 +57,11 @@ impl GitRepository {
                     true,
                 );
             }
+            BranchScope::Tags | BranchScope::Stash => {
+                // Tags and Stash scopes show only tags/stashes in the tree,
+                // so no branch entries are collected. Tags and stashes are
+                // always fetched below regardless of scope.
+            }
         }
 
         let (tags, tags_dates) = self.fetch_tags_with_dates()?;

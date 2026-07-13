@@ -150,7 +150,12 @@ impl GitRepository {
             if scope == BranchScope::Remote && !r.is_remote() {
                 continue;
             }
-            if r.is_tag() {
+            if scope == BranchScope::Tags {
+                // Tags scope: only include tag references
+                if !r.is_tag() {
+                    continue;
+                }
+            } else if r.is_tag() {
                 continue;
             }
             if let Some(name) = r.name() {

@@ -95,12 +95,20 @@ fn test_branch_scope_cycle() {
     assert_eq!(state.branch.branch_scope, BranchScope::Remote);
 
     state.branch.branch_scope = state.branch.branch_scope.next();
+    assert_eq!(state.branch.branch_scope, BranchScope::Tags);
+
+    state.branch.branch_scope = state.branch.branch_scope.next();
+    assert_eq!(state.branch.branch_scope, BranchScope::Stash);
+
+    state.branch.branch_scope = state.branch.branch_scope.next();
     assert_eq!(state.branch.branch_scope, BranchScope::All);
 
     // Labels
     assert_eq!(BranchScope::All.label(), "all");
     assert_eq!(BranchScope::Local.label(), "local");
     assert_eq!(BranchScope::Remote.label(), "remote");
+    assert_eq!(BranchScope::Tags.label(), "tags");
+    assert_eq!(BranchScope::Stash.label(), "stash");
 }
 
 // ---------------------------------------------------------------------------

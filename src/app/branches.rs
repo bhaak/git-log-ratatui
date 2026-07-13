@@ -145,8 +145,25 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
 
     let mut items = Vec::new();
 
-    // Local branches section
-    if !local_names.is_empty() {
+    let show_local = matches!(
+        state.branch.branch_scope,
+        BranchScope::All | BranchScope::Local
+    );
+    let show_remote = matches!(
+        state.branch.branch_scope,
+        BranchScope::All | BranchScope::Remote
+    );
+    let show_tags = matches!(
+        state.branch.branch_scope,
+        BranchScope::All | BranchScope::Tags
+    );
+    let show_stashes = matches!(
+        state.branch.branch_scope,
+        BranchScope::All | BranchScope::Stash
+    );
+
+    // Local branches section (All or Local scope)
+    if show_local && !local_names.is_empty() {
         items.push(local_item);
 
         // Build and sort local tree
@@ -171,8 +188,8 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         }
     }
 
-    // Remote branches section
-    if !remote_names.is_empty() {
+    // Remote branches section (All or Remote scope)
+    if show_remote && !remote_names.is_empty() {
         items.push(remote_item);
 
         // Build and sort remote tree
@@ -190,8 +207,8 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         }
     }
 
-    // Tags section (only shown when scope is All)
-    if state.branch.branch_scope == BranchScope::All && !state.branch.all_branches.tags.is_empty() {
+    // Tags section (All or Tags scope)
+    if show_tags && !state.branch.all_branches.tags.is_empty() {
         items.push(tags_item);
 
         let mut tag_root = tree::build_branch_tree(&state.branch.all_branches.tags);
@@ -224,8 +241,8 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
         }
     }
 
-    // Stashes section (always shown when there are stashes, regardless of scope)
-    if !state.branch.all_branches.stashes.is_empty() {
+    // Stashes section (All or Stash scope)
+    if show_stashes && !state.branch.all_branches.stashes.is_empty() {
         items.push(stashes_item);
 
         if stashes_expanded {

@@ -29,6 +29,7 @@ impl GitRepository {
             if scope == BranchScope::Remote && !r.is_remote() {
                 continue;
             }
+            // Tags and Stash scopes include all branch tips (like All)
 
             let target_oid = match r.target() {
                 Some(oid) => oid,

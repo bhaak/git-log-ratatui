@@ -12,6 +12,8 @@ pub enum BranchScope {
     All,
     Local,
     Remote,
+    Tags,
+    Stash,
 }
 
 impl BranchScope {
@@ -19,7 +21,9 @@ impl BranchScope {
         match self {
             BranchScope::All => BranchScope::Local,
             BranchScope::Local => BranchScope::Remote,
-            BranchScope::Remote => BranchScope::All,
+            BranchScope::Remote => BranchScope::Tags,
+            BranchScope::Tags => BranchScope::Stash,
+            BranchScope::Stash => BranchScope::All,
         }
     }
 
@@ -28,6 +32,8 @@ impl BranchScope {
             BranchScope::All => "all",
             BranchScope::Local => "local",
             BranchScope::Remote => "remote",
+            BranchScope::Tags => "tags",
+            BranchScope::Stash => "stash",
         }
     }
 }
@@ -82,8 +88,18 @@ mod tests {
     }
 
     #[test]
-    fn test_branch_scope_next_remote_to_all() {
-        assert_eq!(BranchScope::Remote.next(), BranchScope::All);
+    fn test_branch_scope_next_remote_to_tags() {
+        assert_eq!(BranchScope::Remote.next(), BranchScope::Tags);
+    }
+
+    #[test]
+    fn test_branch_scope_next_tags_to_stash() {
+        assert_eq!(BranchScope::Tags.next(), BranchScope::Stash);
+    }
+
+    #[test]
+    fn test_branch_scope_next_stash_to_all() {
+        assert_eq!(BranchScope::Stash.next(), BranchScope::All);
     }
 
     #[test]
@@ -91,5 +107,7 @@ mod tests {
         assert_eq!(BranchScope::All.label(), "all");
         assert_eq!(BranchScope::Local.label(), "local");
         assert_eq!(BranchScope::Remote.label(), "remote");
+        assert_eq!(BranchScope::Tags.label(), "tags");
+        assert_eq!(BranchScope::Stash.label(), "stash");
     }
 }
