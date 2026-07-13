@@ -21,7 +21,7 @@
 - [X] / is shown in tree view
 - [X] +/-/~/→ in green, red, yellow, blue? for added, removed, changed, and moved
 - [X] Tags for Remote/Local Branches
-- [ ] stash
+- [X] stash
 
 * Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
