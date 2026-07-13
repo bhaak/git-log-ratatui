@@ -7,14 +7,14 @@ use ratatui::{
 };
 
 use crate::theme::Theme;
-use crate::view::Panel as PanelEnum;
+use crate::ui::panel::KeyBinding;
 
 /// Render the context-sensitive help bar at the bottom of the screen.
 pub fn render(
     frame: &mut Frame,
     area: Rect,
     panel_label: &str,
-    context_keys: &[(&str, &str)],
+    context_keys: &[KeyBinding],
     status: Option<&str>,
     theme: &Theme,
 ) {
@@ -28,15 +28,19 @@ pub fn render(
     let desc_style = Style::default().fg(Color::White);
     let bracket_style = Style::default().fg(theme.unfocused_border);
 
-    let common = [("q", "Quit"), ("Tab", "Focus"), ("l/h", "Next/Prev")];
+    let common = [
+        KeyBinding::new("q", "Quit", "Quit"),
+        KeyBinding::new("Tab", "Focus", "Focus"),
+        KeyBinding::new("l/h", "Next/Prev", "Next/Prev"),
+    ];
 
     let mut spans: Vec<Span> = Vec::new();
 
-    for (key, desc) in common.iter().chain(context_keys.iter()) {
+    for kb in common.iter().chain(context_keys.iter()) {
         spans.push(Span::styled("<", bracket_style));
-        spans.push(Span::styled(*key, key_style));
+        spans.push(Span::styled(kb.key, key_style));
         spans.push(Span::styled(": ", bracket_style));
-        spans.push(Span::styled(*desc, desc_style));
+        spans.push(Span::styled(kb.short_desc, desc_style));
         spans.push(Span::styled(">", bracket_style));
         spans.push(Span::raw("  "));
     }
@@ -60,7 +64,13 @@ pub fn render(
 /// Render the help modal overlay showing keybindings relevant to the focused panel.
 /// Blocks underlying content with a [`Clear`] widget and draws a centered,
 /// bordered panel with Global, Navigation, and focused-panel-specific sections.
-pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, theme: &Theme) {
+pub fn render_help_modal(
+    frame: &mut Frame,
+    full_area: Rect,
+    panel_label: &str,
+    panel_keys: &[KeyBinding],
+    theme: &Theme,
+) {
     let key_style = Style::default()
         .fg(theme.help_title)
         .add_modifier(Modifier::BOLD);
@@ -71,14 +81,28 @@ pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, t
 
     let border_style = Style::default().fg(theme.focused_border);
 
-    let panel_section = panel_bindings(focus);
+    let global_keys: &[KeyBinding] = &[
+        KeyBinding::new("q / Ctrl+C", "Quit", "Quit"),
+        KeyBinding::new("? / Esc", "Close help", "Close this help"),
+        KeyBinding::new("/", "Search", "Focus search + clear"),
+        KeyBinding::new("Tab / Shift+Tab", "Focus", "Focus next / previous panel"),
+        KeyBinding::new("Esc", "Go back", "Go back to previous panel"),
+        KeyBinding::new("Ctrl+S", "Scope", "Cycle branch scope"),
+        KeyBinding::new("Ctrl+Z", "Suspend", "Suspend (background)"),
+    ];
 
-    // Calculate total line count to size the modal exactly.
-    // Sections: 3 titles + all items + 3 blank separators + 1 hint.
-    // +4 overhead: 2 block borders + 2 vertical margins.
-    let global_items = 7usize;
-    let nav_items = 5usize;
-    let panel_items = panel_section.1.len();
+    let nav_keys: &[KeyBinding] = &[
+        KeyBinding::new("h / l", "Focus prev/next", "Focus previous / next panel"),
+        KeyBinding::new("j / k / ↑ / ↓", "Move up/down", "Move down / up in list"),
+        KeyBinding::new("Ctrl+F / Ctrl+B", "Page down/up", "Page down / up"),
+        KeyBinding::new("G / Home / End", "Jump", "Jump to bottom / top"),
+        KeyBinding::new("PgUp / PgDn", "Page", "Page up / down"),
+    ];
+
+    let global_items = global_keys.len();
+    let nav_items = nav_keys.len();
+    let panel_items = panel_keys.len();
+    // 3 section titles + all items + 3 blank separators + 1 hint
     let content_lines = 3 + global_items + 3 + nav_items + panel_items + 1;
     let modal_h = (content_lines + 4).min(full_area.height.saturating_sub(2) as usize);
     let modal_w = (full_area.width * 7 / 10)
@@ -91,64 +115,36 @@ pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, t
 
     frame.render_widget(Clear, modal_area);
 
-    let sections: &[(&str, &[(&str, &str)])] = &[
-        (
-            "Global",
-            &[
-                ("q / Ctrl+C", "Quit"),
-                ("? / Esc", "Close this help"),
-                ("/", "Focus search + clear"),
-                ("Tab / Shift+Tab", "Focus next / previous panel"),
-                ("Esc", "Go back to previous panel"),
-                ("Ctrl+S", "Cycle branch scope"),
-                ("Ctrl+Z", "Suspend (background)"),
-            ],
-        ),
-        (
-            "Navigation",
-            &[
-                ("h / l", "Focus previous / next panel"),
-                ("j / k / \u{2191} / \u{2193}", "Move down / up"),
-                ("Ctrl+F / Ctrl+B", "Page down / up"),
-                ("G / Home / End", "Jump to bottom / top"),
-                ("PgUp / PgDn", "Page up / down"),
-            ],
-        ),
-        panel_section,
+    let sections: [(&str, &[KeyBinding]); 3] = [
+        ("Global", global_keys),
+        ("Navigation", nav_keys),
+        (panel_label, panel_keys),
     ];
 
     let mut lines: Vec<Line> = Vec::new();
-    for (title, bindings) in sections {
+    for (title, bindings) in &sections {
         lines.push(Line::from(Span::styled(
             format!("  {title}"),
             section_style,
         )));
-        for (key, desc) in *bindings {
+        for kb in *bindings {
             let spans = vec![
                 Span::raw("    "),
-                Span::styled(*key, key_style),
+                Span::styled(kb.key, key_style),
                 Span::raw("  "),
-                Span::styled(*desc, desc_style),
+                Span::styled(kb.long_desc, desc_style),
             ];
             lines.push(Line::from(spans));
         }
         lines.push(Line::from(""));
     }
 
-    // Hint about Tab to see other panels' help
     lines.push(Line::from(Span::styled(
         "  Tab / Shift+Tab to see other panels' keys",
         Style::default().fg(theme.commit_secondary),
     )));
 
-    let label = match focus {
-        PanelEnum::Branches => "Branches",
-        PanelEnum::Search => "Search",
-        PanelEnum::Scope => "Scope",
-        PanelEnum::Commits => "Commits",
-        PanelEnum::Diff => "Diff",
-    };
-    let title = format!(" Help — {label} (? or Esc to close) ");
+    let title = format!(" Help — {panel_label} (? or Esc to close) ");
 
     let inner = Layout::default()
         .vertical_margin(1)
@@ -164,53 +160,4 @@ pub fn render_help_modal(frame: &mut Frame, full_area: Rect, focus: PanelEnum, t
     );
 
     frame.render_widget(paragraph, inner);
-}
-
-/// Return the keybinding table for a specific panel.
-fn panel_bindings(focus: PanelEnum) -> (&'static str, &'static [(&'static str, &'static str)]) {
-    match focus {
-        PanelEnum::Branches => (
-            "Branches",
-            &[
-                ("Enter", "Select branch (load commits)"),
-                ("Space", "Toggle expand / collapse"),
-                ("n / p", "Next / previous sibling"),
-                ("\u{2190} / \u{2192}", "Collapse / expand node"),
-            ],
-        ),
-        PanelEnum::Commits => (
-            "Commits",
-            &[
-                ("Enter", "Show diff (focus Diff panel)"),
-                ("Space", "Preview diff (keep focus)"),
-                ("y / Y", "Copy short / full hash"),
-                ("g", "Toggle full / simplified graph"),
-            ],
-        ),
-        PanelEnum::Diff => (
-            "Diff",
-            &[
-                ("Enter", "Jump to selected file's diff"),
-                ("n / p", "Next / previous changed file"),
-                ("j / k", "Scroll / navigate files"),
-                ("Esc", "Back to commits"),
-            ],
-        ),
-        PanelEnum::Search => (
-            "Search",
-            &[
-                ("Esc", "Clear search query"),
-                ("Ctrl+A / Ctrl+E", "Jump to start / end of line"),
-                ("Ctrl+V", "Paste from clipboard"),
-                ("Tab", "Move to next panel"),
-            ],
-        ),
-        PanelEnum::Scope => (
-            "Scope",
-            &[(
-                "Enter / Space",
-                "Cycle (All \u{2192} Local \u{2192} Remote)",
-            )],
-        ),
-    }
 }

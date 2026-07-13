@@ -16,6 +16,7 @@ use crate::lcs;
 use crate::state::diff::DiffState;
 use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
+use crate::ui::panel::KeyBinding;
 use crate::ui::scrollbar_view::ScrollbarView;
 use crate::view::Panel;
 
@@ -606,15 +607,16 @@ impl panel_mod::Panel for DiffPanel {
         }
     }
 
-    fn help_keys(&self) -> &[(&str, &str)] {
-        &[
-            ("↑↓/j,k", "scroll/files"),
-            ("n/p", "next/prev file"),
-            ("Enter", "jump to file"),
-            ("Esc", "back to commits"),
-            ("Home/End", "top/bottom"),
-            ("PgUp/PgDn", "page"),
-        ]
+    fn help_keys(&self) -> &'static [KeyBinding] {
+        static KEYS: &[KeyBinding] = &[
+            KeyBinding::new("↑↓/j,k", "scroll/files", "Scroll diff / navigate files"),
+            KeyBinding::new("n/p", "next/prev file", "Next / previous changed file"),
+            KeyBinding::new("Enter", "jump to file", "Jump to selected file's diff"),
+            KeyBinding::new("Esc", "back to commits", "Back to commits panel"),
+            KeyBinding::new("Home/End", "top/bottom", "Jump to top / bottom"),
+            KeyBinding::new("PgUp/PgDn", "page", "Page up / down"),
+        ];
+        KEYS
     }
 
     fn label(&self) -> &str {

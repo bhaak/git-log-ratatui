@@ -12,7 +12,7 @@ use crate::app::commands::Command;
 use crate::state::branch::BranchState;
 use crate::theme::Theme;
 use crate::ui::layout;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{KeyBinding, Panel};
 use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
 use crate::view::TreeItem;
@@ -115,15 +115,16 @@ impl Panel for BranchPanel {
         }
     }
 
-    fn help_keys(&self) -> &[(&str, &str)] {
-        &[
-            ("↑↓/j,k", "navigate"),
-            ("Enter", "select"),
-            ("Space", "toggle"),
-            ("n/p", "sibling"),
-            ("PgUp/PgDn", "page"),
-            ("Home/End", "top/bottom"),
-        ]
+    fn help_keys(&self) -> &'static [KeyBinding] {
+        static KEYS: &[KeyBinding] = &[
+            KeyBinding::new("↑↓/j,k", "navigate", "Navigate up / down"),
+            KeyBinding::new("Enter", "select", "Select branch (load commits)"),
+            KeyBinding::new("Space", "toggle", "Toggle expand / collapse"),
+            KeyBinding::new("n/p", "sibling", "Next / previous sibling"),
+            KeyBinding::new("PgUp/PgDn", "page", "Page up / down"),
+            KeyBinding::new("Home/End", "top/bottom", "Jump to top / bottom"),
+        ];
+        KEYS
     }
 
     fn label(&self) -> &str {

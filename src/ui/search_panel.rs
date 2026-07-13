@@ -118,7 +118,7 @@ pub fn render(
 use crate::app::commands::Command;
 use crate::state::search::SearchState;
 use crate::text_utils;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{KeyBinding, Panel};
 use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the search input.
@@ -192,13 +192,14 @@ impl Panel for SearchPanel {
         }
     }
 
-    fn help_keys(&self) -> &[(&str, &str)] {
-        &[
-            ("Esc", "clear search"),
-            ("Ctrl+A/E", "start/end"),
-            ("Ctrl+V", "paste"),
-            ("Tab", "next panel"),
-        ]
+    fn help_keys(&self) -> &'static [KeyBinding] {
+        static KEYS: &[KeyBinding] = &[
+            KeyBinding::new("Esc", "clear search", "Clear search query"),
+            KeyBinding::new("Ctrl+A/E", "start/end", "Jump to start / end of line"),
+            KeyBinding::new("Ctrl+V", "paste", "Paste from clipboard"),
+            KeyBinding::new("Tab", "next panel", "Move to next panel"),
+        ];
+        KEYS
     }
 
     fn label(&self) -> &str {

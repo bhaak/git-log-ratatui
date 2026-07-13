@@ -15,7 +15,7 @@ use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
 use crate::theme::Theme;
 use crate::ui::layout::{self, TABLE_OVERHEAD};
-use crate::ui::panel::Panel as PanelTrait;
+use crate::ui::panel::{KeyBinding, Panel as PanelTrait};
 use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
 use crate::view::{CommitRow as Commit, Panel};
@@ -928,16 +928,17 @@ impl PanelTrait for CommitPanel {
         }
     }
 
-    fn help_keys(&self) -> &[(&str, &str)] {
-        &[
-            ("↑↓/j,k", "navigate"),
-            ("Enter", "show diff"),
-            ("Space", "preview diff"),
-            ("y/Y", "copy hash"),
-            ("g", "toggle graph"),
-            ("PgUp/PgDn", "page"),
-            ("Home/End", "top/bottom"),
-        ]
+    fn help_keys(&self) -> &'static [KeyBinding] {
+        static KEYS: &[KeyBinding] = &[
+            KeyBinding::new("↑↓/j,k", "navigate", "Navigate up / down"),
+            KeyBinding::new("Enter", "show diff", "Show diff (focus Diff panel)"),
+            KeyBinding::new("Space", "preview diff", "Preview diff (keep focus)"),
+            KeyBinding::new("y/Y", "copy hash", "Copy short / full hash"),
+            KeyBinding::new("g", "toggle graph", "Toggle full / simplified graph"),
+            KeyBinding::new("PgUp/PgDn", "page", "Page up / down"),
+            KeyBinding::new("Home/End", "top/bottom", "Jump to top / bottom"),
+        ];
+        KEYS
     }
 
     fn label(&self) -> &str {

@@ -53,7 +53,7 @@ pub fn render(
 }
 
 use crate::app::commands::Command;
-use crate::ui::panel::Panel;
+use crate::ui::panel::{KeyBinding, Panel};
 use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the scope indicator.
@@ -80,8 +80,13 @@ impl Panel for ScopePanel {
         Vec::new()
     }
 
-    fn help_keys(&self) -> &[(&str, &str)] {
-        &[("Enter/Space", "cycle scope")]
+    fn help_keys(&self) -> &'static [KeyBinding] {
+        static KEYS: &[KeyBinding] = &[KeyBinding::new(
+            "Enter/Space",
+            "cycle scope",
+            "Cycle branch scope (All → Local → Remote)",
+        )];
+        KEYS
     }
 
     fn label(&self) -> &str {
