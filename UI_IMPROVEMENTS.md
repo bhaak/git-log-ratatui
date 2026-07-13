@@ -153,3 +153,152 @@
 | P3 | 8 | Syntax highlighting, column resize, multi-branch, git status, blame, file tree, live theme, side-by-side diff |
 
 Items already present in TODO.md are cross-referenced. Items already in ARCHITECTURE_REVIEW.md (rendering side effects, diff cache, resize debounce, etc.) are omitted as they are architectural rather than pure UX.
+
+---
+
+## Consistent Key Handling
+
+**Problem:** The current key map has multiple inconsistencies across panels:
+
+| Key | Branches | Commits | Diff | Search | Scope | Global fallback |
+|-----|----------|---------|------|--------|-------|-----------------|
+| `j`/`k` | via global | via global | via global | **inserts text** ❌ | — | MoveUp/Down |
+| `h`/`l` | via global | via global | via global | **inserts text** ❌ | — | FocusPrev/Next |
+| `↑↓` | own handler | own handler | own handler | — | — | — |
+| `←→` | expand/collapse | — | — | cursor move | — | — |
+| `Home`/`End` | JumpTop/Btm | JumpTop/Btm | JumpTop/Btm | **cursor move** | — | — |
+| `PgUp`/`PgDn` | page | page | page | **none** | — | — |
+| `Enter` | select/toggle | show diff | jump to file | — | cycle | — |
+| `Space` | toggle expand | — | — | insert space | cycle | — |
+| `Esc` | — | — | — | clear search | — | — |
+| `g` | — | toggle graph | — | inserts 'g' ❌ | — | — |
+| `n`/`p` | — | — | next/prev file | inserts text ❌ | — | — |
+| `/` | — | — | — | inserts '/' ❌ | — | — |
+| `Ctrl+F`/`B` | — | — | — | — | — | — |
+| `gg` / `G` | — | — | — | — | — | — |
+
+**Specific issues:**
+
+1. **Vim keys (`j`/`k`/`h`/`l`) break in Search.** The search panel's catch-all `KeyCode::Char(ch)` consumes every alpha character before the global fallback runs. Typing `jjjj` to scroll down while search is focused silently inserts `jjjj` into the query.
+
+2. **`Home` means two different things.** In list panels it jumps to item 0; in search it moves the text cursor to position 0. Both are "go to start" but the scope differs (list vs. text line). This is functionally correct but the mental model must be clear from focus.
+
+3. **`/` has no global binding.** Pressing `/` in commits or branches does nothing (or inserts `/` in search). The standard expectation from vim/less is `/` = "focus search and clear".
+
+4. **`Esc` only works in Search.** Clearing search is the only `Esc` action. Diff → back to commits, commits → back to branches, help modal → dismiss — none exist.
+
+5. **`n`/`p` are Diff-only.** TODO.md already notes "n/p working in every panel". Branches could use them for sibling navigation; commits could use them for author-grouped jump (stretch).
+
+6. **`Ctrl+F`/`Ctrl+B` missing.** Standard page-up/page-down alternatives in vim/less/most pagers.
+
+7. **`gg`/`G` missing.** Vim convention for jump-to-top (`gg`) and jump-to-bottom (`G`).
+
+8. **`Space` has 3 different behaviors.** Toggle expand in branches, insert literal space in search, cycle scope. No unified mental model.
+
+---
+
+### Recommended key layer scheme
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Layer 1 — Always-global (no panel may override)          │
+│   q          Quit (confirm if state is non-trivial)      │
+│   Ctrl+C     Quit                                        │
+│   Ctrl+Z     Suspend                                     │
+│   Tab        Focus next / Shift+Tab Focus prev           │
+│   F1 / ?     Open help modal                             │
+│   /          Focus search + clear query                  │
+│   Esc        Focus back (LIFO focus stack) / close modal │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ Layer 2 — Common list navigation (Branches, Commits,     │
+│           Diff, Scope, NOT text-input panels)            │
+│   j / ↓      Move down (cycle at bottom)                │
+│   k / ↑      Move up (cycle at top)                     │
+│   h          Focus previous panel                       │
+│   l          Focus next panel                           │
+│   g g        Jump to top (double-tap g)                 │
+│   G          Jump to bottom                             │
+│   Ctrl+F     Page down                                  │
+│   Ctrl+B     Page up                                    │
+│   Home       Jump to top                                │
+│   End        Jump to bottom                             │
+│   PgUp       Page up                                    │
+│   PgDn       Page down                                  │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ Layer 3 — Text-input panels (Search only)                │
+│   Char       Insert literal character at cursor         │
+│   →/←        Cursor right/left                          │
+│   Ctrl+→/←   Cursor by word boundary                    │
+│   Home/End   Cursor to line start / line end            │
+│   Backspace  Delete char before cursor                  │
+│   Delete     Delete char at cursor                      │
+│   Ctrl+V     Paste from clipboard                       │
+│   Esc        Clear search + return focus (LIFO pop)     │
+│   Enter      Confirm search + focus commits             │
+│   Tab        Exit text input + focus next               │
+│   Shift+Tab  Exit text input + focus prev               │
+│                                                          │
+│   NOTE: In text input, j/k/h/l become literal chars.    │
+│   This matches vim's insert-mode behavior exactly.       │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ Layer 4 — Panel-specific keys                            │
+│                                                          │
+│   ── Branches ──                                         │
+│   Enter       Select branch (load commits)               │
+│   Space       Toggle expand/collapse node                │
+│   → / e       Expand focused node                       │
+│   ← / c       Collapse focused node                     │
+│   n / p       Jump to next/prev sibling at same depth   │
+│                                                          │
+│   ── Commits ──                                          │
+│   Enter       Show diff for selected commit              │
+│   Space       Preview diff (no focus change) [new]      │
+│   y           Copy short hash (7 chars)                 │
+│   Y           Copy full hash                            │
+│   g           Toggle full / simplified graph             │
+│                                                          │
+│   ── Diff ──                                             │
+│   n / p       Next/prev changed file                    │
+│   Enter       Jump to selected file's diff section      │
+│   Space       Return focus to commits (same as Esc)      │
+│   ← / →       Horizontal scroll (once word-wrap exists)  │
+│                                                          │
+│   ── Scope ──                                            │
+│   Space       Cycle scope (All → Local → Remote)         │
+│   Enter       Cycle scope (same as Space)                │
+│   Ctrl+S      Cycle scope (global, works anywhere)       │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Design principles
+
+1. **Vim keys are universal except in text input.** `j`/`k`/`h`/`l` must work identically in all non-text-input panels. Text input breaks them intentionally — exactly how vim's insert mode works.
+
+2. **`Esc` always means "go back / dismiss".** In search: clear + return. In diff: back to commits. In commits: back to branches. In help modal: close. Implement via a `Vec<Panel>` focus stack pushed/popped by relevant actions.
+
+3. **`/` always means "search".** Globally bound. Focuses search input and clears the current query so the user can start typing immediately.
+
+4. **`Home`/`End` vs `gg`/`G` are complementary.** `Home`/`End` work everywhere with context-sensitive meaning (list jump vs. cursor move). `gg`/`G` are list-only vim alternatives for users who prefer them.
+
+5. **`Space` means "interact without moving".** In branches: toggle (don't navigate away). In commits: preview diff (don't move focus to diff panel — new behavior). In scope: cycle. Enter means "commit the action / navigate".
+
+6. **`n`/`p` mean "next/previous within a sub-collection".** In diff: next/prev file. In branches: next/prev sibling at same depth. Pattern scales to future features (e.g., next/prev blame chunk).
+
+### Implementation approach
+
+1. **Refactor `handle_key` into a layer stack.** Evaluate layers in order: always-global → text-input guard → list-navigation → panel-specific. The first match wins. This replaces the current fallback-chain approach.
+
+2. **Move `j`/`k`/`h`/`l` out of global fallback into `handle_key`.** Currently in `input.rs` lines 154-155. Move them into the common list-navigation layer with an explicit `if focus == Search { skip }` guard. The search panel already has `KeyCode::Char(ch)` which will capture them before the fallback — this just makes the intent explicit.
+
+3. **Add LIFO focus stack to `UiState`.** Push current focus when `Enter` navigates (commits→diff, branches→commits). Pop on `Esc`. `Tab`/`Shift+Tab` bypass the stack (linear cycling as today).
+
+4. **Add `gg` double-tap detection.** Store `last_key` and `last_key_time` in `UiState`. If `g` was pressed within 500ms and current key is also `g`, emit `JumpToTop`. Else buffer the first `g`.
+
+5. **Bind `/` globally in `handle_key` layer 1.** Do not delegate to the focused panel.
+

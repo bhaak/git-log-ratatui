@@ -79,6 +79,37 @@ impl BranchState {
                 self.expanded_nodes.insert(key.clone(), *expanded);
                 vec![Effect::RebuildBranchTree, Effect::SetDirty]
             }
+            Command::JumpToSibling(delta) => {
+                if self.branch_tree.is_empty() {
+                    return vec![];
+                }
+                let current_depth = self
+                    .branch_tree
+                    .get(self.branch_index)
+                    .map(|item| item.depth)
+                    .unwrap_or(0);
+                let len = self.branch_tree.len();
+                if *delta > 0 {
+                    for _ in 0..len {
+                        self.branch_index = (self.branch_index + 1) % len;
+                        if self.branch_tree[self.branch_index].depth <= current_depth {
+                            break;
+                        }
+                    }
+                } else {
+                    for _ in 0..len {
+                        if self.branch_index == 0 {
+                            self.branch_index = len.saturating_sub(1);
+                        } else {
+                            self.branch_index -= 1;
+                        }
+                        if self.branch_tree[self.branch_index].depth <= current_depth {
+                            break;
+                        }
+                    }
+                }
+                vec![Effect::SetDirty]
+            }
             _ => vec![],
         }
     }
@@ -304,6 +335,177 @@ mod tests {
         }];
         let effects = state.handle_command(&Command::MoveDown);
         assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+    }
+
+    #[test]
+    fn test_jump_to_sibling_forward() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "Section".into(),
+                depth: 0,
+                expandable: true,
+                expanded: true,
+                is_branch: false,
+                full_path: "Section".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "sec".into(),
+            },
+            TreeItem {
+                name: "a".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "b".into(),
+            },
+            TreeItem {
+                name: "c".into(),
+                depth: 2,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "c".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "c".into(),
+            },
+            TreeItem {
+                name: "d".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "d".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "d".into(),
+            },
+        ];
+        state.branch_index = 1;
+        state.handle_command(&Command::JumpToSibling(1));
+        assert_eq!(state.branch_index, 2);
+        state.handle_command(&Command::JumpToSibling(1));
+        assert_eq!(state.branch_index, 4);
+    }
+
+    #[test]
+    fn test_jump_to_sibling_backward() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "Section".into(),
+                depth: 0,
+                expandable: true,
+                expanded: true,
+                is_branch: false,
+                full_path: "Section".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "sec".into(),
+            },
+            TreeItem {
+                name: "a".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "b".into(),
+            },
+        ];
+        state.branch_index = 2;
+        state.handle_command(&Command::JumpToSibling(-1));
+        assert_eq!(state.branch_index, 1);
+    }
+
+    #[test]
+    fn test_jump_to_sibling_skips_deeper_items() {
+        let mut state = make_state();
+        state.branch_tree = vec![
+            TreeItem {
+                name: "a".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "a".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "a".into(),
+            },
+            TreeItem {
+                name: "child".into(),
+                depth: 2,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "child".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "child".into(),
+            },
+            TreeItem {
+                name: "b".into(),
+                depth: 1,
+                expandable: false,
+                expanded: false,
+                is_branch: true,
+                full_path: "b".into(),
+                tree_prefix: "".into(),
+                last_commit_date: None,
+                epoch_days: None,
+                key: "b".into(),
+            },
+        ];
+        state.branch_index = 0;
+        state.handle_command(&Command::JumpToSibling(1));
+        assert_eq!(state.branch_index, 2);
+    }
+
+    #[test]
+    fn test_jump_to_sibling_empty_tree() {
+        let mut state = make_state();
+        state.handle_command(&Command::JumpToSibling(1));
+        assert_eq!(state.branch_index, 0);
     }
 
     #[test]

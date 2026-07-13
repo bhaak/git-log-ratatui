@@ -5,6 +5,8 @@ use crate::view::Panel;
 /// Global UI state — focus, layout, drag tracking, and status.
 pub struct UiState {
     pub focus: Panel,
+    /// LIFO stack for GoBack / Esc navigation (pushed when Enter navigates away).
+    pub focus_stack: Vec<Panel>,
     pub branch_width_pct: u16,
     pub diff_height_pct: u16,
     pub dragging: Option<ui::layout::DragDirection>,
@@ -21,6 +23,7 @@ impl UiState {
     pub fn new(branch_width_pct: u16, diff_height_pct: u16, poll_min_ms: u8) -> Self {
         UiState {
             focus: Panel::Commits,
+            focus_stack: Vec::new(),
             branch_width_pct,
             diff_height_pct,
             dragging: None,
@@ -32,6 +35,11 @@ impl UiState {
             dirty: true,
             needs_terminal_reset: false,
         }
+    }
+
+    /// Push the given panel onto the focus stack before navigating away.
+    pub(crate) fn push_focus(&mut self, panel: Panel) {
+        self.focus_stack.push(panel);
     }
 
     /// Handle UI-level commands (focus, drag, layout).
@@ -47,6 +55,16 @@ impl UiState {
             }
             Command::FocusPrev => {
                 self.focus = self.focus.prev();
+                vec![Effect::SetDirty]
+            }
+            Command::GoBack => {
+                if let Some(prev) = self.focus_stack.pop() {
+                    self.focus = prev;
+                }
+                vec![Effect::SetDirty]
+            }
+            Command::FocusSearchClear => {
+                self.focus = Panel::Search;
                 vec![Effect::SetDirty]
             }
             Command::InitiateDragVertical => {
@@ -112,6 +130,39 @@ mod tests {
         state.focus = Panel::Branches;
         state.handle_command(&Command::FocusPrev);
         assert_eq!(state.focus, Panel::Diff);
+    }
+
+    #[test]
+    fn test_go_back_pops_focus_stack() {
+        let mut state = UiState::new(20, 35, 10);
+        state.focus = Panel::Diff;
+        state.push_focus(Panel::Commits);
+        state.handle_command(&Command::GoBack);
+        assert_eq!(state.focus, Panel::Commits);
+    }
+
+    #[test]
+    fn test_go_back_empty_stack_keeps_focus() {
+        let mut state = UiState::new(20, 35, 10);
+        state.focus = Panel::Diff;
+        state.handle_command(&Command::GoBack);
+        assert_eq!(state.focus, Panel::Diff);
+    }
+
+    #[test]
+    fn test_focus_search_clear_sets_focus_to_search() {
+        let mut state = UiState::new(20, 35, 10);
+        state.focus = Panel::Commits;
+        state.handle_command(&Command::FocusSearchClear);
+        assert_eq!(state.focus, Panel::Search);
+    }
+
+    #[test]
+    fn test_push_focus_adds_to_stack() {
+        let mut state = UiState::new(20, 35, 10);
+        state.push_focus(Panel::Branches);
+        state.push_focus(Panel::Commits);
+        assert_eq!(state.focus_stack, vec![Panel::Branches, Panel::Commits]);
     }
 
     #[test]

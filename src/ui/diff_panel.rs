@@ -608,9 +608,10 @@ impl panel_mod::Panel for DiffPanel {
 
     fn help_keys(&self) -> &[(&str, &str)] {
         &[
-            ("↑↓/j,k", "scroll/navigate files"),
+            ("↑↓/j,k", "scroll/files"),
             ("n/p", "next/prev file"),
-            ("Enter", "jump to file diff"),
+            ("Enter", "jump to file"),
+            ("Esc", "back to commits"),
             ("Home/End", "top/bottom"),
             ("PgUp/PgDn", "page"),
         ]

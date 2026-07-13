@@ -54,6 +54,7 @@ impl CommitTableState {
                 vec![Effect::SetDirty]
             }
             Command::ShowCommitDiff => vec![Effect::SetDirty],
+            Command::PreviewDiff => vec![Effect::SetDirty],
             _ => vec![],
         }
     }
@@ -102,6 +103,14 @@ mod tests {
     fn test_show_commit_diff_returns_set_dirty() {
         let mut state = make_state();
         let effects = state.handle_command(&Command::ShowCommitDiff);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::SetDirty));
+    }
+
+    #[test]
+    fn test_preview_diff_returns_set_dirty() {
+        let mut state = make_state();
+        let effects = state.handle_command(&Command::PreviewDiff);
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], Effect::SetDirty));
     }

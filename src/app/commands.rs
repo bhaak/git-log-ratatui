@@ -75,6 +75,14 @@ pub enum Command {
     },
     /// Set absolute diff scroll position (for scrollbar dragging).
     ScrollToAbsolute(usize),
+    /// Focus the search panel and clear the query (bound to `/`).
+    FocusSearchClear,
+    /// Go back to the previous panel via LIFO focus stack (bound to `Esc`).
+    GoBack,
+    /// Preview diff for selected commit without moving focus (bound to `Space` in commits).
+    PreviewDiff,
+    /// Branch panel: jump to next (1) or previous (-1) sibling at the same tree depth.
+    JumpToSibling(i32),
     /// Quit the application.
     Quit,
 }

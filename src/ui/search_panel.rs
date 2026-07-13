@@ -194,9 +194,10 @@ impl Panel for SearchPanel {
 
     fn help_keys(&self) -> &[(&str, &str)] {
         &[
+            ("Esc", "clear search"),
             ("Ctrl+A/E", "start/end"),
-            ("Esc", "clear"),
             ("Ctrl+V", "paste"),
+            ("Tab", "next panel"),
         ]
     }
 

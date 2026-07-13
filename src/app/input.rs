@@ -80,7 +80,9 @@ pub(crate) fn handle_event(app: &mut App) -> Result<EventOutcome, AppError> {
 }
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
-    // --- Always-global keys ---
+    let focus = app.state.ui.focus;
+
+    // ── Layer 1: Always-global keys (no panel may override) ──
     match key.code {
         // Quit
         KeyCode::Char('q') => return vec![Command::Quit],
@@ -100,6 +102,10 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             }];
         }
         KeyCode::BackTab => return vec![Command::FocusPrev],
+        // Search: / always focuses search and clears the query
+        KeyCode::Char('/') if key.modifiers.is_empty() => {
+            return vec![Command::FocusSearchClear];
+        }
         // Ctrl+shortcuts
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::CycleScope];
@@ -111,7 +117,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             return Vec::new();
         }
         KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.state.ui.focus == PanelEnum::Search {
+            if focus == PanelEnum::Search {
                 return vec![Command::SetSearch(app.state.search.search_query.clone(), 0)];
             } else {
                 return vec![
@@ -122,7 +128,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         }
         KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             let len = app.state.search.search_query.len();
-            if app.state.ui.focus == PanelEnum::Search {
+            if focus == PanelEnum::Search {
                 return vec![Command::SetSearch(
                     app.state.search.search_query.clone(),
                     len,
@@ -137,8 +143,29 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         _ => {}
     }
 
-    // --- Panel dispatch — focused panel gets first chance at the key ---
-    let commands = match app.state.ui.focus {
+    // ── Layer 2: Common navigation shortcuts (skip Search — text input mode) ──
+    if focus != PanelEnum::Search {
+        match key.code {
+            // Esc: go back to previous panel (pop LIFO focus stack).
+            // Search panel handles its own Esc (clear query) in panel dispatch.
+            KeyCode::Esc => return vec![Command::GoBack],
+            // Ctrl+F / Ctrl+B: alternative page up/down (vim/less convention).
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return vec![Command::PageDown];
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return vec![Command::PageUp];
+            }
+            // G (Shift+g): jump to bottom (vim convention).
+            KeyCode::Char('G') if key.modifiers.is_empty() => {
+                return vec![Command::JumpToBottom];
+            }
+            _ => {}
+        }
+    }
+
+    // ── Layer 3: Panel dispatch — focused panel gets first chance at the key ──
+    let commands = match focus {
         PanelEnum::Branches => BranchPanel.handle_event(&key, &mut app.state.branch),
         PanelEnum::Search => SearchPanel.handle_event(&key, &mut app.state.search),
         PanelEnum::Scope => ScopePanel.handle_event(&key, &mut app.state.branch.branch_scope),
@@ -149,7 +176,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         return commands;
     }
 
-    // --- Fallback: single-character shortcuts (only if panel ignored the key) ---
+    // ── Layer 4: Fallback single-character shortcuts (only if panel ignored the key) ──
     match key.code {
         KeyCode::Char('h') => vec![Command::FocusPrev],
         KeyCode::Char('l') => vec![Command::FocusNext],
@@ -157,9 +184,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         KeyCode::Char('k') => vec![Command::MoveUp],
         KeyCode::Char('y') => vec![Command::CopyHashShort],
         KeyCode::Char('Y') => vec![Command::CopyHashFull],
-        KeyCode::Char('g')
-            if key.modifiers.is_empty() && app.state.ui.focus == PanelEnum::Commits =>
-        {
+        KeyCode::Char('g') if key.modifiers.is_empty() && focus == PanelEnum::Commits => {
             vec![Command::ToggleGraph]
         }
         _ => Vec::new(),
@@ -189,10 +214,20 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             state.ui.focus = crate::view::Panel::Search;
             effects
         }
+        // FocusSearchClear: set focus to search and clear the query.
+        Command::FocusSearchClear => {
+            let effects = state.ui.handle_command(cmd);
+            state.search.search_query.clear();
+            state.search.cursor_pos = 0;
+            let mut all = effects;
+            all.extend(state.search.handle_command(&Command::ClearSearch));
+            all
+        }
         // UI commands → UiState
         Command::SetFocus(_)
         | Command::FocusNext
         | Command::FocusPrev
+        | Command::GoBack
         | Command::InitiateDragVertical
         | Command::InitiateDragHorizontal
         | Command::EndDrag
@@ -206,17 +241,38 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         | Command::SelectNextFile
         | Command::SelectPrevFile
         | Command::ScrollToAbsolute(_) => state.diff.handle_command(cmd),
-        // Commit table commands → CommitTableState (ShowCommitDiff also sets focus)
+        // Commit table commands → CommitTableState (ShowCommitDiff also sets focus + pushes stack)
         Command::CopyHashShort | Command::CopyHashFull | Command::SelectCommitIndex(_) => {
             state.commit.handle_command(cmd)
         }
         Command::ShowCommitDiff => {
             let effects = state.commit.handle_command(cmd);
+            state.ui.push_focus(crate::view::Panel::Commits);
             state.ui.focus = crate::view::Panel::Diff;
             effects
         }
+        Command::PreviewDiff => {
+            state.commit.handle_command(cmd);
+            if super::search::visible_count(state) > 0 {
+                let ci = super::search::visible_to_filtered(state, state.commit.selected_index);
+                if let Some(hash) = state
+                    .commit
+                    .filtered_commits
+                    .as_deref()
+                    .unwrap_or(&state.commit.all_commits)
+                    .get(ci)
+                    .map(|c| c.hash.clone())
+                {
+                    state.diff.last_selected_hash = Some(hash.clone());
+                    return vec![Effect::RequestDiff(hash), Effect::SetDirty];
+                }
+            }
+            vec![Effect::SetDirty]
+        }
         // Branch panel commands → BranchState
-        Command::ToggleBranchNode { .. } => state.branch.handle_command(cmd),
+        Command::ToggleBranchNode { .. } | Command::JumpToSibling(_) => {
+            state.branch.handle_command(cmd)
+        }
         // Focus-dependent navigation
         Command::MoveUp
         | Command::MoveDown
@@ -269,6 +325,7 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
                 state.ui.focus = Panel::Commits;
                 return vec![Effect::SetDirty];
             }
+            state.ui.push_focus(Panel::Branches);
             state.branch.selected_branch = Some(name.clone());
             state.ui.focus = Panel::Commits;
             vec![Effect::RequestCommits(Some(name.clone())), Effect::SetDirty]

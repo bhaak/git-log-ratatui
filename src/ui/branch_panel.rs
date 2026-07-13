@@ -92,6 +92,8 @@ impl Panel for BranchPanel {
                 }
                 Vec::new()
             }
+            KeyCode::Char('n') => vec![Command::JumpToSibling(1)],
+            KeyCode::Char('p') => vec![Command::JumpToSibling(-1)],
             KeyCode::Enter => {
                 if let Some(item) = state.branch_tree.get(state.branch_index) {
                     if item.is_branch {
@@ -115,9 +117,10 @@ impl Panel for BranchPanel {
 
     fn help_keys(&self) -> &[(&str, &str)] {
         &[
-            ("↑↓", "navigate"),
+            ("↑↓/j,k", "navigate"),
             ("Enter", "select"),
             ("Space", "toggle"),
+            ("n/p", "sibling"),
             ("PgUp/PgDn", "page"),
             ("Home/End", "top/bottom"),
         ]
