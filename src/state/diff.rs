@@ -155,18 +155,24 @@ mod tests {
                 diff_line: 5,
                 status: '~',
                 old_name: None,
+                lines_added: 10,
+                lines_removed: 3,
             },
             FileEntry {
                 name: "b.rs".into(),
                 diff_line: 20,
                 status: '+',
                 old_name: None,
+                lines_added: 42,
+                lines_removed: 0,
             },
             FileEntry {
                 name: "c.rs".into(),
                 diff_line: 40,
                 status: '-',
                 old_name: None,
+                lines_added: 0,
+                lines_removed: 7,
             },
         ]
     }

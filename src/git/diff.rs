@@ -93,6 +93,8 @@ impl GitRepository {
                         diff_line: diff_lines.len(),
                         status,
                         old_name,
+                        lines_added: 0,
+                        lines_removed: 0,
                     });
                 }
             }
@@ -104,6 +106,27 @@ impl GitRepository {
             );
             true
         })?;
+
+        // Post-process: count added/removed lines per file from the collected diff_lines.
+        for i in 0..file_entries.len() {
+            let start = file_entries[i].diff_line;
+            let end = if i + 1 < file_entries.len() {
+                file_entries[i + 1].diff_line
+            } else {
+                diff_lines.len()
+            };
+            let mut added = 0usize;
+            let mut removed = 0usize;
+            for line in &diff_lines[start..end] {
+                if line.starts_with('+') && !line.starts_with("+++ ") {
+                    added += 1;
+                } else if line.starts_with('-') && !line.starts_with("--- ") {
+                    removed += 1;
+                }
+            }
+            file_entries[i].lines_added = added;
+            file_entries[i].lines_removed = removed;
+        }
 
         tracing::debug!(
             "diff({hash}): {} lines, {} files in {}ms",

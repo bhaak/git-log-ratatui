@@ -7,4 +7,8 @@ pub struct FileEntry {
     pub status: char,
     /// Previous path for renamed/copied files
     pub old_name: Option<String>,
+    /// Number of lines added in this file
+    pub lines_added: usize,
+    /// Number of lines removed in this file
+    pub lines_removed: usize,
 }

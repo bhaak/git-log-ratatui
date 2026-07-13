@@ -165,6 +165,10 @@ fn build_all_lines<'a>(
             lines.push(Line::from(vec![
                 Span::styled(format!("{} ", entry.status), status_style),
                 Span::styled(display_name, name_style),
+                Span::styled(
+                    format!(" (+{}/-{})", entry.lines_added, entry.lines_removed),
+                    Style::default().fg(theme.diff_context),
+                ),
             ]));
         }
 
@@ -492,12 +496,16 @@ mod tests {
                 diff_line: 0,
                 status: '~',
                 old_name: None,
+                lines_added: 5,
+                lines_removed: 2,
             },
             FileEntry {
                 name: "b.rs".to_string(),
                 diff_line: 5,
                 status: '+',
                 old_name: None,
+                lines_added: 10,
+                lines_removed: 0,
             },
         ];
         assert_eq!(diff_line_offset(Some(&info), files), 10);
@@ -510,6 +518,8 @@ mod tests {
             diff_line: 0,
             status: '~',
             old_name: None,
+            lines_added: 3,
+            lines_removed: 1,
         }];
         assert_eq!(diff_line_offset(None, files), 3);
     }
