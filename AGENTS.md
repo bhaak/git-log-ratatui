@@ -10,6 +10,11 @@
   - update STRUCTURE.md if the architectural design changes
 
 * Code
+  - adhere to these principles: KISS, DRY, YAGNI, SRP, SOC, OCP, LSP, ISP, DIP
+  - Composition over Inheritance
+  - Fail Fast
+  - Principle of Least Astonishment
+  - avoid long methods
   - run cargo fmt after each step
   - run clippy after each step
 
@@ -28,3 +33,4 @@
 * Rust
   - use standard crates, avoid custom implementations
   - use git2
+  - tests go in separate files
