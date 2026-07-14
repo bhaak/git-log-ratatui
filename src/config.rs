@@ -99,7 +99,7 @@ impl Default for BehaviorConfig {
             commit_batch_size: default_commit_batch_size(),
             poll_min_ms: default_poll_min_ms(),
             poll_max_ms: default_poll_max_ms(),
-            simplified_graph_default: false,
+            simplified_graph_default: true,
             debug_default: false,
             hash_color_enabled: default_true(),
             branch_staleness_enabled: default_true(),
@@ -205,7 +205,7 @@ mod tests {
         let behavior = BehaviorConfig::default();
         assert_eq!(behavior.commit_batch_size, 5000);
         assert_eq!(behavior.poll_min_ms, 10);
-        assert!(!behavior.simplified_graph_default);
+        assert!(behavior.simplified_graph_default);
         assert!(!behavior.debug_default);
     }
 
