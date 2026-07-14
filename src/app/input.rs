@@ -482,7 +482,18 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
                         }
                     });
                 if let Some(hash) = hash_opt {
-                    let _ = clipboard::copy_to_clipboard(hash);
+                    match clipboard::copy_to_clipboard(hash) {
+                        Ok(()) => {
+                            app.state.ui.status_message =
+                                Some(format!("Copied {} to clipboard", hash));
+                        }
+                        Err(e) => {
+                            app.state.ui.status_message = Some(format!("Failed to copy: {}", e));
+                        }
+                    }
+                    app.state.ui.status_expiry =
+                        Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
+                    app.state.ui.dirty = true;
                 }
             }
             Effect::RebuildBranchTree => super::branches::rebuild_branch_tree(&mut app.state),

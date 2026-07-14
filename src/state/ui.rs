@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::app::commands::{Command, Effect};
 use crate::ui;
 use crate::view::Panel;
@@ -14,6 +16,7 @@ pub struct UiState {
     pub last_size: Option<(u16, u16)>,
     pub last_mouse_pos: Option<(u16, u16)>,
     pub status_message: Option<String>,
+    pub status_expiry: Option<Instant>,
     pub poll_interval_ms: u8,
     pub dirty: bool,
     pub needs_terminal_reset: bool,
@@ -33,6 +36,7 @@ impl UiState {
             last_size: None,
             last_mouse_pos: None,
             status_message: None,
+            status_expiry: None,
             poll_interval_ms: poll_min_ms,
             dirty: true,
             needs_terminal_reset: false,

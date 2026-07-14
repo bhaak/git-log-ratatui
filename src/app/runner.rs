@@ -30,6 +30,13 @@ impl App {
             if self.process_git_results() {
                 self.state.ui.dirty = true;
             }
+            if let Some(expiry) = self.state.ui.status_expiry {
+                if expiry <= Instant::now() {
+                    self.state.ui.status_message = None;
+                    self.state.ui.status_expiry = None;
+                    self.state.ui.dirty = true;
+                }
+            }
             if self.state.ui.dirty {
                 if self.state.ui.needs_terminal_reset {
                     let _ = terminal.clear();
