@@ -6,6 +6,7 @@
 - [ ]  n/p working in every panel, in as much that makes sense
 - [ ]  up/down in branches panel showing commits without typing enter
 - [ ] show uncommited changes like a commit?
+- [ ] consistent handling of 8/16/256/truecolor color support
 
 * Commits Panel
 - [ ] show commit in local timezone or with timezone info
@@ -25,6 +26,7 @@
 
 * Features
 - [ ] configuration of colors and layout (at least initial sizes of panels)
-- [ ] everything keyboard capable. ? opens extended help, with global and local keybindings
+- [ ] everything keyboard capable
+- [X] ? opens extended help, with global and local keybindings
 - [ ] file tree
 - [ ] blame? this should be better than vim+fugitive
