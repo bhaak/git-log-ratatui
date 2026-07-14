@@ -4,7 +4,7 @@ pub const DEFAULT_BRANCH_PCT: u16 = 20;
 pub const MIN_BRANCH_PCT: u16 = 10;
 pub const MAX_BRANCH_PCT: u16 = 40;
 
-pub const DEFAULT_DIFF_PCT: u16 = 35;
+pub const DEFAULT_DIFF_PCT: u16 = 60;
 pub const MIN_DIFF_PCT: u16 = 10;
 pub const MAX_DIFF_PCT: u16 = 65;
 pub const DIFF_MAX_PCT: u16 = 90;
