@@ -93,6 +93,11 @@ pub fn render_help_modal(
 
     let nav_keys: &[KeyBinding] = &[
         KeyBinding::new("h / l", "Focus prev/next", "Focus previous / next panel"),
+        KeyBinding::new(
+            "b / c / d",
+            "Jump panel",
+            "Jump to Branches / Commits / Diff",
+        ),
         KeyBinding::new("j / k / ↑ / ↓", "Move up/down", "Move down / up in list"),
         KeyBinding::new("Ctrl+F / Ctrl+B", "Page down/up", "Page down / up"),
         KeyBinding::new("G / Home / End", "Jump", "Jump to bottom / top"),
