@@ -8,9 +8,6 @@ pub enum AppError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Clipboard error: {0}")]
-    Clipboard(String),
-
     #[error("{0}")]
     General(String),
 }
