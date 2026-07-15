@@ -482,15 +482,9 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
                         }
                     });
                 if let Some(hash) = hash_opt {
-                    match clipboard::copy_to_clipboard(hash) {
-                        Ok(()) => {
-                            app.state.ui.status_message =
-                                Some(format!("Copied {} to clipboard", hash));
-                        }
-                        Err(e) => {
-                            app.state.ui.status_message = Some(format!("Failed to copy: {}", e));
-                        }
-                    }
+                    // Copy to clipboard (runs in background thread)
+                    clipboard::copy_to_clipboard(hash);
+                    app.state.ui.status_message = Some(format!("Copied {} to clipboard", hash));
                     app.state.ui.status_expiry =
                         Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
                     app.state.ui.dirty = true;
