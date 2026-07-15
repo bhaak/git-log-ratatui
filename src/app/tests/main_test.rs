@@ -20,6 +20,7 @@ fn test_app() -> App {
         branch_worker: workers::new_branch_worker(".").unwrap(),
         commit_worker: workers::new_commit_worker(".").unwrap(),
         diff_worker: workers::new_diff_worker(".").unwrap(),
+        clipboard: None,
     }
 }
 

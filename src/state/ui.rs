@@ -132,7 +132,7 @@ mod tests {
         let mut state = UiState::new(20, 35, 10);
         state.focus = Panel::Branches;
         state.handle_command(&Command::FocusNext);
-        assert_eq!(state.focus, Panel::Search);
+        assert_eq!(state.focus, Panel::Commits);
     }
 
     #[test]
@@ -140,7 +140,7 @@ mod tests {
         let mut state = UiState::new(20, 35, 10);
         state.focus = Panel::Branches;
         state.handle_command(&Command::FocusPrev);
-        assert_eq!(state.focus, Panel::Diff);
+        assert_eq!(state.focus, Panel::Scope);
     }
 
     #[test]

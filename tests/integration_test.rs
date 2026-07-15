@@ -120,25 +120,25 @@ fn test_panel_focus_cycle() {
 
     assert_eq!(state.ui.focus, Panel::Commits);
 
-    // Forward
+    // Forward: Commits → Diff → Search → Scope → Branches → Commits
     state.ui.focus = state.ui.focus.next();
     assert_eq!(state.ui.focus, Panel::Diff);
     state.ui.focus = state.ui.focus.next();
-    assert_eq!(state.ui.focus, Panel::Branches);
-    state.ui.focus = state.ui.focus.next();
     assert_eq!(state.ui.focus, Panel::Search);
     state.ui.focus = state.ui.focus.next();
     assert_eq!(state.ui.focus, Panel::Scope);
+    state.ui.focus = state.ui.focus.next();
+    assert_eq!(state.ui.focus, Panel::Branches);
     state.ui.focus = state.ui.focus.next();
     assert_eq!(state.ui.focus, Panel::Commits); // wraps around
 
-    // Backward
+    // Backward: Commits → Branches → Scope → Search → Diff → Commits
+    state.ui.focus = state.ui.focus.prev();
+    assert_eq!(state.ui.focus, Panel::Branches);
     state.ui.focus = state.ui.focus.prev();
     assert_eq!(state.ui.focus, Panel::Scope);
     state.ui.focus = state.ui.focus.prev();
     assert_eq!(state.ui.focus, Panel::Search);
-    state.ui.focus = state.ui.focus.prev();
-    assert_eq!(state.ui.focus, Panel::Branches);
     state.ui.focus = state.ui.focus.prev();
     assert_eq!(state.ui.focus, Panel::Diff);
     state.ui.focus = state.ui.focus.prev();

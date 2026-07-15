@@ -12,9 +12,9 @@ pub enum Panel {
 
 impl Panel {
     pub const ALL: [Panel; 5] = [
-        Panel::Branches,
         Panel::Search,
         Panel::Scope,
+        Panel::Branches,
         Panel::Commits,
         Panel::Diff,
     ];
@@ -48,20 +48,20 @@ mod tests {
 
     #[test]
     fn test_panel_next_cycles_forward() {
-        assert_eq!(Panel::Branches.next(), Panel::Search);
         assert_eq!(Panel::Search.next(), Panel::Scope);
-        assert_eq!(Panel::Scope.next(), Panel::Commits);
+        assert_eq!(Panel::Scope.next(), Panel::Branches);
+        assert_eq!(Panel::Branches.next(), Panel::Commits);
         assert_eq!(Panel::Commits.next(), Panel::Diff);
-        assert_eq!(Panel::Diff.next(), Panel::Branches);
+        assert_eq!(Panel::Diff.next(), Panel::Search);
     }
 
     #[test]
     fn test_panel_prev_cycles_backward() {
-        assert_eq!(Panel::Branches.prev(), Panel::Diff);
+        assert_eq!(Panel::Search.prev(), Panel::Diff);
         assert_eq!(Panel::Diff.prev(), Panel::Commits);
-        assert_eq!(Panel::Commits.prev(), Panel::Scope);
+        assert_eq!(Panel::Commits.prev(), Panel::Branches);
+        assert_eq!(Panel::Branches.prev(), Panel::Scope);
         assert_eq!(Panel::Scope.prev(), Panel::Search);
-        assert_eq!(Panel::Search.prev(), Panel::Branches);
     }
 
     #[test]
