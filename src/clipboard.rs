@@ -3,21 +3,23 @@
 
 use arboard::Clipboard;
 use std::thread;
-use std::time::Duration;
 
 /// Copy text to the system clipboard.
-/// Spawns a background thread to handle the clipboard operation, keeping the
-/// clipboard instance alive longer to ensure clipboard managers can retrieve
-/// the contents. This runs asynchronously without blocking the UI.
+/// Spawns a background thread to keep the clipboard instance alive,
+/// allowing arboard's background thread and clipboard managers sufficient
+/// time to retrieve the contents. The Clipboard object is kept in scope
+/// for the lifetime of the spawned thread.
 pub fn copy_to_clipboard(text: &str) {
     let text = text.to_string();
 
-    // Spawn background thread to handle clipboard operation
+    // Spawn background thread to keep clipboard instance alive
     thread::spawn(move || {
         if let Ok(mut clipboard) = Clipboard::new() {
             let _ = clipboard.set_text(text);
-            // Keep clipboard instance alive to give clipboard managers time to see contents
-            thread::sleep(Duration::from_millis(100));
+            // Keep the clipboard instance alive in this thread's scope.
+            // The background thread arboard uses for serving clipboard contents
+            // has time to run and let other apps (clipboard managers) make requests.
+            // The Clipboard object will be dropped when this thread exits.
         }
     });
 }
