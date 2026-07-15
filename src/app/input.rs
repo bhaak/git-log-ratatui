@@ -110,16 +110,6 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
         KeyCode::Char('?') if key.modifiers.is_empty() => {
             return vec![Command::ToggleHelp];
         }
-        // Panel jump shortcuts (global — override search typing)
-        KeyCode::Char('b') if key.modifiers.is_empty() => {
-            return vec![Command::SetFocus(PanelEnum::Branches)];
-        }
-        KeyCode::Char('c') if key.modifiers.is_empty() => {
-            return vec![Command::SetFocus(PanelEnum::Commits)];
-        }
-        KeyCode::Char('d') if key.modifiers.is_empty() => {
-            return vec![Command::SetFocus(PanelEnum::Diff)];
-        }
         // Ctrl+shortcuts
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return vec![Command::CycleScope];
@@ -181,6 +171,16 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             // G (Shift+g): jump to bottom (vim convention).
             KeyCode::Char('G') if key.modifiers.is_empty() => {
                 return vec![Command::JumpToBottom];
+            }
+            // Panel jump shortcuts: b→Branches, c→Commits, d→Diff
+            KeyCode::Char('b') if key.modifiers.is_empty() => {
+                return vec![Command::SetFocus(PanelEnum::Branches)];
+            }
+            KeyCode::Char('c') if key.modifiers.is_empty() => {
+                return vec![Command::SetFocus(PanelEnum::Commits)];
+            }
+            KeyCode::Char('d') if key.modifiers.is_empty() => {
+                return vec![Command::SetFocus(PanelEnum::Diff)];
             }
             _ => {}
         }
