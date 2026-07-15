@@ -482,8 +482,8 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
                         }
                     });
                 if let Some(hash) = hash_opt {
-                    // Copy to clipboard (runs in background thread)
-                    clipboard::copy_to_clipboard(hash);
+                    // Copy to clipboard using the long-lived instance
+                    clipboard::copy_to_clipboard(&mut app.clipboard, hash);
                     app.state.ui.status_message = Some(format!("Copied {} to clipboard", hash));
                     app.state.ui.status_expiry =
                         Some(std::time::Instant::now() + std::time::Duration::from_secs(3));

@@ -3,6 +3,7 @@ use crate::error::AppError;
 
 use crate::workers;
 use crate::workers::{BranchWorker, CommitWorker, DiffWorker};
+use arboard::Clipboard;
 use state::AppState;
 
 pub mod branches;
@@ -33,6 +34,7 @@ pub struct App {
     pub(crate) branch_worker: BranchWorker,
     pub(crate) commit_worker: CommitWorker,
     pub(crate) diff_worker: DiffWorker,
+    pub(crate) clipboard: Option<Clipboard>,
 }
 
 impl App {
@@ -49,11 +51,15 @@ impl App {
         let simplified_graph = cli_simplified || config.behavior.simplified_graph_default;
         let debug = cli_debug || config.behavior.debug_default;
 
+        // Initialize clipboard if available
+        let clipboard = Clipboard::new().ok();
+
         Ok(App {
             state: AppState::new(repo_path, config, simplified_graph, debug),
             branch_worker,
             commit_worker,
             diff_worker,
+            clipboard,
         })
     }
 }
