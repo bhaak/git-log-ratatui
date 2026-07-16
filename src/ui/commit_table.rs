@@ -7,8 +7,6 @@ use ratatui::{
     Frame,
 };
 
-use std::cell::RefCell;
-
 use crate::app::commands::Command;
 use crate::domain::DecorationKind;
 use crate::state::commit::CommitTableState;
@@ -20,22 +18,36 @@ use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
 use crate::view::{CommitRow as Commit, Panel};
 
+/// Maximum width in columns for the git graph visualization.
 const COL_GRAPH_MAX: u16 = 12;
+/// Width of the abbreviated commit hash column.
 const COL_HASH: u16 = 8;
+/// Minimum width for the commit subject column.
 const COL_SUBJECT_MIN: u16 = 20;
+/// Width of the author name column.
 const COL_AUTHOR: u16 = 15;
+/// Width of the commit date column.
 const COL_DATE: u16 = 18;
+/// Total separator spacing between columns.
 const COL_SEPARATORS: u16 = 4;
+/// Minimum graph column width when no graph data is present.
 const MIN_GRAPH_WIDTH: u16 = 4;
+/// Number of hex characters shown for abbreviated commit hashes.
 pub(crate) const SHORT_HASH_LEN: usize = 7;
 
 /// Render context for the commit table panel.
 pub struct CommitTableCtx<'a> {
+    /// All commits available for display (filtered or full list).
     pub commits: &'a [Commit],
+    /// Index of the currently highlighted row within the visible subset.
     pub visible_index: usize,
+    /// Whether this panel currently has keyboard focus.
     pub is_focused: bool,
+    /// Mapping from visible row indices to absolute commit indices.
     pub visible_to_commit: &'a [usize],
+    /// Total number of commits loaded (may exceed `commits.len()` when filtered).
     pub total_loaded: usize,
+    /// Whether a search filter is currently active.
     pub search_active: bool,
     /// When true, show simple colored bullets instead of full box-drawing graph.
     pub simplified_graph: bool,
@@ -283,7 +295,9 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     frame.render_stateful_widget(table, area, &mut local_state);
 }
 
-fn is_branch_head(commit: &Commit) -> bool {
+/// Check whether a commit is at the tip of a local or remote branch.
+/// Used to render branch-head commits with a distinct graph marker (⦿).
+pub(super) fn is_branch_head(commit: &Commit) -> bool {
     commit.decorations.iter().any(|d| {
         matches!(
             d.kind,
@@ -292,7 +306,11 @@ fn is_branch_head(commit: &Commit) -> bool {
     })
 }
 
-fn build_graph_span(
+/// Build the graph column span for a commit row.
+/// In full mode, each graph character is colored according to `graph_colors`.
+/// In simplified mode, a single colored bullet is shown.
+/// Pads the result to `graph_width` columns.
+pub(super) fn build_graph_span(
     commit: &Commit,
     graph_width: usize,
     simplified: bool,
@@ -342,7 +360,9 @@ fn build_graph_span(
     Line::from(spans)
 }
 
-fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
+/// Build a simplified single-character graph bullet for a commit row.
+/// Uses ● for regular commits, ○ for merges, and ⦿ for branch heads.
+pub(super) fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     let lane = commit.graph_colors.iter().find(|&&c| c != 255).copied();
 
     let ch = if is_branch_head(commit) {
@@ -363,7 +383,10 @@ fn build_simplified_graph(commit: &Commit, theme: &Theme) -> Line<'static> {
     Line::from(Span::styled(ch.to_string(), Style::default().fg(color)))
 }
 
-fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'static> {
+/// Build the abbreviated hash column span for a commit row.
+/// Merge commits are rendered bold in the merge color.
+/// Otherwise the color is derived from the hash hex digits or falls back to the scrollbar thumb color.
+pub(super) fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'static> {
     let short_hash = if commit.hash.len() > SHORT_HASH_LEN {
         &commit.hash[..SHORT_HASH_LEN]
     } else {
@@ -386,7 +409,7 @@ fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'static> {
 
 /// Derive a unique, readable color from a git commit hash (first 6 hex digits).
 /// Maps 0-255 per channel to 50-250 to prevent too-dark colors.
-fn hash_color(hash: &str) -> Color {
+pub(super) fn hash_color(hash: &str) -> Color {
     if hash.len() < 6 {
         return Color::Rgb(128, 128, 128);
     }
@@ -417,6 +440,8 @@ pub(crate) fn age_color(epoch_days: i64, min_days: i64, max_days: i64) -> Color 
     Color::Rgb(staleness, staleness, staleness)
 }
 
+/// Return the current date as days since Unix epoch.
+/// Used as the upper bound for the date staleness color gradient.
 pub(crate) fn current_epoch_days() -> i64 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -425,7 +450,9 @@ pub(crate) fn current_epoch_days() -> i64 {
     (secs / 86400) as i64
 }
 
-fn graph_only_decorations(commit: &Commit) -> String {
+/// Format decorations for rows that only show graph information (no real commit).
+/// Joins decoration labels with ", " for compact display.
+pub(super) fn graph_only_decorations(commit: &Commit) -> String {
     if commit.decorations.is_empty() {
         String::new()
     } else {
@@ -438,7 +465,8 @@ fn graph_only_decorations(commit: &Commit) -> String {
     }
 }
 
-fn decoration_style(kind: &DecorationKind, theme: &Theme) -> Style {
+/// Map a decoration kind to its themed style.
+pub(super) fn decoration_style(kind: &DecorationKind, theme: &Theme) -> Style {
     match kind {
         DecorationKind::Tag => Style::default().fg(theme.decoration_tag),
         DecorationKind::LocalBranch => Style::default().fg(theme.decoration_local),
@@ -447,421 +475,14 @@ fn decoration_style(kind: &DecorationKind, theme: &Theme) -> Style {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::{Decoration, DecorationKind};
-    use crate::theme::Theme;
-    use crate::time_format::ymd_to_days;
-
-    fn make_theme() -> Theme {
-        Theme::default()
-    }
-
-    fn make_ctx<'a>(theme: &'a Theme, commits: &'a [Commit]) -> CommitTableCtx<'a> {
-        CommitTableCtx {
-            commits,
-            visible_index: 0,
-            is_focused: true,
-            visible_to_commit: &[],
-            total_loaded: 0,
-            search_active: false,
-            simplified_graph: false,
-            hash_color_enabled: true,
-            debug_label: None,
-            theme,
-        }
-    }
-
-    fn make_commit(hash: &str, graph: &str, merge: bool, decorations: Vec<Decoration>) -> Commit {
-        Commit {
-            hash: hash.to_string(),
-            graph: graph.to_string(),
-            graph_colors: vec![],
-            graph_only: false,
-            author: String::new(),
-            date: String::new(),
-            subject: String::new(),
-            merge,
-            decorations,
-            deco_line: 0,
-            epoch_days: 0,
-        }
-    }
-
-    #[test]
-    fn test_build_hash_span_long_hash() {
-        let theme = make_theme();
-        let c = make_commit("abc1234567890abcdef", "", false, vec![]);
-        let commits = [c.clone()];
-        let ctx = make_ctx(&theme, &commits);
-        let span = build_hash_span(&c, &ctx);
-        let expected = Span::styled(
-            "abc1234".to_string(),
-            Style::default().fg(hash_color("abc1234567890abcdef")),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_hash_span_short_hash() {
-        let theme = make_theme();
-        let c = make_commit("abc123", "", false, vec![]);
-        let commits = [c.clone()];
-        let ctx = make_ctx(&theme, &commits);
-        let span = build_hash_span(&c, &ctx);
-        let expected = Span::styled(
-            "abc123".to_string(),
-            Style::default().fg(hash_color("abc123")),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_hash_span_disabled_uses_scrollbar_thumb() {
-        let theme = make_theme();
-        let c = make_commit("abc1234567890abcdef", "", false, vec![]);
-        let commits = [c.clone()];
-        let mut ctx = make_ctx(&theme, &commits);
-        ctx.hash_color_enabled = false;
-        let span = build_hash_span(&c, &ctx);
-        let expected = Span::styled(
-            "abc1234".to_string(),
-            Style::default().fg(theme.scrollbar_thumb),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_hash_color_derives_unique_values() {
-        let c1 = hash_color("aa00000000000000000000000000000000000000");
-        let c2 = hash_color("bb00000000000000000000000000000000000000");
-        let c3 = hash_color("0000aa0000000000000000000000000000000000");
-        assert_ne!(c1, c2);
-        assert_ne!(c1, c3);
-        assert_ne!(c2, c3);
-    }
-
-    #[test]
-    fn test_hash_color_respects_minimum_brightness() {
-        let c = hash_color("0000000000000000000000000000000000000000");
-        match c {
-            Color::Rgb(r, g, b) => {
-                assert!(r >= 50, "r={r} should be >= 50");
-                assert!(g >= 50, "g={g} should be >= 50");
-                assert!(b >= 50, "b={b} should be >= 50");
-            }
-            _ => panic!("expected Rgb"),
-        }
-    }
-
-    #[test]
-    fn test_hash_color_short_hash_falls_back_to_grey() {
-        let c = hash_color("abc");
-        assert_eq!(c, Color::Rgb(128, 128, 128));
-    }
-
-    #[test]
-    fn test_hash_color_empty_hash_falls_back_to_grey() {
-        let c = hash_color("");
-        assert_eq!(c, Color::Rgb(128, 128, 128));
-    }
-
-    #[test]
-    fn test_age_color_newest_is_bright() {
-        let min_d = ymd_to_days(2024, 1, 1).unwrap();
-        let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let c = age_color(max_d, min_d, max_d);
-        match c {
-            Color::Rgb(r, g, b) => {
-                assert_eq!(r, 255, "newest should be 255");
-                assert_eq!(r, g);
-                assert_eq!(r, b);
-            }
-            _ => panic!("expected Rgb"),
-        }
-    }
-
-    #[test]
-    fn test_age_color_oldest_is_75() {
-        let min_d = ymd_to_days(2024, 1, 1).unwrap();
-        let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let c = age_color(min_d, min_d, max_d);
-        match c {
-            Color::Rgb(r, g, b) => {
-                assert_eq!(r, 75, "oldest should be 75");
-                assert_eq!(r, g);
-                assert_eq!(r, b);
-            }
-            _ => panic!("expected Rgb"),
-        }
-    }
-
-    #[test]
-    fn test_age_color_mid_range() {
-        let min_d = ymd_to_days(2024, 1, 1).unwrap();
-        let max_d = ymd_to_days(2024, 12, 31).unwrap();
-        let mid_d = ymd_to_days(2024, 7, 1).unwrap();
-        let c1 = age_color(mid_d, min_d, max_d);
-        let c2 = age_color(min_d, min_d, max_d);
-        match (c1, c2) {
-            (Color::Rgb(r1, _, _), Color::Rgb(r2, _, _)) => {
-                assert!(
-                    r1 > r2,
-                    "older date (Jan) should be darker than newer (Jul): r1={r1} r2={r2}"
-                );
-            }
-            _ => panic!("expected Rgb"),
-        }
-    }
-
-    #[test]
-    fn test_age_color_single_date_returns_white() {
-        let d = ymd_to_days(2024, 7, 1).unwrap();
-        let c = age_color(d, d, d);
-        assert_eq!(c, Color::Rgb(255, 255, 255));
-    }
-
-    #[test]
-    fn test_age_color_zero_range_returns_white() {
-        let c = age_color(1000, 1000, 1000);
-        assert_eq!(c, Color::Rgb(255, 255, 255));
-    }
-
-    #[test]
-    fn test_build_hash_span_merge() {
-        let theme = make_theme();
-        let c = make_commit("abc1234567890abcdef", "", true, vec![]);
-        let commits = [c.clone()];
-        let ctx = make_ctx(&theme, &commits);
-        let span = build_hash_span(&c, &ctx);
-        let expected = Span::styled(
-            "abc1234".to_string(),
-            Style::default()
-                .fg(theme.commit_merge)
-                .add_modifier(Modifier::BOLD),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_graph_span_normal() {
-        let theme = make_theme();
-        let c = make_commit("", "●", false, vec![]);
-        let span = build_graph_span(&c, 2, false, &theme);
-        let expected = Span::styled(
-            "● ".to_string(),
-            Style::default().fg(theme.commit_secondary),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_graph_span_merge() {
-        let theme = make_theme();
-        let c = make_commit("", "○", true, vec![]);
-        let span = build_graph_span(&c, 1, false, &theme);
-        let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_simplified_graph_regular() {
-        let theme = make_theme();
-        let mut c = make_commit("", "●", false, vec![]);
-        c.graph_colors = vec![2];
-        let span = build_simplified_graph(&c, &theme);
-        let expected = Span::styled("●".to_string(), Style::default().fg(theme.graph_colors[2]));
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_simplified_graph_merge() {
-        let theme = make_theme();
-        let mut c = make_commit("", "○", true, vec![]);
-        c.graph_colors = vec![0];
-        let span = build_simplified_graph(&c, &theme);
-        let expected = Span::styled("○".to_string(), Style::default().fg(theme.commit_merge));
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_build_simplified_graph_branch_head() {
-        let theme = make_theme();
-        let mut c = make_commit(
-            "",
-            "●",
-            false,
-            vec![Decoration {
-                label: "main".into(),
-                kind: DecorationKind::LocalBranch,
-            }],
-        );
-        c.graph_colors = vec![2];
-        let span = build_simplified_graph(&c, &theme);
-        let expected = Span::styled(
-            "\u{29BF}".to_string(),
-            Style::default().fg(theme.graph_colors[2]),
-        );
-        assert_eq!(span, Line::from(expected));
-    }
-
-    #[test]
-    fn test_is_branch_head_true_for_local_branch() {
-        let c = make_commit(
-            "",
-            "",
-            false,
-            vec![Decoration {
-                label: "main".into(),
-                kind: DecorationKind::LocalBranch,
-            }],
-        );
-        assert!(is_branch_head(&c));
-    }
-
-    #[test]
-    fn test_is_branch_head_false_for_tag_only() {
-        let c = make_commit(
-            "",
-            "",
-            false,
-            vec![Decoration {
-                label: "v1.0".into(),
-                kind: DecorationKind::Tag,
-            }],
-        );
-        assert!(!is_branch_head(&c));
-    }
-
-    #[test]
-    fn test_is_branch_head_false_for_no_decorations() {
-        let c = make_commit("", "", false, vec![]);
-        assert!(!is_branch_head(&c));
-    }
-
-    #[test]
-    fn test_graph_only_decorations_empty() {
-        let c = make_commit("", "", false, vec![]);
-        assert_eq!(graph_only_decorations(&c), "");
-    }
-
-    #[test]
-    fn test_graph_only_decorations_with_labels() {
-        let c = make_commit(
-            "",
-            "",
-            false,
-            vec![
-                Decoration {
-                    label: "main".to_string(),
-                    kind: DecorationKind::LocalBranch,
-                },
-                Decoration {
-                    label: "v1.0".to_string(),
-                    kind: DecorationKind::Tag,
-                },
-            ],
-        );
-        assert_eq!(graph_only_decorations(&c), "main, v1.0");
-    }
-
-    #[test]
-    fn test_decoration_style_tag() {
-        let theme = make_theme();
-        let style = decoration_style(&DecorationKind::Tag, &theme);
-        assert_eq!(style, Style::default().fg(theme.decoration_tag));
-    }
-
-    #[test]
-    fn test_decoration_style_local_branch() {
-        let theme = make_theme();
-        let style = decoration_style(&DecorationKind::LocalBranch, &theme);
-        assert_eq!(style, Style::default().fg(theme.decoration_local));
-    }
-
-    #[test]
-    fn test_decoration_style_remote_branch() {
-        let theme = make_theme();
-        let style = decoration_style(&DecorationKind::RemoteBranch, &theme);
-        assert_eq!(style, Style::default().fg(theme.decoration_remote));
-    }
-
-    #[test]
-    fn test_decoration_style_head() {
-        let theme = make_theme();
-        let style = decoration_style(&DecorationKind::Head, &theme);
-        assert_eq!(style, Style::default().fg(theme.decoration_head));
-    }
-
-    fn render_with(commit_count: usize, visible_index: usize, height: u16) -> TableState {
-        use ratatui::{backend::TestBackend, Terminal};
-
-        let theme = make_theme();
-        let commits: Vec<Commit> = (0..commit_count)
-            .map(|i| make_commit(&format!("{:040x}", i), "*", false, vec![]))
-            .collect();
-        let visible_to_commit: Vec<usize> = (0..commits.len()).collect();
-        let ctx = CommitTableCtx {
-            commits: &commits,
-            visible_index,
-            is_focused: true,
-            visible_to_commit: &visible_to_commit,
-            total_loaded: commits.len(),
-            search_active: false,
-            simplified_graph: false,
-            hash_color_enabled: true,
-            debug_label: None,
-            theme: &theme,
-        };
-        let mut state = TableState::default();
-        let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), &ctx, &mut state))
-            .unwrap();
-        state
-    }
-
-    #[test]
-    fn test_offset_follows_selection_into_view() {
-        let state = render_with(1000, 500, 13);
-        let offset = state.offset();
-        let viewport = 10;
-        assert!(offset <= 500, "offset {} must not exceed selection", offset);
-        assert!(
-            500 < offset + viewport,
-            "selection must be within [{}, {}) viewport",
-            offset,
-            offset + viewport
-        );
-    }
-
-    #[test]
-    fn test_offset_zero_when_selection_at_start() {
-        let state = render_with(1000, 0, 13);
-        assert_eq!(state.offset(), 0);
-    }
-
-    #[test]
-    fn test_offset_clamped_at_end() {
-        let state = render_with(1000, 999, 13);
-        let viewport = 10;
-        assert_eq!(state.offset(), 1000 - viewport);
-    }
-}
-
 /// Wrapper struct implementing the Panel trait for the commit table.
-#[allow(clippy::items_after_test_module)]
-pub struct CommitPanel {
-    #[allow(dead_code)]
-    table_state: RefCell<TableState>,
-}
+/// Stateless - all mutable state lives in `CommitTableState`.
+pub struct CommitPanel;
 
 impl CommitPanel {
+    /// Create a new commit table panel.
     pub fn new() -> Self {
-        CommitPanel {
-            table_state: RefCell::new(TableState::default()),
-        }
+        CommitPanel
     }
 }
 
@@ -914,6 +535,7 @@ impl PanelTrait for CommitPanel {
         );
     }
 
+    /// Map keyboard events to commit table navigation and action commands.
     fn handle_event(&mut self, key: &KeyEvent, _state: &mut Self::State) -> Vec<Command> {
         match key.code {
             KeyCode::Up => vec![Command::MoveUp],
@@ -928,6 +550,7 @@ impl PanelTrait for CommitPanel {
         }
     }
 
+    /// Return keyboard shortcuts and descriptions for the help bar.
     fn help_keys(&self) -> &'static [KeyBinding] {
         static KEYS: &[KeyBinding] = &[
             KeyBinding::new("↑↓/j,k", "navigate", "Navigate up / down"),
@@ -941,6 +564,7 @@ impl PanelTrait for CommitPanel {
         KEYS
     }
 
+    /// Human-readable panel name used in focus indicators.
     fn label(&self) -> &str {
         "Commits"
     }

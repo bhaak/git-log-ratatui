@@ -8,3 +8,7 @@ pub mod render_ctx;
 pub mod scope_panel;
 pub mod scrollbar_view;
 pub mod search_panel;
+
+#[cfg(test)]
+#[path = "tests/mod.rs"]
+mod tests;
