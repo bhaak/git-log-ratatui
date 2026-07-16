@@ -158,13 +158,13 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     let end = (offset + viewport_height).min(total);
     // Compute date range for staleness stretching: today = brightest, oldest = darkest.
     // Uses pre-computed epoch_days from CommitRow to avoid string parsing in the render path.
-    let epoches: Vec<i64> = ctx
+    let epochs: Vec<i64> = ctx
         .commits
         .iter()
         .map(|c| c.epoch_days)
         .filter(|&d| d > 0)
         .collect();
-    let min_days = epoches.iter().min().copied().unwrap_or(0);
+    let min_days = epochs.iter().min().copied().unwrap_or(0);
     let max_days = current_epoch_days();
 
     let window = if offset < end {
