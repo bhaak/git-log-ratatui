@@ -1,3 +1,9 @@
+//! Builds the branch tree view from `BranchState` data.
+//!
+//! The main entry point is [`rebuild_branch_tree`], which produces a flat
+//! `Vec<TreeItem>` from the hierarchical branch/tag/stash data, respecting
+//! the current scope filter and expanded/collapsed node state.
+
 use std::collections::{BTreeMap, HashMap};
 
 use crate::app::state::AppState;
@@ -11,6 +17,10 @@ const REMOTE_KEY: &str = "__remote__";
 const TAGS_KEY: &str = "__tags__";
 const STASHES_KEY: &str = "__stashes__";
 
+/// Rebuild the flat branch-tree display list from the current `BranchState`.
+///
+/// Respects `branch_scope` (All/Local/Remote/Tags/Stash) and
+/// `expanded_nodes` to only render visible sections and their children.
 pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     let (date_map, epoch_map) = build_branch_maps(&state.branch.all_branches.entries);
     let (local_names, remote_names) = split_local_remote(&state.branch.all_branches.entries);
@@ -41,14 +51,17 @@ pub(crate) fn rebuild_branch_tree(state: &mut AppState) {
     state.branch.branch_tree = items;
 }
 
+/// Whether a branch/tag/stash section should be shown under the current scope.
 fn scope_shows(scope: BranchScope, filter: BranchScope) -> bool {
     scope == BranchScope::All || scope == filter
 }
 
+/// Read a node's expanded/collapsed state from the map, falling back to a default.
 fn expanded_or(nodes: &BTreeMap<String, bool>, key: &str, default: bool) -> bool {
     nodes.get(key).copied().unwrap_or(default)
 }
 
+/// Build a section-header `TreeItem` (depth 0, expandable, not a branch).
 fn section_header(name: &str, key: &str, expanded: bool) -> TreeItem {
     TreeItem {
         name: name.to_string(),
@@ -64,6 +77,9 @@ fn section_header(name: &str, key: &str, expanded: bool) -> TreeItem {
     }
 }
 
+/// Build date and epoch lookup maps from branch entries in a single pass.
+///
+/// Returns `(name → last_commit_date, name → epoch_days)`.
 fn build_branch_maps(
     entries: &[BranchEntry],
 ) -> (
@@ -79,6 +95,10 @@ fn build_branch_maps(
     (date_map, epoch_map)
 }
 
+/// Build date and epoch lookup maps for tags in a single pass.
+///
+/// Tags and their dates are stored in two parallel slices; this function
+/// zips them together into lookup hashmaps keyed by tag name.
 fn build_tag_maps(
     tags: &[String],
     tags_dates: &[Option<(String, i64)>],
@@ -99,6 +119,7 @@ fn build_tag_maps(
     (date_map, epoch_map)
 }
 
+/// Partition branch entries into local and remote name vectors.
 fn split_local_remote(entries: &[BranchEntry]) -> (Vec<String>, Vec<String>) {
     let mut local = Vec::new();
     let mut remote = Vec::new();
@@ -112,6 +133,10 @@ fn split_local_remote(entries: &[BranchEntry]) -> (Vec<String>, Vec<String>) {
     (local, remote)
 }
 
+/// Append the local branches section to `items`.
+///
+/// Builds a sorted tree with the default branch moved to the front,
+/// then flattens it if the section is expanded.
 fn push_local_section(
     items: &mut Vec<TreeItem>,
     state: &BranchState,
@@ -129,6 +154,7 @@ fn push_local_section(
     let mut root = tree::build_branch_tree(local_names);
     tree::sort_tree(&mut root);
 
+    // Move the default branch to the front of local children
     if let Some(ref default) = state.all_branches.default_branch {
         if let Some(pos) = root.children.iter().position(|c| c.name == *default) {
             let default_child = root.children.remove(pos);
@@ -141,6 +167,7 @@ fn push_local_section(
     }
 }
 
+/// Append the remote branches section to `items`.
 fn push_remote_section(
     items: &mut Vec<TreeItem>,
     state: &BranchState,
@@ -163,6 +190,7 @@ fn push_remote_section(
     }
 }
 
+/// Flatten a branch tree and annotate each item with commit date and epoch days.
 fn push_branch_children(
     items: &mut Vec<TreeItem>,
     root: &crate::domain::BranchNode,
@@ -178,6 +206,10 @@ fn push_branch_children(
     items.extend(branch_items);
 }
 
+/// Append the tags section to `items`.
+///
+/// Tag items get a `refs/tags/` prefix on their `full_path` to avoid
+/// collisions with branch names in the expanded-nodes map.
 fn push_tag_section(
     items: &mut Vec<TreeItem>,
     state: &BranchState,
@@ -204,6 +236,7 @@ fn push_tag_section(
             let tag_name = item.full_path.clone();
             item.full_path = format!("refs/tags/{}", tag_name);
         }
+        // Strip the refs/tags/ prefix to look up dates in the (unprefixed) tag maps
         let lookup_key = item
             .full_path
             .strip_prefix("refs/tags/")
@@ -214,6 +247,10 @@ fn push_tag_section(
     items.extend(tag_items);
 }
 
+/// Append the stashes section to `items`.
+///
+/// Stash entries are rendered flat (no hierarchy) with Unicode tree
+/// connectors for visual consistency with the other sections.
 fn push_stash_section(items: &mut Vec<TreeItem>, state: &BranchState) {
     if !scope_shows(state.branch_scope, BranchScope::Stash) || state.all_branches.stashes.is_empty()
     {
@@ -231,9 +268,9 @@ fn push_stash_section(items: &mut Vec<TreeItem>, state: &BranchState) {
     for (i, stash) in state.all_branches.stashes.iter().enumerate() {
         let is_last = i == stash_count - 1;
         let connector = if is_last {
-            "\u{2514}\u{2500}"
+            "\u{2514}\u{2500}" // └─
         } else {
-            "\u{251C}\u{2500}"
+            "\u{251C}\u{2500}" // ├─
         };
         let stash_name = if stash.message.is_empty() {
             format!("stash@{{{}}}", stash.index)
