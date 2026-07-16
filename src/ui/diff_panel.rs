@@ -8,6 +8,7 @@ use ratatui::{
 };
 use std::time::Instant;
 
+use crate::app::commands::Command;
 use crate::diff_pairing::{
     build_pair_maps, diff_paths, find_next_added_line, find_prev_removed_line,
 };
@@ -17,8 +18,14 @@ use crate::state::diff::DiffState;
 use crate::theme::Theme;
 use crate::ui::layout::PANEL_BORDER_H;
 use crate::ui::panel::KeyBinding;
+use crate::ui::panel::{self as panel_mod};
+use crate::ui::render_ctx::RenderCtx;
 use crate::ui::scrollbar_view::ScrollbarView;
 use crate::view::Panel;
+
+/// Maximum characters for proportional visual indicators in the file list.
+/// Cap avoids extreme rendering cost with pathological +999999 line diffs.
+const MAX_VISUAL_INDICATOR_CHARS: u16 = 200;
 
 /// Render context for the diff panel.
 pub struct DiffPanelCtx<'a> {
@@ -99,6 +106,75 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &DiffPanelCtx) -> usize {
     total
 }
 
+/// The kind of a diff line: added (+) or removed (-).
+enum DiffLineKind {
+    Added,
+    Removed,
+}
+
+/// Build a `Line` with word-level LCS highlighting for one diff side.
+/// `context` is the paired line from the other side (previous removed for added,
+/// next added for removed), used by the LCS tokenizer to pinpoint changes.
+fn build_diff_line_spans<'a>(
+    content: &'a str,
+    context: Option<&'a str>,
+    kind: DiffLineKind,
+    theme: &Theme,
+) -> Line<'a> {
+    match kind {
+        DiffLineKind::Added => {
+            let tokens = lcs::diff_tokens_added(content, context);
+            let spans: Vec<Span> = tokens
+                .into_iter()
+                .map(|t| {
+                    if t.changed {
+                        Span::styled(
+                            t.text,
+                            Style::default()
+                                .fg(theme.diff_added)
+                                .bg(theme.diff_added_bg),
+                        )
+                    } else {
+                        Span::styled(t.text, Style::default().fg(theme.diff_added))
+                    }
+                })
+                .collect();
+            finish_line(spans, '+', theme.diff_added)
+        }
+        DiffLineKind::Removed => {
+            let tokens = lcs::diff_tokens_removed(content, context);
+            let spans: Vec<Span> = tokens
+                .into_iter()
+                .map(|t| {
+                    if t.changed {
+                        Span::styled(
+                            t.text,
+                            Style::default()
+                                .fg(theme.diff_removed)
+                                .bg(theme.diff_removed_bg),
+                        )
+                    } else {
+                        Span::styled(t.text, Style::default().fg(theme.diff_removed))
+                    }
+                })
+                .collect();
+            finish_line(spans, '-', theme.diff_removed)
+        }
+    }
+}
+
+/// Build the final Line from token spans plus the diff prefix character.
+fn finish_line(spans: Vec<Span<'_>>, prefix: char, fg: ratatui::style::Color) -> Line<'_> {
+    let prefix_style = Style::default().fg(fg);
+    if spans.is_empty() {
+        Line::from(Span::styled(prefix.to_string(), prefix_style))
+    } else {
+        let mut combined = vec![Span::styled(prefix.to_string(), prefix_style)];
+        combined.extend(spans);
+        Line::from(combined)
+    }
+}
+
 /// Build the complete display: metadata + file list header + file entries + a gap + diff content.
 /// `content_width` is the available text area width (panel width minus borders).
 fn build_all_lines<'a>(
@@ -110,7 +186,6 @@ fn build_all_lines<'a>(
     content_width: u16,
 ) -> Vec<Line<'a>> {
     let t0 = Instant::now();
-    let total_lines = diff_lines.len();
     let mut lines = Vec::new();
 
     if diff_lines.is_empty() {
@@ -132,8 +207,6 @@ fn build_all_lines<'a>(
     if let Some(info) = commit_info {
         lines.extend(build_metadata_lines(info, theme));
     }
-
-    let metadata_len = lines.len();
 
     // Changed files header + entries
     if !file_entries.is_empty() {
@@ -177,7 +250,9 @@ fn build_all_lines<'a>(
         // Indicators get the rest, minus 2 chars for right margin.
         let count_width = added_width + removed_width + 3; // "(+N/-M)"
         let fixed_prefix = max_name_width + count_width + 4;
-        let max_vis = content_width.saturating_sub(fixed_prefix as u16).min(200) as usize;
+        let max_vis = content_width
+            .saturating_sub(fixed_prefix as u16)
+            .min(MAX_VISUAL_INDICATOR_CHARS) as usize;
 
         for (i, entry) in file_entries.iter().enumerate() {
             let selected = i == selected_file_index;
@@ -238,8 +313,6 @@ fn build_all_lines<'a>(
         lines.push(Line::from(""));
     }
 
-    let _file_header_len = lines.len() - metadata_len;
-
     // Diff content with word-level highlighting
     // Build pair maps once -- O(n) scan, then O(1) lookup per line
     let pair_maps = build_pair_maps(diff_lines);
@@ -261,60 +334,20 @@ fn build_all_lines<'a>(
             )));
         } else if let Some(content) = line.strip_prefix('+') {
             let prev_removed = find_prev_removed_line(diff_lines, line_idx, &pair_maps);
-            let tokens = lcs::diff_tokens_added(content, prev_removed);
-            let spans: Vec<Span> = tokens
-                .into_iter()
-                .map(|t| {
-                    if t.changed {
-                        Span::styled(
-                            t.text,
-                            Style::default()
-                                .fg(theme.diff_added)
-                                .bg(theme.diff_added_bg),
-                        )
-                    } else {
-                        Span::styled(t.text, Style::default().fg(theme.diff_added))
-                    }
-                })
-                .collect();
-            if spans.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    "+",
-                    Style::default().fg(theme.diff_added),
-                )));
-            } else {
-                let mut combined = vec![Span::styled("+", Style::default().fg(theme.diff_added))];
-                combined.extend(spans);
-                lines.push(Line::from(combined));
-            }
+            lines.push(build_diff_line_spans(
+                content,
+                prev_removed,
+                DiffLineKind::Added,
+                theme,
+            ));
         } else if let Some(content) = line.strip_prefix('-') {
             let next_added = find_next_added_line(diff_lines, line_idx, &pair_maps);
-            let tokens = lcs::diff_tokens_removed(content, next_added);
-            let spans: Vec<Span> = tokens
-                .into_iter()
-                .map(|t| {
-                    if t.changed {
-                        Span::styled(
-                            t.text,
-                            Style::default()
-                                .fg(theme.diff_removed)
-                                .bg(theme.diff_removed_bg),
-                        )
-                    } else {
-                        Span::styled(t.text, Style::default().fg(theme.diff_removed))
-                    }
-                })
-                .collect();
-            if spans.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    "-",
-                    Style::default().fg(theme.diff_removed),
-                )));
-            } else {
-                let mut combined = vec![Span::styled("-", Style::default().fg(theme.diff_removed))];
-                combined.extend(spans);
-                lines.push(Line::from(combined));
-            }
+            lines.push(build_diff_line_spans(
+                content,
+                next_added,
+                DiffLineKind::Removed,
+                theme,
+            ));
         } else {
             lines.push(Line::from(Span::styled(
                 line.clone(),
@@ -325,11 +358,21 @@ fn build_all_lines<'a>(
 
     tracing::debug!(
         "build_all_lines: {} lines in {}ms",
-        total_lines,
+        diff_lines.len(),
         t0.elapsed().as_millis()
     );
 
     lines
+}
+
+/// Returns true when the committer differs from the author.
+fn has_different_committer(info: &CommitInfo) -> bool {
+    info.committer_name != info.author_name || info.committer_email != info.author_email
+}
+
+/// Returns true when the committer date differs from the author date and is non-empty.
+fn has_different_committer_date(info: &CommitInfo) -> bool {
+    info.committer_date != info.author_date && !info.committer_date.is_empty()
 }
 
 /// Build the metadata display lines for a commit.
@@ -375,9 +418,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
         Span::styled(&commit_info.author_date, value_style),
     ]));
 
-    if commit_info.committer_name != commit_info.author_name
-        || commit_info.committer_email != commit_info.author_email
-    {
+    if has_different_committer(commit_info) {
         lines.push(Line::from(vec![
             Span::styled("Committer:     ", label_style),
             Span::styled(
@@ -389,9 +430,7 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
             ),
         ]));
     }
-    if commit_info.committer_date != commit_info.author_date
-        && !commit_info.committer_date.is_empty()
-    {
+    if has_different_committer_date(commit_info) {
         lines.push(Line::from(vec![
             Span::styled("Committer date:", label_style),
             Span::styled(&commit_info.committer_date, value_style),
@@ -405,14 +444,10 @@ pub fn build_metadata_lines<'a>(commit_info: &'a CommitInfo, theme: &Theme) -> V
 /// Count metadata lines without theme dependency (for offset calculations).
 pub fn count_metadata_lines(commit_info: &CommitInfo) -> usize {
     let mut count = 5;
-    if commit_info.committer_name != commit_info.author_name
-        || commit_info.committer_email != commit_info.author_email
-    {
+    if has_different_committer(commit_info) {
         count += 1;
     }
-    if commit_info.committer_date != commit_info.author_date
-        && !commit_info.committer_date.is_empty()
-    {
+    if has_different_committer_date(commit_info) {
         count += 1;
     }
     count + 1
@@ -711,10 +746,6 @@ mod tests {
         );
     }
 }
-
-use crate::app::commands::Command;
-use crate::ui::panel::{self as panel_mod};
-use crate::ui::render_ctx::RenderCtx;
 
 /// Wrapper struct implementing the Panel trait for the diff view.
 #[allow(clippy::items_after_test_module)]
