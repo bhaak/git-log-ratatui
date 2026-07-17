@@ -274,24 +274,7 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             state.ui.focus = crate::view::Panel::Diff;
             effects
         }
-        Command::PreviewDiff => {
-            state.commit.handle_command(cmd);
-            if super::search::visible_count(state) > 0 {
-                let ci = super::search::visible_to_filtered(state, state.commit.selected_index);
-                if let Some(hash) = state
-                    .commit
-                    .filtered_commits
-                    .as_deref()
-                    .unwrap_or(&state.commit.all_commits)
-                    .get(ci)
-                    .map(|c| c.hash.clone())
-                {
-                    state.diff.last_selected_hash = Some(hash.clone());
-                    return vec![Effect::RequestDiff(hash), Effect::SetDirty];
-                }
-            }
-            vec![Effect::SetDirty]
-        }
+        Command::PreviewDiff => dispatch_preview_diff(state),
         // Branch panel commands → BranchState
         Command::ToggleBranchNode { .. } | Command::JumpToSibling(_) => {
             state.branch.handle_command(cmd)
@@ -309,50 +292,8 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             _ => vec![],
         },
         // Multi-state orchestration
-        Command::CycleScope => {
-            state.branch.branch_scope = state.branch.branch_scope.next();
-            state.branch.branch_index = 0;
-            state.branch.expanded_nodes.clear();
-            state.search.search_query.clear();
-            state.search.cursor_pos = 0;
-            state.branch.selected_branch = None;
-            vec![
-                Effect::RequestBranches,
-                Effect::RequestCommits(None),
-                Effect::ApplySearchFilter,
-                Effect::SetDirty,
-            ]
-        }
-        Command::SelectBranch(name) => {
-            if name.starts_with("stash@{") {
-                let stash_entry = state
-                    .branch
-                    .all_branches
-                    .stashes
-                    .iter()
-                    .find(|s| format!("stash@{{{}}}", s.index) == *name);
-                if let Some(stash) = stash_entry {
-                    state.branch.selected_branch = Some(name.clone());
-                    state.commit.all_commits.clear();
-                    state.commit.filtered_commits = None;
-                    state.commit.visible_to_commit.clear();
-                    state.commit.selected_index = 0;
-                    state.commit.table_state = TableState::default();
-                    state.commit.commits_loaded = true;
-                    state.commit.all_commits_loaded = true;
-                    return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
-                }
-                return vec![Effect::SetDirty];
-            }
-            if state.branch.selected_branch.as_deref() == Some(name.as_str()) {
-                state.ui.focus = Panel::Commits;
-                return vec![Effect::SetDirty];
-            }
-            state.ui.push_focus(Panel::Branches);
-            state.branch.selected_branch = Some(name.clone());
-            state.ui.focus = Panel::Commits;
-            vec![Effect::RequestCommits(Some(name.clone())), Effect::SetDirty]
-        }
+        Command::CycleScope => dispatch_cycle_scope(state),
+        Command::SelectBranch(name) => dispatch_select_branch(state, name.clone()),
         Command::ToggleGraph => vec![Effect::ToggleGraph, Effect::SetDirty],
         Command::MouseClickBranch {
             index,
@@ -361,49 +302,134 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
             is_expandable,
             is_expanded,
             key,
-        } => {
-            state.branch.branch_index = *index;
-            if *is_branch {
-                if full_path.starts_with("stash@{") {
-                    let stash_entry = state
-                        .branch
-                        .all_branches
-                        .stashes
-                        .iter()
-                        .find(|s| format!("stash@{{{}}}", s.index) == *full_path);
-                    if let Some(stash) = stash_entry {
-                        state.branch.selected_branch = Some(full_path.clone());
-                        state.commit.all_commits.clear();
-                        state.commit.filtered_commits = None;
-                        state.commit.visible_to_commit.clear();
-                        state.commit.selected_index = 0;
-                        state.commit.table_state = TableState::default();
-                        state.commit.commits_loaded = true;
-                        state.commit.all_commits_loaded = true;
-                        return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
-                    }
-                    return vec![Effect::SetDirty];
-                }
-                if state.branch.selected_branch.as_deref() == Some(full_path.as_str()) {
-                    return vec![Effect::SetDirty];
-                }
-                state.branch.selected_branch = Some(full_path.clone());
-                vec![
-                    Effect::RequestCommits(Some(full_path.clone())),
-                    Effect::SetDirty,
-                ]
-            } else if *is_expandable {
-                state
-                    .branch
-                    .expanded_nodes
-                    .insert(key.clone(), !is_expanded);
-                vec![Effect::RebuildBranchTree, Effect::SetDirty]
-            } else {
-                vec![Effect::SetDirty]
-            }
-        }
+        } => dispatch_mouse_click_branch(
+            state,
+            *index,
+            full_path.clone(),
+            *is_branch,
+            *is_expandable,
+            *is_expanded,
+            key.clone(),
+        ),
         Command::Quit => vec![],
     }
+}
+
+/// Handle a PreviewDiff command: process the commit command and, if a visible
+/// commit is selected, request its diff and mark state dirty.
+fn dispatch_preview_diff(state: &mut super::state::AppState) -> Vec<Effect> {
+    state.commit.handle_command(&Command::PreviewDiff);
+    if super::search::visible_count(state) > 0 {
+        let ci = super::search::visible_to_filtered(state, state.commit.selected_index);
+        if let Some(hash) = state
+            .commit
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&state.commit.all_commits)
+            .get(ci)
+            .map(|c| c.hash.clone())
+        {
+            state.diff.last_selected_hash = Some(hash.clone());
+            return vec![Effect::RequestDiff(hash), Effect::SetDirty];
+        }
+    }
+    vec![Effect::SetDirty]
+}
+
+/// Select a branch: for stashes request the diff, for regular branches switch
+/// commit view and push focus history.
+fn dispatch_select_branch(state: &mut super::state::AppState, name: String) -> Vec<Effect> {
+    if name.starts_with("stash@{") {
+        let stash_entry = state
+            .branch
+            .all_branches
+            .stashes
+            .iter()
+            .find(|s| format!("stash@{{{}}}", s.index) == name);
+        if let Some(stash) = stash_entry {
+            state.branch.selected_branch = Some(name);
+            state.commit.all_commits.clear();
+            state.commit.filtered_commits = None;
+            state.commit.visible_to_commit.clear();
+            state.commit.selected_index = 0;
+            state.commit.table_state = TableState::default();
+            state.commit.commits_loaded = true;
+            state.commit.all_commits_loaded = true;
+            return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
+        }
+        return vec![Effect::SetDirty];
+    }
+    if state.branch.selected_branch.as_deref() == Some(name.as_str()) {
+        state.ui.focus = crate::view::Panel::Commits;
+        return vec![Effect::SetDirty];
+    }
+    state.ui.push_focus(crate::view::Panel::Branches);
+    state.branch.selected_branch = Some(name.clone());
+    state.ui.focus = crate::view::Panel::Commits;
+    vec![Effect::RequestCommits(Some(name)), Effect::SetDirty]
+}
+
+/// Handle a mouse click on a branch tree item: select branch, toggle expandable
+/// node, or handle stash selection.
+fn dispatch_mouse_click_branch(
+    state: &mut super::state::AppState,
+    index: usize,
+    full_path: String,
+    is_branch: bool,
+    is_expandable: bool,
+    is_expanded: bool,
+    key: String,
+) -> Vec<Effect> {
+    state.branch.branch_index = index;
+    if is_branch {
+        if full_path.starts_with("stash@{") {
+            let stash_entry = state
+                .branch
+                .all_branches
+                .stashes
+                .iter()
+                .find(|s| format!("stash@{{{}}}", s.index) == full_path);
+            if let Some(stash) = stash_entry {
+                state.branch.selected_branch = Some(full_path);
+                state.commit.all_commits.clear();
+                state.commit.filtered_commits = None;
+                state.commit.visible_to_commit.clear();
+                state.commit.selected_index = 0;
+                state.commit.table_state = TableState::default();
+                state.commit.commits_loaded = true;
+                state.commit.all_commits_loaded = true;
+                return vec![Effect::RequestDiff(stash.oid.clone()), Effect::SetDirty];
+            }
+            return vec![Effect::SetDirty];
+        }
+        if state.branch.selected_branch.as_deref() == Some(full_path.as_str()) {
+            return vec![Effect::SetDirty];
+        }
+        state.branch.selected_branch = Some(full_path.clone());
+        vec![Effect::RequestCommits(Some(full_path)), Effect::SetDirty]
+    } else if is_expandable {
+        state.branch.expanded_nodes.insert(key, !is_expanded);
+        vec![Effect::RebuildBranchTree, Effect::SetDirty]
+    } else {
+        vec![Effect::SetDirty]
+    }
+}
+
+/// Advance the branch scope, reset branch state, clear search,
+/// and request fresh branches and commits.
+fn dispatch_cycle_scope(state: &mut super::state::AppState) -> Vec<Effect> {
+    state.branch.branch_scope = state.branch.branch_scope.next();
+    state.branch.branch_index = 0;
+    state.branch.expanded_nodes.clear();
+    state.search.search_query.clear();
+    state.search.cursor_pos = 0;
+    state.branch.selected_branch = None;
+    vec![
+        Effect::RequestBranches,
+        Effect::RequestCommits(None),
+        Effect::ApplySearchFilter,
+        Effect::SetDirty,
+    ]
 }
 
 /// Navigation within the commit table needs `visible_count` from the search state,
