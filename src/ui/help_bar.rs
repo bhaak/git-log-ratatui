@@ -133,13 +133,7 @@ pub fn render_help_modal(
             section_style,
         )));
         for kb in *bindings {
-            let spans = vec![
-                Span::raw("    "),
-                Span::styled(kb.key, key_style),
-                Span::raw("  "),
-                Span::styled(kb.long_desc, desc_style),
-            ];
-            lines.push(Line::from(spans));
+            lines.push(build_key_binding_line(kb, key_style, desc_style));
         }
         lines.push(Line::from(""));
     }
@@ -165,4 +159,14 @@ pub fn render_help_modal(
     );
 
     frame.render_widget(paragraph, inner);
+}
+
+/// Build a single formatted line for one key binding: indentation + key + description.
+fn build_key_binding_line<'a>(kb: &'a KeyBinding, key_style: Style, desc_style: Style) -> Line<'a> {
+    Line::from(vec![
+        Span::raw("    "),
+        Span::styled(kb.key, key_style),
+        Span::raw("  "),
+        Span::styled(kb.long_desc, desc_style),
+    ])
 }

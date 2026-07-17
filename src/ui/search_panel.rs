@@ -46,7 +46,33 @@ pub fn render(
     let inner_area = block.inner(area);
 
     let prefix = " Search: ";
-    let display: Vec<Span> = if is_focused && inner_area.width > 2 {
+    let display = build_search_display(
+        search_query,
+        cursor_pos,
+        branch_label,
+        is_focused,
+        prefix,
+        inner_area,
+        theme,
+    );
+
+    let paragraph = Paragraph::new(Line::from(display)).block(block);
+
+    frame.render_widget(paragraph, area);
+}
+
+/// Build the search display spans: focused mode shows the cursor, unfocused
+/// shows the query or a branch label placeholder.
+fn build_search_display(
+    search_query: &str,
+    cursor_pos: usize,
+    branch_label: &str,
+    is_focused: bool,
+    prefix: &'static str,
+    inner_area: Rect,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    if is_focused && inner_area.width > 2 {
         let prefix_len = prefix.chars().count();
         let max_visible = (inner_area.width as usize)
             .saturating_sub(2)
@@ -96,23 +122,17 @@ pub fn render(
             ));
         }
         spans
+    } else if search_query.is_empty() {
+        vec![Span::styled(
+            format!("{}<{}>", prefix, branch_label),
+            Style::default().fg(theme.unfocused_border),
+        )]
     } else {
-        if search_query.is_empty() {
-            vec![Span::styled(
-                format!("{}<{}>", prefix, branch_label),
-                Style::default().fg(theme.unfocused_border),
-            )]
-        } else {
-            vec![Span::styled(
-                format!("{}{}", prefix, search_query),
-                Style::default().fg(Color::White),
-            )]
-        }
-    };
-
-    let paragraph = Paragraph::new(Line::from(display)).block(block);
-
-    frame.render_widget(paragraph, area);
+        vec![Span::styled(
+            format!("{}{}", prefix, search_query),
+            Style::default().fg(Color::White),
+        )]
+    }
 }
 
 use crate::app::commands::Command;
