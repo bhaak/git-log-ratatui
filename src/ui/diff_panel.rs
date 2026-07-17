@@ -284,63 +284,92 @@ fn build_file_entries_lines<'a>(
         .min(MAX_VISUAL_INDICATOR_CHARS) as usize;
 
     for (i, entry) in file_entries.iter().enumerate() {
-        let selected = i == selected_file_index;
-        let status_color = match entry.status {
-            '+' => theme.diff_added,
-            '-' => theme.diff_removed,
-            '~' => theme.diff_modified,
-            '→' => theme.diff_renamed,
-            _ => theme.diff_context,
-        };
-        let name_style = if selected {
-            Style::default()
-                .bg(theme.diff_selected_file_bg)
-                .fg(theme.diff_selected_file_fg)
-        } else {
-            Style::default().fg(theme.diff_selected_file_border)
-        };
-        let status_style = Style::default().fg(status_color);
-        let display_name = format!("{:<width$}", display_names[i], width = max_name_width);
-        let count_style = Style::default().fg(theme.diff_context);
-        let added_style = Style::default().fg(theme.diff_added);
-        let removed_style = Style::default().fg(theme.diff_removed);
-        let available = max_vis.saturating_sub(2); // at least 2 chars margin
-        let total = entry.lines_added + entry.lines_removed;
-        let (pluses, minuses) = if total == 0 {
-            (0, 0)
-        } else if total <= available {
-            // All indicators fit — show them all.
-            (entry.lines_added, entry.lines_removed)
-        } else {
-            // Scale proportionally, ensuring both sides sum to exactly available.
-            let p = (available * entry.lines_added) / total;
-            (p, available - p)
-        };
-        let mut spans = vec![
-            Span::styled(format!("{} ", entry.status), status_style),
-            Span::styled(display_name, name_style),
-            Span::styled(" ", count_style),
-            Span::styled(
-                format!(
-                    "({:>aw$}/{:>rw$})",
-                    added_strs[i],
-                    removed_strs[i],
-                    aw = added_width,
-                    rw = removed_width
-                ),
-                count_style,
-            ),
-        ];
-        if pluses + minuses > 0 {
-            spans.push(Span::styled(" ", count_style));
-            spans.push(Span::styled("+".repeat(pluses), added_style));
-            spans.push(Span::styled("-".repeat(minuses), removed_style));
-        }
-        lines.push(Line::from(spans));
+        lines.push(build_file_entry_line(
+            entry,
+            i,
+            selected_file_index,
+            &display_names[i],
+            &added_strs[i],
+            &removed_strs[i],
+            max_name_width,
+            added_width,
+            removed_width,
+            max_vis,
+            theme,
+        ));
     }
 
     lines.push(Line::from(""));
     lines
+}
+
+/// Build a single file entry line with status, padded name, line-count summary,
+/// and proportionally scaled visual indicators.
+#[allow(clippy::too_many_arguments)]
+fn build_file_entry_line<'a>(
+    entry: &FileEntry,
+    i: usize,
+    selected_file_index: usize,
+    display_name: &str,
+    added_str: &str,
+    removed_str: &str,
+    max_name_width: usize,
+    added_width: usize,
+    removed_width: usize,
+    max_vis: usize,
+    theme: &Theme,
+) -> Line<'a> {
+    let selected = i == selected_file_index;
+    let status_color = match entry.status {
+        '+' => theme.diff_added,
+        '-' => theme.diff_removed,
+        '~' => theme.diff_modified,
+        '→' => theme.diff_renamed,
+        _ => theme.diff_context,
+    };
+    let name_style = if selected {
+        Style::default()
+            .bg(theme.diff_selected_file_bg)
+            .fg(theme.diff_selected_file_fg)
+    } else {
+        Style::default().fg(theme.diff_selected_file_border)
+    };
+    let status_style = Style::default().fg(status_color);
+    let padded_name = format!("{:<width$}", display_name, width = max_name_width);
+    let count_style = Style::default().fg(theme.diff_context);
+    let added_style = Style::default().fg(theme.diff_added);
+    let removed_style = Style::default().fg(theme.diff_removed);
+    let available = max_vis.saturating_sub(2);
+    let total = entry.lines_added + entry.lines_removed;
+    let (pluses, minuses) = if total == 0 {
+        (0, 0)
+    } else if total <= available {
+        (entry.lines_added, entry.lines_removed)
+    } else {
+        let p = (available * entry.lines_added) / total;
+        (p, available - p)
+    };
+    let mut spans = vec![
+        Span::styled(format!("{} ", entry.status), status_style),
+        Span::styled(padded_name, name_style),
+        Span::styled(" ", count_style),
+        Span::styled(
+            format!(
+                "({:>aw$}/{:>rw$})",
+                added_str,
+                removed_str,
+                aw = added_width,
+                rw = removed_width
+            ),
+            count_style,
+        ),
+    ];
+    if pluses + minuses > 0 {
+        spans.push(Span::styled(" ", count_style));
+        spans.push(Span::styled("+".repeat(pluses), added_style));
+        spans.push(Span::styled("-".repeat(minuses), removed_style));
+    }
+    Line::from(spans)
 }
 
 /// Build the diff content section with per-line coloring based on git diff syntax.
