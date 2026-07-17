@@ -107,26 +107,7 @@ impl GitRepository {
             true
         })?;
 
-        // Post-process: count added/removed lines per file from the collected diff_lines.
-        for i in 0..file_entries.len() {
-            let start = file_entries[i].diff_line;
-            let end = if i + 1 < file_entries.len() {
-                file_entries[i + 1].diff_line
-            } else {
-                diff_lines.len()
-            };
-            let mut added = 0usize;
-            let mut removed = 0usize;
-            for line in &diff_lines[start..end] {
-                if line.starts_with('+') && !line.starts_with("+++ ") {
-                    added += 1;
-                } else if line.starts_with('-') && !line.starts_with("--- ") {
-                    removed += 1;
-                }
-            }
-            file_entries[i].lines_added = added;
-            file_entries[i].lines_removed = removed;
-        }
+        count_file_lines(&mut file_entries, &diff_lines);
 
         tracing::debug!(
             "diff({hash}): {} lines, {} files in {}ms",
@@ -136,5 +117,30 @@ impl GitRepository {
         );
 
         Ok((diff_lines, file_entries))
+    }
+}
+
+/// Count added and removed lines per file from the collected diff lines.
+/// Each FileEntry's `diff_line` marks the start index; the end is the next
+/// file's start or the end of the diff line list.
+fn count_file_lines(file_entries: &mut [FileEntry], diff_lines: &[String]) {
+    for i in 0..file_entries.len() {
+        let start = file_entries[i].diff_line;
+        let end = if i + 1 < file_entries.len() {
+            file_entries[i + 1].diff_line
+        } else {
+            diff_lines.len()
+        };
+        let mut added = 0usize;
+        let mut removed = 0usize;
+        for line in &diff_lines[start..end] {
+            if line.starts_with('+') && !line.starts_with("+++ ") {
+                added += 1;
+            } else if line.starts_with('-') && !line.starts_with("--- ") {
+                removed += 1;
+            }
+        }
+        file_entries[i].lines_added = added;
+        file_entries[i].lines_removed = removed;
     }
 }
