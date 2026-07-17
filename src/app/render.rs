@@ -103,30 +103,11 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         full.width,
         ui::layout::HELP_BAR_HEIGHT.min(full.height),
     );
-    let commit_panel = ui::commit_table::CommitPanel::new();
-    let (help_keys, label) = match app.state.ui.focus {
-        crate::view::Panel::Branches => (
-            ui::branch_panel::BranchPanel.help_keys(),
-            ui::branch_panel::BranchPanel.label(),
-        ),
-        crate::view::Panel::Search => (
-            ui::search_panel::SearchPanel.help_keys(),
-            ui::search_panel::SearchPanel.label(),
-        ),
-        crate::view::Panel::Scope => (
-            ui::scope_panel::ScopePanel.help_keys(),
-            ui::scope_panel::ScopePanel.label(),
-        ),
-        crate::view::Panel::Commits => (commit_panel.help_keys(), commit_panel.label()),
-        crate::view::Panel::Diff => (
-            ui::diff_panel::DiffPanel.help_keys(),
-            ui::diff_panel::DiffPanel.label(),
-        ),
-    };
+    let (help_keys, label) = help_context_for_focus(&app.state);
     ui::help_bar::render(
         frame,
         help_area,
-        label,
+        &label,
         help_keys,
         app.state.ui.status_message.as_deref(),
         &theme,
@@ -134,7 +115,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
 
     // Help modal overlay — renders on top of everything, context-sensitive to focus
     if app.state.ui.help_visible {
-        ui::help_bar::render_help_modal(frame, full, label, help_keys, &theme);
+        ui::help_bar::render_help_modal(frame, full, &label, help_keys, &theme);
     }
 
     let current_hash = if search::visible_count(&app.state) > 0 {
@@ -157,5 +138,33 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
                 app.request_diff(&hash);
             }
         }
+    }
+}
+
+/// Return help keys and label for the currently focused panel.
+fn help_context_for_focus(
+    state: &super::state::AppState,
+) -> (&'static [ui::panel::KeyBinding], String) {
+    match state.ui.focus {
+        crate::view::Panel::Branches => (
+            ui::branch_panel::BranchPanel.help_keys(),
+            ui::branch_panel::BranchPanel.label().to_string(),
+        ),
+        crate::view::Panel::Search => (
+            ui::search_panel::SearchPanel.help_keys(),
+            ui::search_panel::SearchPanel.label().to_string(),
+        ),
+        crate::view::Panel::Scope => (
+            ui::scope_panel::ScopePanel.help_keys(),
+            ui::scope_panel::ScopePanel.label().to_string(),
+        ),
+        crate::view::Panel::Commits => (
+            ui::commit_table::CommitPanel.help_keys(),
+            ui::commit_table::CommitPanel.label().to_string(),
+        ),
+        crate::view::Panel::Diff => (
+            ui::diff_panel::DiffPanel.help_keys(),
+            ui::diff_panel::DiffPanel.label().to_string(),
+        ),
     }
 }

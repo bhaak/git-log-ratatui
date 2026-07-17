@@ -110,42 +110,14 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
             }
         }
 
-        let cap = max_active_col + 1;
-        let mut line = String::with_capacity(cap);
-        let mut colors = Vec::with_capacity(cap);
-        for (col, &is_active) in active.iter().enumerate().take(cap) {
-            let is_merge_parent = merge_parent_cols.contains(&col);
-            let is_fork_start = fork_start_cols.contains(&col);
-
-            if is_active || is_merge_parent || is_fork_start {
-                let lane_color = (col % Theme::default().graph_colors.len()) as u8;
-                if col == current_col {
-                    line.push(if info.is_merge {
-                        '\u{25CB}'
-                    } else {
-                        '\u{25CF}'
-                    });
-                } else if is_merge_parent {
-                    if col < current_col {
-                        line.push('\u{256D}');
-                    } else {
-                        line.push('\u{256E}');
-                    }
-                } else if is_fork_start {
-                    if col < current_col {
-                        line.push('\u{2570}');
-                    } else {
-                        line.push('\u{256F}');
-                    }
-                } else {
-                    line.push('\u{2502}');
-                }
-                colors.push(lane_color);
-            } else {
-                line.push(' ');
-                colors.push(255);
-            }
-        }
+        let (line, colors) = build_graph_line(
+            &active,
+            &merge_parent_cols,
+            &fork_start_cols,
+            current_col,
+            info.is_merge,
+            max_active_col,
+        );
 
         commits.push(CommitRow {
             hash: info.oid.to_string(),
@@ -163,6 +135,52 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
     }
 
     commits
+}
+
+/// Build the graph line string and lane color vector for one commit row.
+/// Each column gets a box-drawing character based on the current state of
+/// active lanes, merge parents, and fork starts.
+fn build_graph_line(
+    active: &[bool],
+    merge_parent_cols: &[usize],
+    fork_start_cols: &[usize],
+    current_col: usize,
+    is_merge: bool,
+    max_active_col: usize,
+) -> (String, Vec<u8>) {
+    let cap = max_active_col + 1;
+    let mut line = String::with_capacity(cap);
+    let mut colors = Vec::with_capacity(cap);
+    for (col, &is_active) in active.iter().enumerate().take(cap) {
+        let is_merge_parent = merge_parent_cols.contains(&col);
+        let is_fork_start = fork_start_cols.contains(&col);
+
+        if is_active || is_merge_parent || is_fork_start {
+            let lane_color = (col % Theme::default().graph_colors.len()) as u8;
+            if col == current_col {
+                line.push(if is_merge { '\u{25CB}' } else { '\u{25CF}' });
+            } else if is_merge_parent {
+                if col < current_col {
+                    line.push('\u{256D}');
+                } else {
+                    line.push('\u{256E}');
+                }
+            } else if is_fork_start {
+                if col < current_col {
+                    line.push('\u{2570}');
+                } else {
+                    line.push('\u{256F}');
+                }
+            } else {
+                line.push('\u{2502}');
+            }
+            colors.push(lane_color);
+        } else {
+            line.push(' ');
+            colors.push(255);
+        }
+    }
+    (line, colors)
 }
 
 #[cfg(test)]
