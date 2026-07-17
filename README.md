@@ -2,6 +2,8 @@
 
 A TUI for browsing git log with ratatui.
 
+![Screenshot](screenshot.svg)
+
 ## Features
 
 - 5-panel layout: Branch Tree, Search, Scope, Commit Table, Diff
