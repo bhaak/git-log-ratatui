@@ -83,68 +83,8 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
     let focus = app.state.ui.focus;
 
     // ── Layer 1: Always-global keys (no panel may override) ──
-    match key.code {
-        // Quit
-        KeyCode::Char('q') => return vec![Command::Quit],
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            return vec![Command::Quit]
-        }
-        KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            suspend(app);
-            return Vec::new();
-        }
-        // Focus cycle
-        KeyCode::Tab => {
-            return vec![if key.modifiers.contains(KeyModifiers::SHIFT) {
-                Command::FocusPrev
-            } else {
-                Command::FocusNext
-            }];
-        }
-        KeyCode::BackTab => return vec![Command::FocusPrev],
-        // Search: / always focuses search and clears the query
-        KeyCode::Char('/') if key.modifiers.is_empty() => {
-            return vec![Command::FocusSearchClear];
-        }
-        // Help modal: ? toggles it on/off
-        KeyCode::Char('?') if key.modifiers.is_empty() => {
-            return vec![Command::ToggleHelp];
-        }
-        // Ctrl+shortcuts
-        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            return vec![Command::CycleScope];
-        }
-        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Some(text) = clipboard::get_clipboard_text() {
-                return vec![Command::PasteSearch(text)];
-            }
-            return Vec::new();
-        }
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if focus == PanelEnum::Search {
-                return vec![Command::SetSearch(app.state.search.search_query.clone(), 0)];
-            } else {
-                return vec![
-                    Command::SetFocus(PanelEnum::Search),
-                    Command::SetSearch(app.state.search.search_query.clone(), 0),
-                ];
-            }
-        }
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let len = app.state.search.search_query.len();
-            if focus == PanelEnum::Search {
-                return vec![Command::SetSearch(
-                    app.state.search.search_query.clone(),
-                    len,
-                )];
-            } else {
-                return vec![
-                    Command::SetFocus(PanelEnum::Search),
-                    Command::SetSearch(app.state.search.search_query.clone(), len),
-                ];
-            }
-        }
-        _ => {}
+    if let Some(commands) = handle_global_key(app, key) {
+        return commands;
     }
 
     // ── Help modal is visible: block all input except ? (toggle off) and Esc (dismiss) ──
@@ -210,6 +150,69 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> Vec<Command> {
             vec![Command::ToggleGraph]
         }
         _ => Vec::new(),
+    }
+}
+
+/// Layer 1: global keys that always take priority over panel-specific handlers.
+/// Returns Some(commands) if the key was consumed, None to continue processing.
+fn handle_global_key(app: &mut App, key: KeyEvent) -> Option<Vec<Command>> {
+    let focus = app.state.ui.focus;
+
+    match key.code {
+        KeyCode::Char('q') => Some(vec![Command::Quit]),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(vec![Command::Quit])
+        }
+        KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            suspend(app);
+            Some(Vec::new())
+        }
+        KeyCode::Tab => Some(vec![if key.modifiers.contains(KeyModifiers::SHIFT) {
+            Command::FocusPrev
+        } else {
+            Command::FocusNext
+        }]),
+        KeyCode::BackTab => Some(vec![Command::FocusPrev]),
+        KeyCode::Char('/') if key.modifiers.is_empty() => Some(vec![Command::FocusSearchClear]),
+        KeyCode::Char('?') if key.modifiers.is_empty() => Some(vec![Command::ToggleHelp]),
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(vec![Command::CycleScope])
+        }
+        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let Some(text) = clipboard::get_clipboard_text() {
+                Some(vec![Command::PasteSearch(text)])
+            } else {
+                Some(Vec::new())
+            }
+        }
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if focus == PanelEnum::Search {
+                Some(vec![Command::SetSearch(
+                    app.state.search.search_query.clone(),
+                    0,
+                )])
+            } else {
+                Some(vec![
+                    Command::SetFocus(PanelEnum::Search),
+                    Command::SetSearch(app.state.search.search_query.clone(), 0),
+                ])
+            }
+        }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let len = app.state.search.search_query.len();
+            if focus == PanelEnum::Search {
+                Some(vec![Command::SetSearch(
+                    app.state.search.search_query.clone(),
+                    len,
+                )])
+            } else {
+                Some(vec![
+                    Command::SetFocus(PanelEnum::Search),
+                    Command::SetSearch(app.state.search.search_query.clone(), len),
+                ])
+            }
+        }
+        _ => None,
     }
 }
 
@@ -607,62 +610,8 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
     let click_pos = (col, row);
 
     // Scrollbar clicks
-    if app
-        .state
-        .branch
-        .scrollbar
-        .click_to_index(branch_visible, click_pos)
-        .or_else(|| {
-            app.state
-                .branch
-                .scrollbar
-                .is_click_in_scrollbar_area(branch_visible, click_pos)
-                .then_some(0)
-        })
-        .is_some()
-    {
-        return vec![
-            Command::SetFocus(PanelEnum::Branches),
-            Command::InitiateScrollbarDrag(PanelEnum::Branches),
-        ];
-    }
-    if app
-        .state
-        .commit
-        .scrollbar
-        .click_to_index(areas.table, click_pos)
-        .or_else(|| {
-            app.state
-                .commit
-                .scrollbar
-                .is_click_in_scrollbar_area(areas.table, click_pos)
-                .then_some(0)
-        })
-        .is_some()
-    {
-        return vec![
-            Command::SetFocus(PanelEnum::Commits),
-            Command::InitiateScrollbarDrag(PanelEnum::Commits),
-        ];
-    }
-    if let Some(pos) = app
-        .state
-        .diff
-        .scrollbar
-        .click_to_index(areas.diff, click_pos)
-        .or_else(|| {
-            app.state
-                .diff
-                .scrollbar
-                .is_click_in_scrollbar_area(areas.diff, click_pos)
-                .then_some(app.state.diff.diff_scroll)
-        })
-    {
-        return vec![
-            Command::SetFocus(PanelEnum::Diff),
-            Command::InitiateScrollbarDrag(PanelEnum::Diff),
-            Command::ScrollToAbsolute(pos),
-        ];
+    if let Some(commands) = check_scrollbar_click(app, &areas, click_pos, branch_visible) {
+        return commands;
     }
 
     // Panel content clicks
@@ -748,6 +697,74 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
     }
 
     Vec::new()
+}
+
+/// Check whether the click hit any panel's scrollbar and return the appropriate
+/// scrollbar-drag commands plus focus command.
+fn check_scrollbar_click(
+    app: &App,
+    areas: &ui::layout::LayoutAreas,
+    click_pos: (u16, u16),
+    branch_visible: Rect,
+) -> Option<Vec<Command>> {
+    if app
+        .state
+        .branch
+        .scrollbar
+        .click_to_index(branch_visible, click_pos)
+        .or_else(|| {
+            app.state
+                .branch
+                .scrollbar
+                .is_click_in_scrollbar_area(branch_visible, click_pos)
+                .then_some(0)
+        })
+        .is_some()
+    {
+        return Some(vec![
+            Command::SetFocus(PanelEnum::Branches),
+            Command::InitiateScrollbarDrag(PanelEnum::Branches),
+        ]);
+    }
+    if app
+        .state
+        .commit
+        .scrollbar
+        .click_to_index(areas.table, click_pos)
+        .or_else(|| {
+            app.state
+                .commit
+                .scrollbar
+                .is_click_in_scrollbar_area(areas.table, click_pos)
+                .then_some(0)
+        })
+        .is_some()
+    {
+        return Some(vec![
+            Command::SetFocus(PanelEnum::Commits),
+            Command::InitiateScrollbarDrag(PanelEnum::Commits),
+        ]);
+    }
+    if let Some(pos) = app
+        .state
+        .diff
+        .scrollbar
+        .click_to_index(areas.diff, click_pos)
+        .or_else(|| {
+            app.state
+                .diff
+                .scrollbar
+                .is_click_in_scrollbar_area(areas.diff, click_pos)
+                .then_some(app.state.diff.diff_scroll)
+        })
+    {
+        return Some(vec![
+            Command::SetFocus(PanelEnum::Diff),
+            Command::InitiateScrollbarDrag(PanelEnum::Diff),
+            Command::ScrollToAbsolute(pos),
+        ]);
+    }
+    None
 }
 
 fn check_resize_start(app: &App, col: u16, row: u16) -> Vec<Command> {
