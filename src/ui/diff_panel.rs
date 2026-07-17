@@ -210,111 +210,144 @@ fn build_all_lines<'a>(
 
     // Changed files header + entries
     if !file_entries.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Changed files:",
-            Style::default()
-                .fg(theme.diff_hunk_header)
-                .add_modifier(Modifier::BOLD),
-        )));
-
-        // Compute display names and max width for alignment.
-        let display_names: Vec<String> = file_entries
-            .iter()
-            .map(|entry| {
-                if let Some(ref old) = entry.old_name {
-                    diff_paths(old, &entry.name)
-                } else {
-                    entry.name.clone()
-                }
-            })
-            .collect();
-        let max_name_width = display_names.iter().map(|n| n.len()).max().unwrap_or(0);
-        // Compute max field width for sign+number alignment, per column.
-        let added_strs: Vec<String> = file_entries
-            .iter()
-            .map(|e| format!("+{}", e.lines_added))
-            .collect();
-        let removed_strs: Vec<String> = file_entries
-            .iter()
-            .map(|e| format!("-{}", e.lines_removed))
-            .collect();
-        let added_width = added_strs.iter().map(|s| s.len()).max().unwrap_or(1);
-        let removed_width = removed_strs.iter().map(|s| s.len()).max().unwrap_or(1);
-        // Minimum column width of 2 ("+0", "-0") so the sign always has room.
-        let added_width = added_width.max(2);
-        let removed_width = removed_width.max(2);
-
-        // Compute max visual indicator characters based on available content width.
-        // Line format: "<status> <padded_name> <(+N/-M)><space><indicators>  "
-        // Fixed width: 1(status) + 1(space) + name + 1(space) + count + 1(space) = 4 + name + count
-        // Indicators get the rest, minus 2 chars for right margin.
-        let count_width = added_width + removed_width + 3; // "(+N/-M)"
-        let fixed_prefix = max_name_width + count_width + 4;
-        let max_vis = content_width
-            .saturating_sub(fixed_prefix as u16)
-            .min(MAX_VISUAL_INDICATOR_CHARS) as usize;
-
-        for (i, entry) in file_entries.iter().enumerate() {
-            let selected = i == selected_file_index;
-            let status_color = match entry.status {
-                '+' => theme.diff_added,
-                '-' => theme.diff_removed,
-                '~' => theme.diff_modified,
-                '→' => theme.diff_renamed,
-                _ => theme.diff_context,
-            };
-            let name_style = if selected {
-                Style::default()
-                    .bg(theme.diff_selected_file_bg)
-                    .fg(theme.diff_selected_file_fg)
-            } else {
-                Style::default().fg(theme.diff_selected_file_border)
-            };
-            let status_style = Style::default().fg(status_color);
-            let display_name = format!("{:<width$}", display_names[i], width = max_name_width);
-            let count_style = Style::default().fg(theme.diff_context);
-            let added_style = Style::default().fg(theme.diff_added);
-            let removed_style = Style::default().fg(theme.diff_removed);
-            let available = max_vis.saturating_sub(2); // at least 2 chars margin
-            let total = entry.lines_added + entry.lines_removed;
-            let (pluses, minuses) = if total == 0 {
-                (0, 0)
-            } else if total <= available {
-                // All indicators fit — show them all.
-                (entry.lines_added, entry.lines_removed)
-            } else {
-                // Scale proportionally, ensuring both sides sum to exactly available.
-                let p = (available * entry.lines_added) / total;
-                (p, available - p)
-            };
-            let mut spans = vec![
-                Span::styled(format!("{} ", entry.status), status_style),
-                Span::styled(display_name, name_style),
-                Span::styled(" ", count_style),
-                Span::styled(
-                    format!(
-                        "({:>aw$}/{:>rw$})",
-                        added_strs[i],
-                        removed_strs[i],
-                        aw = added_width,
-                        rw = removed_width
-                    ),
-                    count_style,
-                ),
-            ];
-            if pluses + minuses > 0 {
-                spans.push(Span::styled(" ", count_style));
-                spans.push(Span::styled("+".repeat(pluses), added_style));
-                spans.push(Span::styled("-".repeat(minuses), removed_style));
-            }
-            lines.push(Line::from(spans));
-        }
-
-        lines.push(Line::from(""));
+        lines.extend(build_file_entries_lines(
+            file_entries,
+            selected_file_index,
+            content_width,
+            theme,
+        ));
     }
 
     // Diff content with word-level highlighting
-    // Build pair maps once -- O(n) scan, then O(1) lookup per line
+    lines.extend(build_diff_content_lines(diff_lines, theme));
+
+    tracing::debug!(
+        "build_all_lines: {} lines in {}ms",
+        diff_lines.len(),
+        t0.elapsed().as_millis()
+    );
+
+    lines
+}
+
+/// Build the "Changed files:" section with per-file status, name, line-count
+/// summary, and proportional visual indicators.
+fn build_file_entries_lines<'a>(
+    file_entries: &'a [FileEntry],
+    selected_file_index: usize,
+    content_width: u16,
+    theme: &Theme,
+) -> Vec<Line<'a>> {
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled(
+        "Changed files:",
+        Style::default()
+            .fg(theme.diff_hunk_header)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    // Compute display names and max width for alignment.
+    let display_names: Vec<String> = file_entries
+        .iter()
+        .map(|entry| {
+            if let Some(ref old) = entry.old_name {
+                diff_paths(old, &entry.name)
+            } else {
+                entry.name.clone()
+            }
+        })
+        .collect();
+    let max_name_width = display_names.iter().map(|n| n.len()).max().unwrap_or(0);
+    // Compute max field width for sign+number alignment, per column.
+    let added_strs: Vec<String> = file_entries
+        .iter()
+        .map(|e| format!("+{}", e.lines_added))
+        .collect();
+    let removed_strs: Vec<String> = file_entries
+        .iter()
+        .map(|e| format!("-{}", e.lines_removed))
+        .collect();
+    let added_width = added_strs.iter().map(|s| s.len()).max().unwrap_or(1);
+    let removed_width = removed_strs.iter().map(|s| s.len()).max().unwrap_or(1);
+    // Minimum column width of 2 ("+0", "-0") so the sign always has room.
+    let added_width = added_width.max(2);
+    let removed_width = removed_width.max(2);
+
+    // Compute max visual indicator characters based on available content width.
+    // Line format: "<status> <padded_name> <(+N/-M)><space><indicators>  "
+    // Fixed width: 1(status) + 1(space) + name + 1(space) + count + 1(space) = 4 + name + count
+    // Indicators get the rest, minus 2 chars for right margin.
+    let count_width = added_width + removed_width + 3; // "(+N/-M)"
+    let fixed_prefix = max_name_width + count_width + 4;
+    let max_vis = content_width
+        .saturating_sub(fixed_prefix as u16)
+        .min(MAX_VISUAL_INDICATOR_CHARS) as usize;
+
+    for (i, entry) in file_entries.iter().enumerate() {
+        let selected = i == selected_file_index;
+        let status_color = match entry.status {
+            '+' => theme.diff_added,
+            '-' => theme.diff_removed,
+            '~' => theme.diff_modified,
+            '→' => theme.diff_renamed,
+            _ => theme.diff_context,
+        };
+        let name_style = if selected {
+            Style::default()
+                .bg(theme.diff_selected_file_bg)
+                .fg(theme.diff_selected_file_fg)
+        } else {
+            Style::default().fg(theme.diff_selected_file_border)
+        };
+        let status_style = Style::default().fg(status_color);
+        let display_name = format!("{:<width$}", display_names[i], width = max_name_width);
+        let count_style = Style::default().fg(theme.diff_context);
+        let added_style = Style::default().fg(theme.diff_added);
+        let removed_style = Style::default().fg(theme.diff_removed);
+        let available = max_vis.saturating_sub(2); // at least 2 chars margin
+        let total = entry.lines_added + entry.lines_removed;
+        let (pluses, minuses) = if total == 0 {
+            (0, 0)
+        } else if total <= available {
+            // All indicators fit — show them all.
+            (entry.lines_added, entry.lines_removed)
+        } else {
+            // Scale proportionally, ensuring both sides sum to exactly available.
+            let p = (available * entry.lines_added) / total;
+            (p, available - p)
+        };
+        let mut spans = vec![
+            Span::styled(format!("{} ", entry.status), status_style),
+            Span::styled(display_name, name_style),
+            Span::styled(" ", count_style),
+            Span::styled(
+                format!(
+                    "({:>aw$}/{:>rw$})",
+                    added_strs[i],
+                    removed_strs[i],
+                    aw = added_width,
+                    rw = removed_width
+                ),
+                count_style,
+            ),
+        ];
+        if pluses + minuses > 0 {
+            spans.push(Span::styled(" ", count_style));
+            spans.push(Span::styled("+".repeat(pluses), added_style));
+            spans.push(Span::styled("-".repeat(minuses), removed_style));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    lines.push(Line::from(""));
+    lines
+}
+
+/// Build the diff content section with per-line coloring based on git diff syntax.
+/// Uses pair-maps and LCS for word-level intra-line change highlighting.
+fn build_diff_content_lines<'a>(diff_lines: &'a [String], theme: &Theme) -> Vec<Line<'a>> {
+    let mut lines = Vec::new();
+    // Build pair maps once — O(n) scan, then O(1) lookup per line
     let pair_maps = build_pair_maps(diff_lines);
 
     for (line_idx, line) in diff_lines.iter().enumerate() {
@@ -355,13 +388,6 @@ fn build_all_lines<'a>(
             )));
         }
     }
-
-    tracing::debug!(
-        "build_all_lines: {} lines in {}ms",
-        diff_lines.len(),
-        t0.elapsed().as_millis()
-    );
-
     lines
 }
 
