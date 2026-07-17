@@ -100,16 +100,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     let offset = viewport.offset;
     let end = viewport.end;
     let window = viewport.window;
-    // Compute date range for staleness stretching: today = brightest, oldest = darkest.
-    // Uses pre-computed epoch_days from CommitRow to avoid string parsing in the render path.
-    let epochs: Vec<i64> = ctx
-        .commits
-        .iter()
-        .map(|c| c.epoch_days)
-        .filter(|&d| d > 0)
-        .collect();
-    let min_days = epochs.iter().min().copied().unwrap_or(0);
-    let max_days = current_epoch_days();
+    let (min_days, max_days) = compute_epoch_range(ctx.commits);
 
     // Calculate dynamic graph width from the visible window only (use char count,
     // not byte length — all Unicode box-drawing/graph characters are single-width
@@ -293,6 +284,19 @@ fn compute_viewport<'a>(
         end,
         window,
     }
+}
+
+/// Compute the min and max epoch days from the visible commits for age-based
+/// date coloring. Max is always today to ensure newest commits are brightest.
+fn compute_epoch_range(commits: &[Commit]) -> (i64, i64) {
+    let epochs: Vec<i64> = commits
+        .iter()
+        .map(|c| c.epoch_days)
+        .filter(|&d| d > 0)
+        .collect();
+    let min_days = epochs.iter().min().copied().unwrap_or(0);
+    let max_days = current_epoch_days();
+    (min_days, max_days)
 }
 
 /// Check whether a commit is at the tip of a local or remote branch.

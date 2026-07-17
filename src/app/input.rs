@@ -615,30 +615,8 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
     }
 
     // Panel content clicks
-    if ui::layout::rect_contains_interior(&branch_visible, click_pos) {
-        let rel_row = (row
-            .saturating_sub(areas.branch.y)
-            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
-        let actual_index = rel_row + app.state.branch.branch_list_offset;
-        if actual_index < app.state.branch.branch_tree.len() {
-            let item = &app.state.branch.branch_tree[actual_index];
-            return vec![
-                Command::SetFocus(PanelEnum::Branches),
-                Command::MouseClickBranch {
-                    index: actual_index,
-                    full_path: item.full_path.clone(),
-                    is_branch: item.is_branch,
-                    is_expandable: item.expandable,
-                    is_expanded: item.expanded,
-                    key: item.key.clone(),
-                },
-            ];
-        }
-        return vec![Command::SetFocus(PanelEnum::Branches)];
-    }
-
-    if ui::layout::rect_contains(&branch_visible, click_pos) {
-        return vec![Command::SetFocus(PanelEnum::Branches)];
+    if let Some(commands) = handle_branch_click(app, click_pos, &areas, branch_visible) {
+        return commands;
     }
 
     if ui::layout::rect_contains(&areas.scope, click_pos) {
@@ -649,51 +627,12 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
         return vec![Command::SetFocus(PanelEnum::Search)];
     }
 
-    if ui::layout::rect_contains_interior(&areas.table, click_pos) {
-        let rel_row = (row
-            .saturating_sub(areas.table.y)
-            .saturating_sub(ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD)))
-            as usize;
-        let filtered_idx = rel_row + app.state.commit.table_state.offset();
-        if let Some(vis_idx) = search::filtered_to_visible(&app.state, filtered_idx) {
-            return vec![
-                Command::SetFocus(PanelEnum::Commits),
-                Command::SelectCommitIndex(vis_idx),
-            ];
-        }
-        return vec![Command::SetFocus(PanelEnum::Commits)];
+    if let Some(commands) = handle_commit_table_click(app, click_pos, &areas) {
+        return commands;
     }
 
-    if ui::layout::rect_contains(&areas.table, click_pos) {
-        return vec![Command::SetFocus(PanelEnum::Commits)];
-    }
-
-    if ui::layout::rect_contains(&areas.diff, click_pos) {
-        let meta_offset = if let Some(ref info) = app.state.diff.commit_info {
-            ui::diff_panel::count_metadata_lines(info)
-        } else {
-            0
-        };
-        let rel_row = (row
-            .saturating_sub(areas.diff.y)
-            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
-        if rel_row > meta_offset && rel_row <= meta_offset + app.state.diff.file_entries.len() + 2 {
-            let file_idx = rel_row - meta_offset - 1;
-            if file_idx < app.state.diff.file_entries.len() {
-                let offset = ui::diff_panel::diff_line_offset(
-                    app.state.diff.commit_info.as_ref(),
-                    &app.state.diff.file_entries,
-                );
-                if let Some(entry) = app.state.diff.file_entries.get(file_idx) {
-                    return vec![
-                        Command::SetFocus(PanelEnum::Diff),
-                        Command::JumpToDiffFile(file_idx),
-                        Command::ScrollToAbsolute(entry.diff_line + offset),
-                    ];
-                }
-            }
-        }
-        return vec![Command::SetFocus(PanelEnum::Diff)];
+    if let Some(commands) = handle_diff_click(app, click_pos, &areas) {
+        return commands;
     }
 
     Vec::new()
@@ -763,6 +702,104 @@ fn check_scrollbar_click(
             Command::InitiateScrollbarDrag(PanelEnum::Diff),
             Command::ScrollToAbsolute(pos),
         ]);
+    }
+    None
+}
+
+/// Handle a click inside the branch panel: select branch item or just focus.
+fn handle_branch_click(
+    app: &App,
+    click_pos: (u16, u16),
+    areas: &ui::layout::LayoutAreas,
+    branch_visible: Rect,
+) -> Option<Vec<Command>> {
+    if ui::layout::rect_contains_interior(&branch_visible, click_pos) {
+        let rel_row = (click_pos
+            .1
+            .saturating_sub(areas.branch.y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        let actual_index = rel_row + app.state.branch.branch_list_offset;
+        if actual_index < app.state.branch.branch_tree.len() {
+            let item = &app.state.branch.branch_tree[actual_index];
+            return Some(vec![
+                Command::SetFocus(PanelEnum::Branches),
+                Command::MouseClickBranch {
+                    index: actual_index,
+                    full_path: item.full_path.clone(),
+                    is_branch: item.is_branch,
+                    is_expandable: item.expandable,
+                    is_expanded: item.expanded,
+                    key: item.key.clone(),
+                },
+            ]);
+        }
+        return Some(vec![Command::SetFocus(PanelEnum::Branches)]);
+    }
+    if ui::layout::rect_contains(&branch_visible, click_pos) {
+        return Some(vec![Command::SetFocus(PanelEnum::Branches)]);
+    }
+    None
+}
+
+/// Handle a click inside the commit table panel: select row or just focus.
+fn handle_commit_table_click(
+    app: &App,
+    click_pos: (u16, u16),
+    areas: &ui::layout::LayoutAreas,
+) -> Option<Vec<Command>> {
+    if ui::layout::rect_contains_interior(&areas.table, click_pos) {
+        let rel_row =
+            (click_pos.1.saturating_sub(areas.table.y).saturating_sub(
+                ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD),
+            )) as usize;
+        let filtered_idx = rel_row + app.state.commit.table_state.offset();
+        if let Some(vis_idx) = search::filtered_to_visible(&app.state, filtered_idx) {
+            return Some(vec![
+                Command::SetFocus(PanelEnum::Commits),
+                Command::SelectCommitIndex(vis_idx),
+            ]);
+        }
+        return Some(vec![Command::SetFocus(PanelEnum::Commits)]);
+    }
+    if ui::layout::rect_contains(&areas.table, click_pos) {
+        return Some(vec![Command::SetFocus(PanelEnum::Commits)]);
+    }
+    None
+}
+
+/// Handle a click inside the diff panel: jump to file entry or just focus.
+fn handle_diff_click(
+    app: &App,
+    click_pos: (u16, u16),
+    areas: &ui::layout::LayoutAreas,
+) -> Option<Vec<Command>> {
+    if ui::layout::rect_contains(&areas.diff, click_pos) {
+        let meta_offset = if let Some(ref info) = app.state.diff.commit_info {
+            ui::diff_panel::count_metadata_lines(info)
+        } else {
+            0
+        };
+        let rel_row = (click_pos
+            .1
+            .saturating_sub(areas.diff.y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        if rel_row > meta_offset && rel_row <= meta_offset + app.state.diff.file_entries.len() + 2 {
+            let file_idx = rel_row - meta_offset - 1;
+            if file_idx < app.state.diff.file_entries.len() {
+                let offset = ui::diff_panel::diff_line_offset(
+                    app.state.diff.commit_info.as_ref(),
+                    &app.state.diff.file_entries,
+                );
+                if let Some(entry) = app.state.diff.file_entries.get(file_idx) {
+                    return Some(vec![
+                        Command::SetFocus(PanelEnum::Diff),
+                        Command::JumpToDiffFile(file_idx),
+                        Command::ScrollToAbsolute(entry.diff_line + offset),
+                    ]);
+                }
+            }
+        }
+        return Some(vec![Command::SetFocus(PanelEnum::Diff)]);
     }
     None
 }

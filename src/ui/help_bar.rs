@@ -109,14 +109,7 @@ pub fn render_help_modal(
     let panel_items = panel_keys.len();
     // 3 section titles + all items + 3 blank separators + 1 hint
     let content_lines = 3 + global_items + 3 + nav_items + panel_items + 1;
-    let modal_h = (content_lines + 4).min(full_area.height.saturating_sub(2) as usize);
-    let modal_w = (full_area.width * 7 / 10)
-        .max(50)
-        .min(full_area.width.saturating_sub(2));
-    let modal_x = full_area.x + (full_area.width.saturating_sub(modal_w)) / 2;
-    let modal_y = full_area.y + (full_area.height.saturating_sub(modal_h as u16)) / 2;
-
-    let modal_area = Rect::new(modal_x, modal_y, modal_w, modal_h as u16);
+    let modal_area = compute_modal_area(full_area, content_lines);
 
     frame.render_widget(Clear, modal_area);
 
@@ -159,6 +152,17 @@ pub fn render_help_modal(
     );
 
     frame.render_widget(paragraph, inner);
+}
+
+/// Compute the centered modal area rectangle based on content line count.
+fn compute_modal_area(full_area: Rect, content_lines: usize) -> Rect {
+    let modal_h = (content_lines + 4).min(full_area.height.saturating_sub(2) as usize);
+    let modal_w = (full_area.width * 7 / 10)
+        .max(50)
+        .min(full_area.width.saturating_sub(2));
+    let modal_x = full_area.x + (full_area.width.saturating_sub(modal_w)) / 2;
+    let modal_y = full_area.y + (full_area.height.saturating_sub(modal_h as u16)) / 2;
+    Rect::new(modal_x, modal_y, modal_w, modal_h as u16)
 }
 
 /// Build a single formatted line for one key binding: indentation + key + description.

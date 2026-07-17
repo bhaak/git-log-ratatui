@@ -8,40 +8,8 @@ use crate::view::CommitRow;
 
 pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
     let mut commits = Vec::with_capacity(graph.commits.len());
-
-    let num_cols = graph
-        .all_branches
-        .iter()
-        .filter_map(|b| b.visual.column)
-        .max()
-        .map(|c| c + 1)
-        .unwrap_or(1);
-
-    let mut branch_starts: Vec<(usize, usize)> = Vec::new();
-    let mut branch_ends: Vec<(usize, usize)> = Vec::new();
-    for branch in graph.all_branches.iter() {
-        let Some(col) = branch.visual.column else {
-            continue;
-        };
-        let (Some(start), Some(end)) = branch.range else {
-            continue;
-        };
-        branch_starts.push((start, col));
-        branch_ends.push((end, col));
-    }
-    branch_starts.sort_unstable_by_key(|&(s, _)| s);
-    branch_ends.sort_unstable_by_key(|&(e, _)| e);
-
-    let mut child_cols: HashMap<Oid, HashSet<usize>> = HashMap::with_capacity(graph.commits.len());
-    for info in graph.commits.iter() {
-        let current_col = info
-            .branch_trace
-            .and_then(|t| graph.all_branches[t].visual.column)
-            .unwrap_or(0);
-        for parent in info.parents.iter().flatten() {
-            child_cols.entry(*parent).or_default().insert(current_col);
-        }
-    }
+    let (branch_starts, branch_ends, num_cols) = compute_branch_boundaries(graph);
+    let child_cols = build_child_cols(graph);
 
     let mut active = vec![false; num_cols];
     let mut max_active_col: usize = 0;
@@ -135,6 +103,52 @@ pub fn build_commits_from_graph(graph: &GitGraph) -> Vec<CommitRow> {
     }
 
     commits
+}
+
+/// Collect branch start/end positions and maximum column count from the graph.
+#[allow(clippy::type_complexity)]
+fn compute_branch_boundaries(
+    graph: &GitGraph,
+) -> (Vec<(usize, usize)>, Vec<(usize, usize)>, usize) {
+    let num_cols = graph
+        .all_branches
+        .iter()
+        .filter_map(|b| b.visual.column)
+        .max()
+        .map(|c| c + 1)
+        .unwrap_or(1);
+
+    let mut branch_starts: Vec<(usize, usize)> = Vec::new();
+    let mut branch_ends: Vec<(usize, usize)> = Vec::new();
+    for branch in graph.all_branches.iter() {
+        let Some(col) = branch.visual.column else {
+            continue;
+        };
+        let (Some(start), Some(end)) = branch.range else {
+            continue;
+        };
+        branch_starts.push((start, col));
+        branch_ends.push((end, col));
+    }
+    branch_starts.sort_unstable_by_key(|&(s, _)| s);
+    branch_ends.sort_unstable_by_key(|&(e, _)| e);
+
+    (branch_starts, branch_ends, num_cols)
+}
+
+/// Build a map from commit OID to set of child column indices for fork detection.
+fn build_child_cols(graph: &GitGraph) -> HashMap<Oid, HashSet<usize>> {
+    let mut child_cols: HashMap<Oid, HashSet<usize>> = HashMap::with_capacity(graph.commits.len());
+    for info in graph.commits.iter() {
+        let current_col = info
+            .branch_trace
+            .and_then(|t| graph.all_branches[t].visual.column)
+            .unwrap_or(0);
+        for parent in info.parents.iter().flatten() {
+            child_cols.entry(*parent).or_default().insert(current_col);
+        }
+    }
+    child_cols
 }
 
 /// Build the graph line string and lane color vector for one commit row.

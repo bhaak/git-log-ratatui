@@ -118,18 +118,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         ui::help_bar::render_help_modal(frame, full, &label, help_keys, &theme);
     }
 
-    let current_hash = if search::visible_count(&app.state) > 0 {
-        let ci = search::visible_to_filtered(&app.state, app.state.commit.selected_index);
-        app.state
-            .commit
-            .filtered_commits
-            .as_deref()
-            .unwrap_or(&app.state.commit.all_commits)
-            .get(ci)
-            .map(|c| c.hash.clone())
-    } else {
-        None
-    };
+    let current_hash = get_selected_commit_hash(&app.state);
 
     if current_hash != app.state.diff.last_selected_hash {
         app.state.diff.last_selected_hash = current_hash.clone();
@@ -138,6 +127,22 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
                 app.request_diff(&hash);
             }
         }
+    }
+}
+
+/// Get the hash of the currently selected visible commit, if any.
+fn get_selected_commit_hash(state: &super::state::AppState) -> Option<String> {
+    if search::visible_count(state) > 0 {
+        let ci = search::visible_to_filtered(state, state.commit.selected_index);
+        state
+            .commit
+            .filtered_commits
+            .as_deref()
+            .unwrap_or(&state.commit.all_commits)
+            .get(ci)
+            .map(|c| c.hash.clone())
+    } else {
+        None
     }
 }
 
