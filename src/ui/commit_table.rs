@@ -73,39 +73,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         return;
     }
 
-    // Empty state messages
-    if ctx.commits.is_empty() && ctx.total_loaded > 0 {
-        let msg = if ctx.search_active {
-            "No commits match your search."
-        } else {
-            "No commits found in this repository."
-        };
-        let title = if let Some(label) = ctx.debug_label {
-            format!(" Commits [{}] ", label)
-        } else {
-            " Commits ".to_string()
-        };
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(border_style);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        if inner.width > 4 && inner.height > 1 {
-            let p = Paragraph::new(Span::styled(
-                msg,
-                Style::default().fg(ctx.theme.commit_secondary),
-            ))
-            .block(Block::default());
-            let centered = Rect::new(
-                inner.x + inner.width.saturating_sub(msg.len() as u16) / 2,
-                inner.y + inner.height / 2,
-                (msg.len() as u16).min(inner.width),
-                1,
-            );
-            frame.render_widget(p, centered);
-        }
+    if render_empty_state(frame, area, ctx, border_style) {
         return;
     }
 
@@ -125,37 +93,13 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         })
         .add_modifier(Modifier::BOLD);
 
-    // Map the visible selection to an absolute index into `ctx.commits`.
-    let mapped_index = ctx
-        .visible_to_commit
-        .get(ctx.visible_index)
-        .copied()
-        .unwrap_or(0);
-
-    // Determine the viewport window and only build rows for the rows actually
-    // on screen. Building a Row for every commit (potentially tens of thousands)
-    // on every frame is what made navigation sluggish on large repos.
-    // TABLE_OVERHEAD accounts for the two borders plus the header row, which
-    // matches ratatui's own inner-height calculation for a bordered table.
-    let viewport_height = area.height.saturating_sub(TABLE_OVERHEAD) as usize;
-    let total = ctx.commits.len();
-
-    // Scroll-follow-selection: keep the previous absolute offset unless the
-    // selection has moved out of view, then clamp so we never scroll past the end.
-    let mut offset = state.offset();
-    if mapped_index < offset {
-        offset = mapped_index;
-    } else if viewport_height > 0 && mapped_index >= offset + viewport_height {
-        offset = mapped_index + 1 - viewport_height;
-    }
-    let max_offset = total.saturating_sub(viewport_height);
-    offset = offset.min(max_offset);
-
-    // Persist the absolute offset so the scrollbar and mouse-click mapping
-    // (which both read `state.offset()`) stay correct.
-    *state.offset_mut() = offset;
-
-    let end = (offset + viewport_height).min(total);
+    // Map the visible selection to an absolute index into `ctx.commits`,
+    // compute the scroll offset, and slice the visible window.
+    let viewport = compute_viewport(area, state, ctx);
+    let mapped_index = viewport.mapped_index;
+    let offset = viewport.offset;
+    let end = viewport.end;
+    let window = viewport.window;
     // Compute date range for staleness stretching: today = brightest, oldest = darkest.
     // Uses pre-computed epoch_days from CommitRow to avoid string parsing in the render path.
     let epochs: Vec<i64> = ctx
@@ -166,12 +110,6 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         .collect();
     let min_days = epochs.iter().min().copied().unwrap_or(0);
     let max_days = current_epoch_days();
-
-    let window = if offset < end {
-        &ctx.commits[offset..end]
-    } else {
-        &[][..]
-    };
 
     // Calculate dynamic graph width from the visible window only (use char count,
     // not byte length — all Unicode box-drawing/graph characters are single-width
@@ -209,36 +147,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
                 build_graph_span(commit, col_graph as usize, ctx.simplified_graph, ctx.theme);
             let hash_span = build_hash_span(commit, ctx);
 
-            let subject_span = if commit.graph_only {
-                Line::from(Span::styled(
-                    graph_only_decorations(commit),
-                    Style::default().fg(ctx.theme.commit_secondary),
-                ))
-            } else {
-                let mut spans: Vec<Span> = Vec::new();
-                if !commit.decorations.is_empty() {
-                    spans.push(Span::raw("("));
-                    for (i, deco) in commit.decorations.iter().enumerate() {
-                        if i > 0 {
-                            spans.push(Span::raw(", "));
-                        }
-                        spans.push(Span::styled(
-                            deco.label.clone(),
-                            decoration_style(&deco.kind, ctx.theme),
-                        ));
-                    }
-                    spans.push(Span::raw(") "));
-                }
-                spans.push(Span::styled(
-                    truncate(&commit.subject, subject_width as usize),
-                    if commit.merge {
-                        Style::default().fg(ctx.theme.commit_merge)
-                    } else {
-                        Style::default().fg(ctx.theme.commit_default)
-                    },
-                ));
-                Line::from(spans)
-            };
+            let subject_span = build_subject_span(commit, subject_width as usize, ctx.theme);
 
             let author_span = Line::from(Span::styled(
                 truncate(&commit.author, COL_AUTHOR as usize),
@@ -260,28 +169,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
         })
         .collect();
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .title(format!(
-                    "{} - {} ",
-                    if let Some(label) = ctx.debug_label {
-                        format!(" Commits [{}]", label)
-                    } else {
-                        " Commits".to_string()
-                    },
-                    format_commit_count_info(
-                        ctx.visible_index,
-                        ctx.commits.len(),
-                        ctx.total_loaded,
-                    )
-                ))
-                .borders(Borders::ALL)
-                .border_style(border_style),
-        )
-        .row_highlight_style(highlight_style)
-        .column_spacing(1);
+    let table = build_commit_table(rows, widths, header, ctx, border_style, highlight_style);
 
     // `state` now holds the absolute offset (for the scrollbar / mouse mapping).
     // Render with a local state whose offset is relative to the window slice, so
@@ -293,6 +181,118 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
     }
 
     frame.render_stateful_widget(table, area, &mut local_state);
+}
+
+/// Render an informational message when there are no commits to display.
+/// Returns true if an empty state was rendered (caller should return early).
+fn render_empty_state(
+    frame: &mut Frame,
+    area: Rect,
+    ctx: &CommitTableCtx,
+    border_style: Style,
+) -> bool {
+    if ctx.commits.is_empty() && ctx.total_loaded > 0 {
+        let msg = if ctx.search_active {
+            "No commits match your search."
+        } else {
+            "No commits found in this repository."
+        };
+        let title = if let Some(label) = ctx.debug_label {
+            format!(" Commits [{}] ", label)
+        } else {
+            " Commits ".to_string()
+        };
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(border_style);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.width > 4 && inner.height > 1 {
+            let p = Paragraph::new(Span::styled(
+                msg,
+                Style::default().fg(ctx.theme.commit_secondary),
+            ))
+            .block(Block::default());
+            let centered = Rect::new(
+                inner.x + inner.width.saturating_sub(msg.len() as u16) / 2,
+                inner.y + inner.height / 2,
+                (msg.len() as u16).min(inner.width),
+                1,
+            );
+            frame.render_widget(p, centered);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// The visible slice of commits to render in the current frame.
+struct Viewport<'a> {
+    /// Absolute index of the selected commit within the full commit list.
+    mapped_index: usize,
+    /// Row offset into the full commit list where the window starts.
+    offset: usize,
+    /// Exclusive end index of the rendered window.
+    end: usize,
+    /// Slice of commits that are actually visible on screen.
+    window: &'a [Commit],
+}
+
+/// Compute the scroll offset, viewport window, and mapped selection index.
+/// Mutates `state.offset()` to persist scroll-follow-selection.
+fn compute_viewport<'a>(
+    area: Rect,
+    state: &mut TableState,
+    ctx: &CommitTableCtx<'a>,
+) -> Viewport<'a> {
+    // Map the visible selection to an absolute index into `ctx.commits`.
+    let mapped_index = ctx
+        .visible_to_commit
+        .get(ctx.visible_index)
+        .copied()
+        .unwrap_or(0);
+
+    // Determine the viewport window and only build rows for the rows actually
+    // on screen. Building a Row for every commit (potentially tens of thousands)
+    // on every frame made navigation sluggish on large repos.
+    // TABLE_OVERHEAD accounts for the two borders plus the header row, which
+    // matches ratatui's own inner-height calculation for a bordered table.
+    let viewport_height = area.height.saturating_sub(TABLE_OVERHEAD) as usize;
+    let total = ctx.commits.len();
+
+    // Scroll-follow-selection: keep the previous absolute offset unless the
+    // selection has moved out of view, then clamp so we never scroll past the end.
+    let mut offset = state.offset();
+    if mapped_index < offset {
+        offset = mapped_index;
+    } else if viewport_height > 0 && mapped_index >= offset + viewport_height {
+        offset = mapped_index + 1 - viewport_height;
+    }
+    let max_offset = total.saturating_sub(viewport_height);
+    offset = offset.min(max_offset);
+
+    // Persist the absolute offset so the scrollbar and mouse-click mapping
+    // (which both read `state.offset()`) stay correct.
+    *state.offset_mut() = offset;
+
+    let end = (offset + viewport_height).min(total);
+
+    // Only build rows for the visible window.
+    let window = if offset < end {
+        &ctx.commits[offset..end]
+    } else {
+        &[][..]
+    };
+
+    Viewport {
+        mapped_index,
+        offset,
+        end,
+        window,
+    }
 }
 
 /// Check whether a commit is at the tip of a local or remote branch.
@@ -407,6 +407,46 @@ pub(super) fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'st
     ))
 }
 
+/// Build the subject column span including decoration labels for a commit row.
+/// Graph-only rows (no real commit) show just the decoration names in secondary color.
+/// Normal rows show decorations in parens followed by the truncated subject.
+pub(super) fn build_subject_span<'a>(
+    commit: &'a Commit,
+    subject_width: usize,
+    theme: &Theme,
+) -> Line<'a> {
+    if commit.graph_only {
+        Line::from(Span::styled(
+            graph_only_decorations(commit),
+            Style::default().fg(theme.commit_secondary),
+        ))
+    } else {
+        let mut spans: Vec<Span> = Vec::new();
+        if !commit.decorations.is_empty() {
+            spans.push(Span::raw("("));
+            for (i, deco) in commit.decorations.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw(", "));
+                }
+                spans.push(Span::styled(
+                    deco.label.clone(),
+                    decoration_style(&deco.kind, theme),
+                ));
+            }
+            spans.push(Span::raw(") "));
+        }
+        spans.push(Span::styled(
+            truncate(&commit.subject, subject_width),
+            if commit.merge {
+                Style::default().fg(theme.commit_merge)
+            } else {
+                Style::default().fg(theme.commit_default)
+            },
+        ));
+        Line::from(spans)
+    }
+}
+
 /// Derive a unique, readable color from a git commit hash (first 6 hex digits).
 /// Maps 0-255 per channel to 50-250 to prevent too-dark colors.
 pub(super) fn hash_color(hash: &str) -> Color {
@@ -422,6 +462,39 @@ pub(super) fn hash_color(hash: &str) -> Color {
         ((g as u32 * 200 / 255) + 50) as u8,
         ((b as u32 * 200 / 255) + 50) as u8,
     )
+}
+
+/// Build the commit table widget with header, title, and styling.
+fn build_commit_table<'a>(
+    rows: Vec<Row<'a>>,
+    widths: [Constraint; 5],
+    header: Row<'a>,
+    ctx: &CommitTableCtx,
+    border_style: Style,
+    highlight_style: Style,
+) -> Table<'a> {
+    Table::new(rows, widths)
+        .header(header)
+        .block(
+            Block::default()
+                .title(format!(
+                    "{} - {} ",
+                    if let Some(label) = ctx.debug_label {
+                        format!(" Commits [{}]", label)
+                    } else {
+                        " Commits".to_string()
+                    },
+                    format_commit_count_info(
+                        ctx.visible_index,
+                        ctx.commits.len(),
+                        ctx.total_loaded,
+                    )
+                ))
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        )
+        .row_highlight_style(highlight_style)
+        .column_spacing(1)
 }
 
 /// Derive a greyscale color from pre-computed epoch days, stretched between
