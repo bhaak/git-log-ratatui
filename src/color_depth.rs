@@ -162,63 +162,60 @@ fn color_distance(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> u32 {
     (dr * dr + dg * dg + db * db) as u32
 }
 
-/// Approximate an RGB color using the 8 standard ANSI colors.
-/// Uses simple distance comparison to the 8 standard color reference values.
-fn rgb_to_color8(r: u8, g: u8, b: u8) -> Color {
-    let colors: [(Color, u8, u8, u8); 8] = [
-        (Color::Black, 0, 0, 0),
-        (Color::Red, 205, 0, 0),
-        (Color::Green, 0, 205, 0),
-        (Color::Yellow, 205, 205, 0),
-        (Color::Blue, 0, 0, 238),
-        (Color::Magenta, 205, 0, 205),
-        (Color::Cyan, 0, 205, 205),
-        (Color::White, 229, 229, 229),
-    ];
+/// 8 standard ANSI colors with their approximate RGB reference values.
+const COLORS_8: [(Color, u8, u8, u8); 8] = [
+    (Color::Black, 0, 0, 0),
+    (Color::Red, 205, 0, 0),
+    (Color::Green, 0, 205, 0),
+    (Color::Yellow, 205, 205, 0),
+    (Color::Blue, 0, 0, 238),
+    (Color::Magenta, 205, 0, 205),
+    (Color::Cyan, 0, 205, 205),
+    (Color::White, 229, 229, 229),
+];
 
-    let mut best = Color::White;
+/// 16 ANSI colors (8 standard + 8 bright) with their approximate RGB reference values.
+const COLORS_16: [(Color, u8, u8, u8); 16] = [
+    (Color::Black, 0, 0, 0),
+    (Color::Red, 205, 0, 0),
+    (Color::Green, 0, 205, 0),
+    (Color::Yellow, 205, 205, 0),
+    (Color::Blue, 0, 0, 238),
+    (Color::Magenta, 205, 0, 205),
+    (Color::Cyan, 0, 205, 205),
+    (Color::White, 229, 229, 229),
+    (Color::DarkGray, 127, 127, 127),
+    (Color::LightRed, 255, 0, 0),
+    (Color::LightGreen, 0, 255, 0),
+    (Color::LightYellow, 255, 255, 0),
+    (Color::LightBlue, 0, 0, 255),
+    (Color::LightMagenta, 255, 0, 255),
+    (Color::LightCyan, 0, 255, 255),
+    (Color::Gray, 255, 255, 255),
+];
+
+/// Find the nearest color in a static palette by Euclidean RGB distance.
+fn nearest_color(r: u8, g: u8, b: u8, palette: &[(Color, u8, u8, u8)]) -> Color {
+    let mut best = palette[0].0;
     let mut best_dist = u32::MAX;
-    for (color, cr, cg, cb) in &colors {
-        let dist = color_distance(r, g, b, *cr, *cg, *cb);
+    for &(color, cr, cg, cb) in palette {
+        let dist = color_distance(r, g, b, cr, cg, cb);
         if dist < best_dist {
             best_dist = dist;
-            best = *color;
+            best = color;
         }
     }
     best
 }
 
+/// Approximate an RGB color using the 8 standard ANSI colors.
+fn rgb_to_color8(r: u8, g: u8, b: u8) -> Color {
+    nearest_color(r, g, b, &COLORS_8)
+}
+
 /// Approximate an RGB color using the 16 ANSI colors (8 standard + 8 bright).
 fn rgb_to_color16(r: u8, g: u8, b: u8) -> Color {
-    let colors: [(Color, u8, u8, u8); 16] = [
-        (Color::Black, 0, 0, 0),
-        (Color::Red, 205, 0, 0),
-        (Color::Green, 0, 205, 0),
-        (Color::Yellow, 205, 205, 0),
-        (Color::Blue, 0, 0, 238),
-        (Color::Magenta, 205, 0, 205),
-        (Color::Cyan, 0, 205, 205),
-        (Color::White, 229, 229, 229),
-        (Color::DarkGray, 127, 127, 127),
-        (Color::LightRed, 255, 0, 0),
-        (Color::LightGreen, 0, 255, 0),
-        (Color::LightYellow, 255, 255, 0),
-        (Color::LightBlue, 0, 0, 255),
-        (Color::LightMagenta, 255, 0, 255),
-        (Color::LightCyan, 0, 255, 255),
-        (Color::Gray, 255, 255, 255),
-    ];
-
-    let mut best = Color::White;
-    let mut best_dist = u32::MAX;
-    for (color, cr, cg, cb) in &colors {
-        let dist = color_distance(r, g, b, *cr, *cg, *cb);
-        if dist < best_dist {
-            best_dist = dist;
-            best = *color;
-        }
-    }
-    best
+    nearest_color(r, g, b, &COLORS_16)
 }
 
 #[cfg(test)]
