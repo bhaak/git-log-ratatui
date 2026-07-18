@@ -4,6 +4,8 @@ use ratatui::style::Color;
 /// Detected automatically from environment variables at startup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorDepth {
+    /// No ANSI color output (NO_COLOR environment variable set).
+    NoColor,
     /// 8 standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white)
     Color8,
     /// 16 ANSI colors (8 standard + 8 bright variants)
@@ -17,9 +19,13 @@ pub enum ColorDepth {
 impl ColorDepth {
     /// Detect terminal color depth from environment variables.
     ///
-    /// Checks `COLORTERM` for truecolor indicators, then `TERM` for
-    /// 256-color capable terminals. Falls back to 8-color.
+    /// Checks `NO_COLOR` first (https://no-color.org), then `COLORTERM`
+    /// for truecolor indicators, then `TERM` for 256/16 color capable
+    /// terminals. Falls back to 8-color.
     pub fn detect() -> Self {
+        if is_no_color() {
+            return Self::NoColor;
+        }
         if is_truecolor() {
             return Self::TrueColor;
         }
@@ -33,8 +39,10 @@ impl ColorDepth {
     }
 
     /// Convert RGB components to the best Color representation for this depth.
+    /// Returns `Color::Reset` when NO_COLOR is active.
     pub fn rgb_to_color(&self, r: u8, g: u8, b: u8) -> Color {
         match self {
+            Self::NoColor => Color::Reset,
             Self::TrueColor => Color::Rgb(r, g, b),
             Self::Color256 => rgb_to_color256(r, g, b),
             Self::Color16 => rgb_to_color16(r, g, b),
@@ -43,14 +51,23 @@ impl ColorDepth {
     }
 
     /// Convert a pre-existing `Color::Rgb` to the appropriate representation.
-    /// Non-RGB colors are returned unchanged.
+    /// Non-RGB colors are returned unchanged, except when NO_COLOR is active.
     #[allow(dead_code)]
     pub fn adapt_color(&self, color: Color) -> Color {
-        match color {
-            Color::Rgb(r, g, b) => self.rgb_to_color(r, g, b),
-            other => other,
+        match self {
+            Self::NoColor => Color::Reset,
+            _ => match color {
+                Color::Rgb(r, g, b) => self.rgb_to_color(r, g, b),
+                other => other,
+            },
         }
     }
+}
+
+fn is_no_color() -> bool {
+    std::env::var("NO_COLOR")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
 }
 
 fn is_truecolor() -> bool {
@@ -230,9 +247,14 @@ fn rgb_to_color16(r: u8, g: u8, b: u8) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_detect_truecolor_from_colorterm() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::set_var("COLORTERM", "truecolor");
         std::env::set_var("TERM", "");
         assert_eq!(ColorDepth::detect(), ColorDepth::TrueColor);
@@ -241,6 +263,8 @@ mod tests {
 
     #[test]
     fn test_detect_truecolor_from_24bit() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::set_var("COLORTERM", "24bit");
         std::env::set_var("TERM", "");
         assert_eq!(ColorDepth::detect(), ColorDepth::TrueColor);
@@ -249,6 +273,8 @@ mod tests {
 
     #[test]
     fn test_detect_256color_from_term() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
         std::env::set_var("TERM", "xterm-256color");
         assert_eq!(ColorDepth::detect(), ColorDepth::Color256);
@@ -256,6 +282,8 @@ mod tests {
 
     #[test]
     fn test_detect_256color_from_screen() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
         std::env::set_var("TERM", "screen-256color");
         assert_eq!(ColorDepth::detect(), ColorDepth::Color256);
@@ -263,6 +291,8 @@ mod tests {
 
     #[test]
     fn test_detect_256color_from_tmux() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
         std::env::set_var("TERM", "tmux-256color");
         assert_eq!(ColorDepth::detect(), ColorDepth::Color256);
@@ -270,6 +300,8 @@ mod tests {
 
     #[test]
     fn test_detect_falls_back_to_8color() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
         std::env::set_var("TERM", "dumb");
         assert_eq!(ColorDepth::detect(), ColorDepth::Color8);
@@ -371,8 +403,50 @@ mod tests {
 
     #[test]
     fn test_detect_16color_from_term() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
         std::env::set_var("TERM", "xterm-16color");
         assert_eq!(ColorDepth::detect(), ColorDepth::Color16);
+    }
+
+    #[test]
+    fn test_no_color_detected() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NO_COLOR", "1");
+        assert_eq!(ColorDepth::detect(), ColorDepth::NoColor);
+        std::env::remove_var("NO_COLOR");
+    }
+
+    #[test]
+    fn test_no_color_empty_value_ignored() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NO_COLOR", "");
+        assert_ne!(ColorDepth::detect(), ColorDepth::NoColor);
+        std::env::remove_var("NO_COLOR");
+    }
+
+    #[test]
+    fn test_no_color_takes_priority_over_colorterm() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NO_COLOR", "1");
+        std::env::set_var("COLORTERM", "truecolor");
+        assert_eq!(ColorDepth::detect(), ColorDepth::NoColor);
+        std::env::remove_var("NO_COLOR");
+        std::env::remove_var("COLORTERM");
+    }
+
+    #[test]
+    fn test_no_color_rgb_to_color_returns_reset() {
+        let depth = ColorDepth::NoColor;
+        assert_eq!(depth.rgb_to_color(255, 0, 0), Color::Reset);
+        assert_eq!(depth.rgb_to_color(0, 0, 0), Color::Reset);
+    }
+
+    #[test]
+    fn test_no_color_adapt_color_returns_reset() {
+        let depth = ColorDepth::NoColor;
+        assert_eq!(depth.adapt_color(Color::Rgb(255, 0, 0)), Color::Reset);
+        assert_eq!(depth.adapt_color(Color::White), Color::Reset);
     }
 }
