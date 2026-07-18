@@ -1,7 +1,8 @@
 use ratatui::style::Color;
+use terminfo::{capability as cap, Database};
 
 /// Terminal color depth support levels.
-/// Detected automatically from environment variables at startup.
+/// Detected automatically from the terminfo database at startup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorDepth {
     /// No ANSI color output (NO_COLOR environment variable set).
@@ -17,11 +18,11 @@ pub enum ColorDepth {
 }
 
 impl ColorDepth {
-    /// Detect terminal color depth from environment variables.
+    /// Detect terminal color depth from environment variables and terminfo.
     ///
     /// Checks `NO_COLOR` first (https://no-color.org), then `COLORTERM`
-    /// for truecolor indicators, then `TERM` for 256/16 color capable
-    /// terminals. Falls back to 8-color.
+    /// for truecolor indicators, then queries the terminfo database
+    /// via `TERM` for the `MaxColors` capability. Falls back to 8-color.
     pub fn detect() -> Self {
         if is_no_color() {
             return Self::NoColor;
@@ -29,13 +30,7 @@ impl ColorDepth {
         if is_truecolor() {
             return Self::TrueColor;
         }
-        if is_16color() {
-            return Self::Color16;
-        }
-        if is_256color() {
-            return Self::Color256;
-        }
-        Self::Color8
+        terminfo_colors()
     }
 
     /// Convert RGB components to the best Color representation for this depth.
@@ -79,31 +74,19 @@ fn is_truecolor() -> bool {
     false
 }
 
-fn is_256color() -> bool {
-    if let Ok(val) = std::env::var("TERM") {
-        if val.contains("-16color") || val.contains("16color") {
-            return false;
-        }
-        if val.contains("-256color") || val.contains("256color") {
-            return true;
-        }
-        if val.contains("xterm") || val.contains("screen") {
-            return true;
-        }
-        if val.contains("tmux") {
-            return true;
-        }
+/// Query the terminfo database for the `MaxColors` capability.
+/// Maps the returned count to the appropriate ColorDepth.
+fn terminfo_colors() -> ColorDepth {
+    let db = match Database::from_env() {
+        Ok(db) => db,
+        Err(_) => return ColorDepth::Color8,
+    };
+    match db.get::<cap::MaxColors>() {
+        Some(cap::MaxColors(n)) if n >= 256 => ColorDepth::Color256,
+        Some(cap::MaxColors(n)) if n >= 16 => ColorDepth::Color16,
+        Some(cap::MaxColors(n)) if n >= 8 => ColorDepth::Color8,
+        _ => ColorDepth::Color8,
     }
-    false
-}
-
-fn is_16color() -> bool {
-    if let Ok(val) = std::env::var("TERM") {
-        if val.contains("16color") || val.contains("-16color") {
-            return true;
-        }
-    }
-    false
 }
 
 /// Approximate an RGB color using the 256-color palette.
@@ -178,12 +161,6 @@ fn color_distance(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> u32 {
     let db = b1 as i32 - b2 as i32;
     (dr * dr + dg * dg + db * db) as u32
 }
-
-/// Names for the 8 standard ANSI colors (used for mapping).
-#[allow(dead_code)]
-const ANSI8_NAMES: [&str; 8] = [
-    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-];
 
 /// Approximate an RGB color using the 8 standard ANSI colors.
 /// Uses simple distance comparison to the 8 standard color reference values.
@@ -272,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_256color_from_term() {
+    fn test_detect_256color_from_terminfo() {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
@@ -281,25 +258,25 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_256color_from_screen() {
+    fn test_detect_16color_from_terminfo() {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
-        std::env::set_var("TERM", "screen-256color");
-        assert_eq!(ColorDepth::detect(), ColorDepth::Color256);
+        std::env::set_var("TERM", "xterm-16color");
+        assert_eq!(ColorDepth::detect(), ColorDepth::Color16);
     }
 
     #[test]
-    fn test_detect_256color_from_tmux() {
+    fn test_detect_8color_from_terminfo() {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
-        std::env::set_var("TERM", "tmux-256color");
-        assert_eq!(ColorDepth::detect(), ColorDepth::Color256);
+        std::env::set_var("TERM", "xterm");
+        assert_eq!(ColorDepth::detect(), ColorDepth::Color8);
     }
 
     #[test]
-    fn test_detect_falls_back_to_8color() {
+    fn test_detect_dumb_terminal_falls_back_to_8color() {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("NO_COLOR");
         std::env::remove_var("COLORTERM");
@@ -399,15 +376,6 @@ mod tests {
             Color::Red => {}
             other => panic!("Expected Red, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn test_detect_16color_from_term() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("NO_COLOR");
-        std::env::remove_var("COLORTERM");
-        std::env::set_var("TERM", "xterm-16color");
-        assert_eq!(ColorDepth::detect(), ColorDepth::Color16);
     }
 
     #[test]
