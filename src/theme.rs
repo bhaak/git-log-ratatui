@@ -132,8 +132,22 @@ impl Default for ThemeConfig {
 }
 
 impl ThemeConfig {
-    /// Convert hex string configuration into a runtime Theme using the given color depth.
+    /// Convert hex string configuration into a runtime Theme.
+    ///
+    /// For Color8 and Color16 terminal depths, returns a static hand-picked
+    /// ANSI palette that ignores the hex config values – on these terminals
+    /// nearest-color approximation produces unpredictable results.
+    /// TrueColor and Color256 modes use the standard hex → RGB/palette path.
     pub fn into_theme(self, depth: ColorDepth) -> Theme {
+        match depth {
+            ColorDepth::NoColor => Theme::no_color(),
+            ColorDepth::Color8 => Theme::eight_color(),
+            ColorDepth::Color16 => Theme::sixteen_color(),
+            ColorDepth::Color256 | ColorDepth::TrueColor => self.into_theme_from_hex(depth),
+        }
+    }
+
+    fn into_theme_from_hex(self, depth: ColorDepth) -> Theme {
         let c = |hex: &str| {
             let (r, g, b) = parse_hex(hex);
             depth.rgb_to_color(r, g, b)
@@ -197,6 +211,139 @@ fn parse_hex(hex: &str) -> (u8, u8, u8) {
 impl Default for Theme {
     fn default() -> Self {
         ThemeConfig::default().into_theme(ColorDepth::TrueColor)
+    }
+}
+
+impl Theme {
+    /// Static theme for NO_COLOR mode – all colors are `Color::Reset`.
+    pub fn no_color() -> Self {
+        Theme {
+            focused_border: Color::Reset,
+            unfocused_border: Color::Reset,
+            selected_bg: Color::Reset,
+            unselected_bg: Color::Reset,
+            graph_colors: [Color::Reset; 8],
+            commit_merge: Color::Reset,
+            commit_default: Color::Reset,
+            commit_secondary: Color::Reset,
+            text_primary: Color::Reset,
+            decoration_tag: Color::Reset,
+            decoration_local: Color::Reset,
+            decoration_remote: Color::Reset,
+            decoration_head: Color::Reset,
+            diff_added: Color::Reset,
+            diff_added_bg: Color::Reset,
+            diff_removed: Color::Reset,
+            diff_removed_bg: Color::Reset,
+            diff_modified: Color::Reset,
+            diff_renamed: Color::Reset,
+            diff_hunk_header: Color::Reset,
+            diff_file_header: Color::Reset,
+            diff_context: Color::Reset,
+            diff_selected_file_bg: Color::Reset,
+            diff_selected_file_fg: Color::Reset,
+            diff_selected_file_border: Color::Reset,
+            search_cursor_fg: Color::Reset,
+            search_cursor_bg: Color::Reset,
+            help_title: Color::Reset,
+            scrollbar_thumb: Color::Reset,
+            scrollbar_track: Color::Reset,
+            scope_text: Color::Reset,
+        }
+    }
+
+    /// Static theme for 8-color terminals.
+    /// Each UI element has a hand-picked ANSI color assignment.
+    pub fn eight_color() -> Self {
+        Theme {
+            focused_border: Color::White,
+            unfocused_border: Color::Black,
+            selected_bg: Color::Blue,
+            unselected_bg: Color::Black,
+            graph_colors: [
+                Color::Red,
+                Color::Green,
+                Color::Yellow,
+                Color::Blue,
+                Color::Magenta,
+                Color::Cyan,
+                Color::White,
+                Color::Red,
+            ],
+            commit_merge: Color::Yellow,
+            commit_default: Color::White,
+            commit_secondary: Color::Black,
+            text_primary: Color::White,
+            decoration_tag: Color::Yellow,
+            decoration_local: Color::Green,
+            decoration_remote: Color::Red,
+            decoration_head: Color::Cyan,
+            diff_added: Color::Green,
+            diff_added_bg: Color::Black,
+            diff_removed: Color::Red,
+            diff_removed_bg: Color::Black,
+            diff_modified: Color::Yellow,
+            diff_renamed: Color::Blue,
+            diff_hunk_header: Color::Cyan,
+            diff_file_header: Color::Yellow,
+            diff_context: Color::Black,
+            diff_selected_file_bg: Color::White,
+            diff_selected_file_fg: Color::Black,
+            diff_selected_file_border: Color::Cyan,
+            search_cursor_fg: Color::Black,
+            search_cursor_bg: Color::White,
+            help_title: Color::Yellow,
+            scrollbar_thumb: Color::White,
+            scrollbar_track: Color::Black,
+            scope_text: Color::Yellow,
+        }
+    }
+
+    /// Static theme for 16-color terminals.
+    /// Uses bright ANSI colors for better visual distinction.
+    pub fn sixteen_color() -> Self {
+        Theme {
+            focused_border: Color::White,
+            unfocused_border: Color::DarkGray,
+            selected_bg: Color::Blue,
+            unselected_bg: Color::Black,
+            graph_colors: [
+                Color::LightRed,
+                Color::LightGreen,
+                Color::LightYellow,
+                Color::LightBlue,
+                Color::LightMagenta,
+                Color::LightCyan,
+                Color::Red,
+                Color::Green,
+            ],
+            commit_merge: Color::LightYellow,
+            commit_default: Color::White,
+            commit_secondary: Color::DarkGray,
+            text_primary: Color::White,
+            decoration_tag: Color::LightYellow,
+            decoration_local: Color::LightGreen,
+            decoration_remote: Color::LightRed,
+            decoration_head: Color::LightCyan,
+            diff_added: Color::LightGreen,
+            diff_added_bg: Color::DarkGray,
+            diff_removed: Color::LightRed,
+            diff_removed_bg: Color::DarkGray,
+            diff_modified: Color::LightYellow,
+            diff_renamed: Color::LightBlue,
+            diff_hunk_header: Color::LightCyan,
+            diff_file_header: Color::LightYellow,
+            diff_context: Color::DarkGray,
+            diff_selected_file_bg: Color::Gray,
+            diff_selected_file_fg: Color::Black,
+            diff_selected_file_border: Color::LightCyan,
+            search_cursor_fg: Color::Black,
+            search_cursor_bg: Color::White,
+            help_title: Color::LightYellow,
+            scrollbar_thumb: Color::Gray,
+            scrollbar_track: Color::DarkGray,
+            scope_text: Color::LightYellow,
+        }
     }
 }
 
