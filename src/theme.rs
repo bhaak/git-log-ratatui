@@ -256,10 +256,10 @@ impl Theme {
     /// Each UI element has a hand-picked ANSI color assignment.
     pub fn eight_color() -> Self {
         Theme {
-            focused_border: Color::White,
-            unfocused_border: Color::Black,
+            focused_border: Color::Magenta,
+            unfocused_border: Color::White,
             selected_bg: Color::Blue,
-            unselected_bg: Color::Black,
+            unselected_bg: Color::Blue,
             graph_colors: [
                 Color::Red,
                 Color::Green,
@@ -272,7 +272,7 @@ impl Theme {
             ],
             commit_merge: Color::Yellow,
             commit_default: Color::White,
-            commit_secondary: Color::Black,
+            commit_secondary: Color::Cyan,
             text_primary: Color::White,
             decoration_tag: Color::Yellow,
             decoration_local: Color::Green,
@@ -286,12 +286,12 @@ impl Theme {
             diff_renamed: Color::Blue,
             diff_hunk_header: Color::Cyan,
             diff_file_header: Color::Yellow,
-            diff_context: Color::Black,
+            diff_context: Color::White,
             diff_selected_file_bg: Color::White,
             diff_selected_file_fg: Color::Black,
             diff_selected_file_border: Color::Cyan,
             search_cursor_fg: Color::Black,
-            search_cursor_bg: Color::White,
+            search_cursor_bg: Color::Yellow,
             help_title: Color::Yellow,
             scrollbar_thumb: Color::White,
             scrollbar_track: Color::Black,
@@ -303,8 +303,8 @@ impl Theme {
     /// Uses bright ANSI colors for better visual distinction.
     pub fn sixteen_color() -> Self {
         Theme {
-            focused_border: Color::White,
-            unfocused_border: Color::DarkGray,
+            focused_border: Color::LightMagenta,
+            unfocused_border: Color::White,
             selected_bg: Color::Blue,
             unselected_bg: Color::Black,
             graph_colors: [
@@ -319,7 +319,7 @@ impl Theme {
             ],
             commit_merge: Color::LightYellow,
             commit_default: Color::White,
-            commit_secondary: Color::DarkGray,
+            commit_secondary: Color::Cyan,
             text_primary: Color::White,
             decoration_tag: Color::LightYellow,
             decoration_local: Color::LightGreen,
