@@ -44,10 +44,12 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
     }
 
     let selected_branch_owned = app.state.branch.selected_branch.clone();
+    let color_depth = app.state.color_depth;
     let ctx = ui::render_ctx::RenderCtx {
         focus: app.state.ui.focus,
         debug_label: None,
         theme: &theme,
+        color_depth,
         repo_path: &app.state.repo_path,
         selected_branch: selected_branch_owned.as_deref(),
         search_active: !app.state.search.search_query.is_empty(),

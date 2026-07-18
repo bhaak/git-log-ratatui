@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::commands::Command;
+use crate::color_depth::ColorDepth;
 use crate::domain::DecorationKind;
 use crate::state::commit::CommitTableState;
 use crate::text_utils::{format_commit_count_info, truncate};
@@ -57,6 +58,8 @@ pub struct CommitTableCtx<'a> {
     pub hash_color_enabled: bool,
     /// Color theme.
     pub theme: &'a Theme,
+    /// Terminal color depth for color adaptation.
+    pub color_depth: ColorDepth,
 }
 
 /// Render the commit table with git graph, decorations, and merge highlighting.
@@ -146,7 +149,12 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &CommitTableCtx, state: &mut T
             ));
             let date_span = Line::from(Span::styled(
                 &commit.date,
-                Style::default().fg(age_color(commit.epoch_days, min_days, max_days)),
+                Style::default().fg(age_color(
+                    commit.epoch_days,
+                    min_days,
+                    max_days,
+                    ctx.color_depth,
+                )),
             ));
 
             Row::new(vec![
@@ -404,7 +412,7 @@ pub(super) fn build_hash_span(commit: &Commit, ctx: &CommitTableCtx) -> Line<'st
                 .fg(ctx.theme.commit_merge)
                 .add_modifier(Modifier::BOLD)
         } else if ctx.hash_color_enabled {
-            Style::default().fg(hash_color(&commit.hash))
+            Style::default().fg(hash_color(&commit.hash, ctx.color_depth))
         } else {
             Style::default().fg(ctx.theme.scrollbar_thumb)
         },
@@ -453,15 +461,16 @@ pub(super) fn build_subject_span<'a>(
 
 /// Derive a unique, readable color from a git commit hash (first 6 hex digits).
 /// Maps 0-255 per channel to 50-250 to prevent too-dark colors.
-pub(super) fn hash_color(hash: &str) -> Color {
+/// Color is adapted to the terminal color depth.
+pub(super) fn hash_color(hash: &str, depth: ColorDepth) -> Color {
     if hash.len() < 6 {
-        return Color::Rgb(128, 128, 128);
+        return depth.rgb_to_color(128, 128, 128);
     }
     let r = u8::from_str_radix(&hash[0..2], 16).unwrap_or(128);
     let g = u8::from_str_radix(&hash[2..4], 16).unwrap_or(128);
     let b = u8::from_str_radix(&hash[4..6], 16).unwrap_or(128);
 
-    Color::Rgb(
+    depth.rgb_to_color(
         ((r as u32 * 200 / 255) + 50) as u8,
         ((g as u32 * 200 / 255) + 50) as u8,
         ((b as u32 * 200 / 255) + 50) as u8,
@@ -504,17 +513,18 @@ fn build_commit_table<'a>(
 /// Derive a greyscale color from pre-computed epoch days, stretched between
 /// the newest and oldest visible commits. Newest = bright white (255),
 /// oldest = dark grey (75). When all commits have the same date, returns white.
-pub(crate) fn age_color(epoch_days: i64, min_days: i64, max_days: i64) -> Color {
+/// Color is adapted to the terminal color depth.
+pub(crate) fn age_color(epoch_days: i64, min_days: i64, max_days: i64, depth: ColorDepth) -> Color {
     if max_days <= min_days {
-        return Color::Rgb(255, 255, 255);
+        return depth.rgb_to_color(255, 255, 255);
     }
     let range = (max_days - min_days) as f64;
     if range <= 0.0 {
-        return Color::Rgb(255, 255, 255);
+        return depth.rgb_to_color(255, 255, 255);
     }
     let t = (epoch_days - min_days) as f64 / range;
     let staleness = (75.0 + t * 180.0) as u8;
-    Color::Rgb(staleness, staleness, staleness)
+    depth.rgb_to_color(staleness, staleness, staleness)
 }
 
 /// Return the current date as days since Unix epoch.
@@ -590,6 +600,7 @@ impl PanelTrait for CommitPanel {
             hash_color_enabled: state.hash_color_enabled,
             debug_label: ctx.debug_label,
             theme: ctx.theme,
+            color_depth: ctx.color_depth,
         };
         let mut ts = state.table_state.clone();
         render(frame, content_area, &table_ctx, &mut ts);

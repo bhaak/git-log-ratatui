@@ -1,3 +1,4 @@
+use crate::color_depth::ColorDepth;
 use crate::domain::{Decoration, DecorationKind};
 use crate::theme::Theme;
 use crate::time_format::ymd_to_days;
@@ -14,6 +15,10 @@ fn make_theme() -> Theme {
     Theme::default()
 }
 
+fn test_depth() -> ColorDepth {
+    ColorDepth::TrueColor
+}
+
 fn make_ctx<'a>(theme: &'a Theme, commits: &'a [Commit]) -> CommitTableCtx<'a> {
     CommitTableCtx {
         commits,
@@ -26,6 +31,7 @@ fn make_ctx<'a>(theme: &'a Theme, commits: &'a [Commit]) -> CommitTableCtx<'a> {
         hash_color_enabled: true,
         debug_label: None,
         theme,
+        color_depth: test_depth(),
     }
 }
 
@@ -54,7 +60,7 @@ fn test_build_hash_span_long_hash() {
     let span = build_hash_span(&c, &ctx);
     let expected = Span::styled(
         "abc1234".to_string(),
-        Style::default().fg(hash_color("abc1234567890abcdef")),
+        Style::default().fg(hash_color("abc1234567890abcdef", test_depth())),
     );
     assert_eq!(span, Line::from(expected));
 }
@@ -68,7 +74,7 @@ fn test_build_hash_span_short_hash() {
     let span = build_hash_span(&c, &ctx);
     let expected = Span::styled(
         "abc123".to_string(),
-        Style::default().fg(hash_color("abc123")),
+        Style::default().fg(hash_color("abc123", test_depth())),
     );
     assert_eq!(span, Line::from(expected));
 }
@@ -90,9 +96,10 @@ fn test_build_hash_span_disabled_uses_scrollbar_thumb() {
 
 #[test]
 fn test_hash_color_derives_unique_values() {
-    let c1 = hash_color("aa00000000000000000000000000000000000000");
-    let c2 = hash_color("bb00000000000000000000000000000000000000");
-    let c3 = hash_color("0000aa0000000000000000000000000000000000");
+    let d = test_depth();
+    let c1 = hash_color("aa00000000000000000000000000000000000000", d);
+    let c2 = hash_color("bb00000000000000000000000000000000000000", d);
+    let c3 = hash_color("0000aa0000000000000000000000000000000000", d);
     assert_ne!(c1, c2);
     assert_ne!(c1, c3);
     assert_ne!(c2, c3);
@@ -100,7 +107,7 @@ fn test_hash_color_derives_unique_values() {
 
 #[test]
 fn test_hash_color_respects_minimum_brightness() {
-    let c = hash_color("0000000000000000000000000000000000000000");
+    let c = hash_color("0000000000000000000000000000000000000000", test_depth());
     match c {
         Color::Rgb(r, g, b) => {
             assert!(r >= 50, "r={r} should be >= 50");
@@ -113,13 +120,13 @@ fn test_hash_color_respects_minimum_brightness() {
 
 #[test]
 fn test_hash_color_short_hash_falls_back_to_grey() {
-    let c = hash_color("abc");
+    let c = hash_color("abc", test_depth());
     assert_eq!(c, Color::Rgb(128, 128, 128));
 }
 
 #[test]
 fn test_hash_color_empty_hash_falls_back_to_grey() {
-    let c = hash_color("");
+    let c = hash_color("", test_depth());
     assert_eq!(c, Color::Rgb(128, 128, 128));
 }
 
@@ -127,7 +134,7 @@ fn test_hash_color_empty_hash_falls_back_to_grey() {
 fn test_age_color_newest_is_bright() {
     let min_d = ymd_to_days(2024, 1, 1).unwrap();
     let max_d = ymd_to_days(2024, 12, 31).unwrap();
-    let c = age_color(max_d, min_d, max_d);
+    let c = age_color(max_d, min_d, max_d, test_depth());
     match c {
         Color::Rgb(r, g, b) => {
             assert_eq!(r, 255, "newest should be 255");
@@ -142,7 +149,7 @@ fn test_age_color_newest_is_bright() {
 fn test_age_color_oldest_is_75() {
     let min_d = ymd_to_days(2024, 1, 1).unwrap();
     let max_d = ymd_to_days(2024, 12, 31).unwrap();
-    let c = age_color(min_d, min_d, max_d);
+    let c = age_color(min_d, min_d, max_d, test_depth());
     match c {
         Color::Rgb(r, g, b) => {
             assert_eq!(r, 75, "oldest should be 75");
@@ -158,8 +165,8 @@ fn test_age_color_mid_range() {
     let min_d = ymd_to_days(2024, 1, 1).unwrap();
     let max_d = ymd_to_days(2024, 12, 31).unwrap();
     let mid_d = ymd_to_days(2024, 7, 1).unwrap();
-    let c1 = age_color(mid_d, min_d, max_d);
-    let c2 = age_color(min_d, min_d, max_d);
+    let c1 = age_color(mid_d, min_d, max_d, test_depth());
+    let c2 = age_color(min_d, min_d, max_d, test_depth());
     match (c1, c2) {
         (Color::Rgb(r1, _, _), Color::Rgb(r2, _, _)) => {
             assert!(
@@ -174,13 +181,13 @@ fn test_age_color_mid_range() {
 #[test]
 fn test_age_color_single_date_returns_white() {
     let d = ymd_to_days(2024, 7, 1).unwrap();
-    let c = age_color(d, d, d);
+    let c = age_color(d, d, d, test_depth());
     assert_eq!(c, Color::Rgb(255, 255, 255));
 }
 
 #[test]
 fn test_age_color_zero_range_returns_white() {
-    let c = age_color(1000, 1000, 1000);
+    let c = age_color(1000, 1000, 1000, test_depth());
     assert_eq!(c, Color::Rgb(255, 255, 255));
 }
 
@@ -369,6 +376,7 @@ fn render_with(commit_count: usize, visible_index: usize, height: u16) -> TableS
         hash_color_enabled: true,
         debug_label: None,
         theme: &theme,
+        color_depth: test_depth(),
     };
     let mut state = TableState::default();
     let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();

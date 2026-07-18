@@ -1,5 +1,6 @@
 mod app;
 mod clipboard;
+mod color_depth;
 mod config;
 mod diff_format;
 mod diff_pairing;

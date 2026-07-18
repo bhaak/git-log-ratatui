@@ -1,3 +1,4 @@
+use crate::color_depth::ColorDepth;
 use crate::theme::Theme;
 use crate::view::Panel;
 
@@ -6,6 +7,7 @@ pub struct RenderCtx<'a> {
     pub focus: Panel,
     pub debug_label: Option<&'a str>,
     pub theme: &'a Theme,
+    pub color_depth: ColorDepth,
     /// Repository path for the title bar.
     pub repo_path: &'a str,
     /// Currently selected branch name (None = all branches).

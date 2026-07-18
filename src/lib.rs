@@ -1,4 +1,5 @@
 pub mod app;
+pub(crate) mod color_depth;
 pub mod config;
 pub mod domain;
 pub mod error;

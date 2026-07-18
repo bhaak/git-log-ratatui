@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::app::commands::Command;
+use crate::color_depth::ColorDepth;
 use crate::state::branch::BranchState;
 use crate::theme::Theme;
 use crate::ui::layout;
@@ -35,6 +36,7 @@ impl Panel for BranchPanel {
             ctx.is_focused(crate::view::Panel::Branches),
             ctx.debug_label,
             ctx.theme,
+            ctx.color_depth,
         );
 
         state.branch_list_offset = list_state.offset();
@@ -144,6 +146,7 @@ fn render_tree(
     is_focused: bool,
     debug_label: Option<&str>,
     theme: &Theme,
+    color_depth: ColorDepth,
 ) -> ListState {
     if area.width < 4 || area.height < 2 {
         return ListState::default();
@@ -167,7 +170,7 @@ fn render_tree(
         .map(|item| {
             let color = if staleness_enabled {
                 item.epoch_days
-                    .map(|d| crate::ui::commit_table::age_color(d, min_days, max_days))
+                    .map(|d| crate::ui::commit_table::age_color(d, min_days, max_days, color_depth))
                     .unwrap_or(theme.commit_secondary)
             } else {
                 theme.commit_secondary

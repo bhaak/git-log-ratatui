@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -109,7 +109,7 @@ fn build_search_display(
             } else {
                 spans.push(Span::styled(
                     ch.to_string(),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(theme.text_primary),
                 ));
             }
         }
@@ -130,7 +130,7 @@ fn build_search_display(
     } else {
         vec![Span::styled(
             format!("{}{}", prefix, search_query),
-            Style::default().fg(Color::White),
+            Style::default().fg(theme.text_primary),
         )]
     }
 }

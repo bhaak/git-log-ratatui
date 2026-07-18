@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
@@ -25,7 +25,7 @@ pub fn render(
     let key_style = Style::default()
         .fg(theme.help_title)
         .add_modifier(Modifier::BOLD);
-    let desc_style = Style::default().fg(Color::White);
+    let desc_style = Style::default().fg(theme.text_primary);
     let bracket_style = Style::default().fg(theme.unfocused_border);
 
     let common = [
@@ -74,7 +74,7 @@ pub fn render_help_modal(
     let key_style = Style::default()
         .fg(theme.help_title)
         .add_modifier(Modifier::BOLD);
-    let desc_style = Style::default().fg(Color::White);
+    let desc_style = Style::default().fg(theme.text_primary);
     let section_style = Style::default()
         .fg(theme.focused_border)
         .add_modifier(Modifier::BOLD);

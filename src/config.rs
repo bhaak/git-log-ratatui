@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use crate::color_depth::ColorDepth;
 use crate::theme::{Theme, ThemeConfig};
 use crate::ui::layout;
 
@@ -19,38 +20,48 @@ pub struct Config {
     pub layout: LayoutConfig,
     pub behavior: BehaviorConfig,
     pub theme: Arc<Theme>,
+    pub color_depth: ColorDepth,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        RawConfig::default().into()
-    }
-}
-
-impl From<RawConfig> for Config {
-    fn from(raw: RawConfig) -> Self {
-        Config {
-            layout: raw.layout,
-            behavior: raw.behavior,
-            theme: Arc::new(raw.theme.into_theme()),
-        }
+        let depth = ColorDepth::detect();
+        RawConfig::default().into_config(depth)
     }
 }
 
 impl Config {
+    /// Convert a RawConfig into a Config with the given color depth.
+    #[allow(dead_code)]
+    pub fn from_raw_with_depth(raw: RawConfig, depth: ColorDepth) -> Self {
+        raw.into_config(depth)
+    }
+
     /// Load configuration from the default path.
     ///
     /// Searches `$XDG_CONFIG_HOME/git-log-ratatui/config.toml`, falling back to
     /// `$HOME/.config/git-log-ratatui/config.toml`.
     /// Returns `Config::default()` if no config file exists.
     pub fn load() -> Self {
+        let depth = ColorDepth::detect();
         let path = config_path();
         match std::fs::read_to_string(&path) {
             Ok(content) => {
                 let raw: RawConfig = toml::from_str(&content).unwrap_or_default();
-                raw.into()
+                raw.into_config(depth)
             }
             Err(_) => Config::default(),
+        }
+    }
+}
+
+impl RawConfig {
+    fn into_config(self, depth: ColorDepth) -> Config {
+        Config {
+            layout: self.layout,
+            behavior: self.behavior,
+            theme: Arc::new(self.theme.into_theme(depth)),
+            color_depth: depth,
         }
     }
 }
@@ -185,7 +196,7 @@ mod tests {
     #[test]
     fn test_raw_config_to_config_roundtrip() {
         let raw = RawConfig::default();
-        let config = Config::from(raw);
+        let config = Config::from_raw_with_depth(raw, ColorDepth::TrueColor);
         assert_eq!(config.layout.branch_width_pct, default_branch_width());
         assert_eq!(
             config.behavior.commit_batch_size,

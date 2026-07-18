@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::color_depth::ColorDepth;
 use crate::config::Config;
 use crate::state::*;
 use crate::theme::Theme;
@@ -13,6 +14,7 @@ pub struct AppState {
     pub debug: bool,
     pub last_frame_time_ms: u64,
     pub theme: Arc<Theme>,
+    pub color_depth: ColorDepth,
     pub branch: BranchState,
     pub commit: CommitTableState,
     pub diff: DiffState,
@@ -31,6 +33,7 @@ impl AppState {
             debug,
             last_frame_time_ms: 0,
             theme: Arc::clone(&config.theme),
+            color_depth: config.color_depth,
             branch: {
                 let mut s = BranchState::new();
                 s.branch_staleness_enabled = config.behavior.branch_staleness_enabled;
