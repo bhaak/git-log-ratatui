@@ -854,21 +854,31 @@ impl panel_mod::Panel for DiffPanel {
 
     fn handle_event(&mut self, key: &KeyEvent, state: &mut Self::State) -> Vec<Command> {
         let file_section_end = diff_line_offset(state.commit_info.as_ref(), &state.file_entries);
-        let past_meta = state.diff_scroll >= file_section_end || state.file_entries.is_empty();
+        let viewport = state.scrollbar.viewport_length().max(1);
+        // The last file entry sits just before the trailing separator (file_section_end - 2).
+        let last_entry_line = file_section_end.saturating_sub(2);
+        let last_entry_visible = !state.file_entries.is_empty()
+            && state.diff_scroll <= last_entry_line
+            && last_entry_line < state.diff_scroll.saturating_add(viewport);
 
         match key.code {
-            KeyCode::Up => {
-                if past_meta {
-                    vec![Command::ScrollDiff(-1)]
-                } else {
+            // Up / k: scroll until the last file entry is visible, then navigate the file list.
+            KeyCode::Up | KeyCode::Char('k') => {
+                if last_entry_visible {
                     vec![Command::MoveUp]
+                } else {
+                    vec![Command::ScrollDiff(-1)]
                 }
             }
-            KeyCode::Down => {
-                if past_meta {
-                    vec![Command::ScrollDiff(1)]
-                } else {
+            // Down / j: navigate the file list while the last entry is visible,
+            // scroll diff content otherwise. Also scroll when at the last entry.
+            KeyCode::Down | KeyCode::Char('j') => {
+                if last_entry_visible
+                    && state.selected_file_index < state.file_entries.len().saturating_sub(1)
+                {
                     vec![Command::MoveDown]
+                } else {
+                    vec![Command::ScrollDiff(1)]
                 }
             }
             KeyCode::Enter => vec![Command::JumpToDiffFile(state.selected_file_index)],

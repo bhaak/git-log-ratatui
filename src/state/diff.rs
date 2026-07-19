@@ -85,11 +85,25 @@ impl DiffState {
             Command::MoveDown => {
                 self.selected_file_index =
                     cycle_forward(self.selected_file_index, self.file_entries.len());
+                ensure_entry_visible(
+                    self.selected_file_index,
+                    &self.file_entries,
+                    &mut self.diff_scroll,
+                    self.scrollbar.viewport_length(),
+                    self.commit_info.as_ref(),
+                );
                 vec![Effect::SetDirty]
             }
             Command::MoveUp => {
                 self.selected_file_index =
                     cycle_backward(self.selected_file_index, self.file_entries.len());
+                ensure_entry_visible(
+                    self.selected_file_index,
+                    &self.file_entries,
+                    &mut self.diff_scroll,
+                    self.scrollbar.viewport_length(),
+                    self.commit_info.as_ref(),
+                );
                 vec![Effect::SetDirty]
             }
             Command::PageUp => {
@@ -140,6 +154,33 @@ fn cycle_backward(current: usize, len: usize) -> usize {
         current - 1
     } else {
         len - 1
+    }
+}
+
+/// Adjust `diff_scroll` so that the selected file entry is visible within the viewport.
+fn ensure_entry_visible(
+    selected_index: usize,
+    file_entries: &[FileEntry],
+    diff_scroll: &mut usize,
+    viewport_length: usize,
+    commit_info: Option<&CommitInfo>,
+) {
+    if file_entries.is_empty() || viewport_length == 0 {
+        return;
+    }
+
+    let file_section_end = diff_panel::diff_line_offset(commit_info, file_entries);
+    let metadata_lines = file_section_end.saturating_sub(2 + file_entries.len());
+    let entry_line = metadata_lines + 1 + selected_index;
+
+    if entry_line < *diff_scroll {
+        // Scroll up to place the entry one line below the viewport top,
+        // keeping the preceding entry visible as context.
+        *diff_scroll = entry_line.saturating_sub(1);
+    } else if entry_line >= diff_scroll.saturating_add(viewport_length) {
+        // Scroll down to place the entry one line above the viewport bottom,
+        // leaving room for the following entry.
+        *diff_scroll = entry_line.saturating_sub(viewport_length.saturating_sub(2));
     }
 }
 
