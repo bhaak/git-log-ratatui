@@ -131,8 +131,8 @@ fn build_diff_line_spans<'a>(
                         Span::styled(
                             t.text,
                             Style::default()
-                                .fg(theme.diff_added)
-                                .bg(theme.diff_added_bg),
+                                .fg(theme.diff_added_word_fg)
+                                .bg(theme.diff_added_word_bg),
                         )
                     } else {
                         Span::styled(t.text, Style::default().fg(theme.diff_added))
@@ -150,8 +150,8 @@ fn build_diff_line_spans<'a>(
                         Span::styled(
                             t.text,
                             Style::default()
-                                .fg(theme.diff_removed)
-                                .bg(theme.diff_removed_bg),
+                                .fg(theme.diff_removed_word_fg)
+                                .bg(theme.diff_removed_word_bg),
                         )
                     } else {
                         Span::styled(t.text, Style::default().fg(theme.diff_removed))
