@@ -145,22 +145,22 @@ impl ThemeConfig {
     /// Convert hex string configuration into a runtime Theme.
     ///
     /// For Color8 and Color16 terminal depths, returns a static hand-picked
-    /// ANSI palette that ignores the hex config values – on these terminals
+    /// ANSI palette that ignores the config values – on these terminals
     /// nearest-color approximation produces unpredictable results.
-    /// TrueColor and Color256 modes use the standard hex → RGB/palette path.
+    /// TrueColor and Color256 modes handle hex, ANSI index, and named colors.
     pub fn into_theme(self, depth: ColorDepth) -> Theme {
         match depth {
             ColorDepth::NoColor => Theme::no_color(),
             ColorDepth::Color8 => Theme::eight_color(),
             ColorDepth::Color16 => Theme::sixteen_color(),
-            ColorDepth::Color256 | ColorDepth::TrueColor => self.into_theme_from_hex(depth),
+            ColorDepth::Color256 | ColorDepth::TrueColor => self.into_theme_from_config(depth),
         }
     }
 
-    fn into_theme_from_hex(self, depth: ColorDepth) -> Theme {
-        let c = |hex: &str| {
-            let (r, g, b) = parse_hex(hex);
-            depth.rgb_to_color(r, g, b)
+    fn into_theme_from_config(self, depth: ColorDepth) -> Theme {
+        let c = |s: &str| {
+            let color = parse_color_str(s);
+            depth.adapt_color(color)
         };
         Theme {
             focused_border: c(&self.focused_border),
@@ -230,6 +230,45 @@ fn parse_hex(hex: &str) -> (u8, u8, u8) {
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(128);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(128);
     (r, g, b)
+}
+
+/// Parse a color string into a `Color`.
+///
+/// Supported formats:
+/// - `#RRGGBB` hex string
+/// - Decimal integer (0-255) → `Color::Indexed` (ANSI 256 palette)
+/// - Named colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`,
+///   `cyan`, `white`, `gray`/`grey`, `darkgray`, `lightred`, `lightgreen`,
+///   `lightyellow`, `lightblue`, `lightmagenta`, `lightcyan`, `reset`
+/// - Unknown/unparseable values fall back to gray (128, 128, 128).
+fn parse_color_str(s: &str) -> Color {
+    if s.starts_with('#') {
+        let (r, g, b) = parse_hex(s);
+        return Color::Rgb(r, g, b);
+    }
+    if let Ok(idx) = s.parse::<u8>() {
+        return Color::Indexed(idx);
+    }
+    match s.to_lowercase().as_str() {
+        "black" => Color::Black,
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "blue" => Color::Blue,
+        "magenta" => Color::Magenta,
+        "cyan" => Color::Cyan,
+        "white" => Color::White,
+        "gray" | "grey" => Color::Gray,
+        "darkgray" | "dark_gray" => Color::DarkGray,
+        "lightred" | "light_red" => Color::LightRed,
+        "lightgreen" | "light_green" => Color::LightGreen,
+        "lightyellow" | "light_yellow" => Color::LightYellow,
+        "lightblue" | "light_blue" => Color::LightBlue,
+        "lightmagenta" | "light_magenta" => Color::LightMagenta,
+        "lightcyan" | "light_cyan" => Color::LightCyan,
+        "reset" => Color::Reset,
+        _ => Color::Rgb(128, 128, 128),
+    }
 }
 
 impl Default for Theme {
@@ -435,6 +474,36 @@ mod tests {
     #[test]
     fn test_parse_hex_partial_invalid_chars() {
         assert_eq!(parse_hex("#FF00ZZ"), (255, 0, 128));
+    }
+
+    #[test]
+    fn test_parse_color_str_hex() {
+        assert_eq!(parse_color_str("#FF0000"), Color::Rgb(255, 0, 0));
+        assert_eq!(parse_color_str("#00FF00"), Color::Rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn test_parse_color_str_ansi_index() {
+        assert_eq!(parse_color_str("52"), Color::Indexed(52));
+        assert_eq!(parse_color_str("22"), Color::Indexed(22));
+        assert_eq!(parse_color_str("0"), Color::Indexed(0));
+        assert_eq!(parse_color_str("255"), Color::Indexed(255));
+    }
+
+    #[test]
+    fn test_parse_color_str_named() {
+        assert_eq!(parse_color_str("red"), Color::Red);
+        assert_eq!(parse_color_str("green"), Color::Green);
+        assert_eq!(parse_color_str("blue"), Color::Blue);
+        assert_eq!(parse_color_str("gray"), Color::Gray);
+        assert_eq!(parse_color_str("GREY"), Color::Gray);
+        assert_eq!(parse_color_str("lightred"), Color::LightRed);
+        assert_eq!(parse_color_str("darkgray"), Color::DarkGray);
+    }
+
+    #[test]
+    fn test_parse_color_str_unknown_fallback() {
+        assert_eq!(parse_color_str("unknown"), Color::Rgb(128, 128, 128));
     }
 
     #[test]
