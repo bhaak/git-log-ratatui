@@ -232,14 +232,30 @@ fn parse_hex(hex: &str) -> (u8, u8, u8) {
     (r, g, b)
 }
 
+/// Normalize a color name by folding to lowercase and stripping
+/// dashes, underscores, and spaces so that "light-green",
+/// "light_green", "light green" and "lightgreen" all match.
+fn normalize_color_name(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .filter(|c| *c != '-' && *c != '_' && *c != ' ')
+        .collect()
+}
+
 /// Parse a color string into a `Color`.
 ///
 /// Supported formats:
 /// - `#RRGGBB` hex string
 /// - Decimal integer (0-255) → `Color::Indexed` (ANSI 256 palette)
-/// - Named colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`,
-///   `cyan`, `white`, `gray`/`grey`, `darkgray`, `lightred`, `lightgreen`,
-///   `lightyellow`, `lightblue`, `lightmagenta`, `lightcyan`, `reset`
+/// - Named colors (case-insensitive, dashes/underscores/spaces optional):
+///   `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`,
+///   `white`, `gray`/`grey`, `darkgray`/`dark-gray`/`dark gray`,
+///   `lightred`/`light-red`/`light red`,
+///   `lightgreen`/`light-green`/`light green`,
+///   `lightyellow`/`light-yellow`/`light yellow`,
+///   `lightblue`/`light-blue`/`light blue`,
+///   `lightmagenta`/`light-magenta`/`light magenta`,
+///   `lightcyan`/`light-cyan`/`light cyan`, `reset`
 /// - Unknown/unparseable values fall back to gray (128, 128, 128).
 fn parse_color_str(s: &str) -> Color {
     if s.starts_with('#') {
@@ -249,7 +265,7 @@ fn parse_color_str(s: &str) -> Color {
     if let Ok(idx) = s.parse::<u8>() {
         return Color::Indexed(idx);
     }
-    match s.to_lowercase().as_str() {
+    match normalize_color_name(s).as_str() {
         "black" => Color::Black,
         "red" => Color::Red,
         "green" => Color::Green,
@@ -259,13 +275,13 @@ fn parse_color_str(s: &str) -> Color {
         "cyan" => Color::Cyan,
         "white" => Color::White,
         "gray" | "grey" => Color::Gray,
-        "darkgray" | "dark_gray" => Color::DarkGray,
-        "lightred" | "light_red" => Color::LightRed,
-        "lightgreen" | "light_green" => Color::LightGreen,
-        "lightyellow" | "light_yellow" => Color::LightYellow,
-        "lightblue" | "light_blue" => Color::LightBlue,
-        "lightmagenta" | "light_magenta" => Color::LightMagenta,
-        "lightcyan" | "light_cyan" => Color::LightCyan,
+        "darkgray" | "darkgrey" => Color::DarkGray,
+        "lightred" => Color::LightRed,
+        "lightgreen" => Color::LightGreen,
+        "lightyellow" => Color::LightYellow,
+        "lightblue" => Color::LightBlue,
+        "lightmagenta" => Color::LightMagenta,
+        "lightcyan" => Color::LightCyan,
         "reset" => Color::Reset,
         _ => Color::Rgb(128, 128, 128),
     }
@@ -499,6 +515,27 @@ mod tests {
         assert_eq!(parse_color_str("GREY"), Color::Gray);
         assert_eq!(parse_color_str("lightred"), Color::LightRed);
         assert_eq!(parse_color_str("darkgray"), Color::DarkGray);
+    }
+
+    #[test]
+    fn test_parse_color_str_dash_variants() {
+        assert_eq!(parse_color_str("light-red"), Color::LightRed);
+        assert_eq!(parse_color_str("light-green"), Color::LightGreen);
+        assert_eq!(parse_color_str("LIGHT-BLUE"), Color::LightBlue);
+        assert_eq!(parse_color_str("dark-gray"), Color::DarkGray);
+    }
+
+    #[test]
+    fn test_parse_color_str_space_variants() {
+        assert_eq!(parse_color_str("light red"), Color::LightRed);
+        assert_eq!(parse_color_str("light green"), Color::LightGreen);
+        assert_eq!(parse_color_str("dark gray"), Color::DarkGray);
+    }
+
+    #[test]
+    fn test_parse_color_str_underscore_variants() {
+        assert_eq!(parse_color_str("light_red"), Color::LightRed);
+        assert_eq!(parse_color_str("dark_gray"), Color::DarkGray);
     }
 
     #[test]
