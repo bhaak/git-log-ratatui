@@ -22,6 +22,8 @@ pub struct UiState {
     pub needs_terminal_reset: bool,
     /// Whether the help modal is currently visible (toggled by `?`).
     pub help_visible: bool,
+    /// When Some, the given panel is displayed fullscreen (toggled by `f`).
+    pub fullscreen: Option<Panel>,
 }
 
 impl UiState {
@@ -41,6 +43,7 @@ impl UiState {
             dirty: true,
             needs_terminal_reset: false,
             help_visible: false,
+            fullscreen: None,
         }
     }
 
@@ -76,6 +79,14 @@ impl UiState {
             }
             Command::ToggleHelp => {
                 self.help_visible = !self.help_visible;
+                vec![Effect::SetDirty]
+            }
+            Command::ToggleFullscreen => {
+                self.help_visible = false;
+                match self.fullscreen {
+                    Some(_) => self.fullscreen = None,
+                    None => self.fullscreen = Some(self.focus),
+                }
                 vec![Effect::SetDirty]
             }
             Command::InitiateDragVertical => {
@@ -250,5 +261,28 @@ mod tests {
         let mut state = UiState::new(20, 35, 10);
         let effects = state.handle_command(&Command::MoveUp);
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_fullscreen_enters_and_exits() {
+        let mut state = UiState::new(20, 35, 10);
+        state.focus = Panel::Commits;
+        assert!(state.fullscreen.is_none());
+
+        let effects = state.handle_command(&Command::ToggleFullscreen);
+        assert_eq!(state.fullscreen, Some(Panel::Commits));
+        assert!(effects.iter().any(|e| matches!(e, Effect::SetDirty)));
+
+        state.handle_command(&Command::ToggleFullscreen);
+        assert!(state.fullscreen.is_none());
+    }
+
+    #[test]
+    fn test_toggle_fullscreen_hides_help() {
+        let mut state = UiState::new(20, 35, 10);
+        state.help_visible = true;
+
+        state.handle_command(&Command::ToggleFullscreen);
+        assert!(!state.help_visible);
     }
 }

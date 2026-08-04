@@ -175,6 +175,17 @@ fn handle_global_key(app: &mut App, key: KeyEvent) -> Option<Vec<Command>> {
         KeyCode::BackTab => Some(vec![Command::FocusPrev]),
         KeyCode::Char('/') if key.modifiers.is_empty() => Some(vec![Command::FocusSearchClear]),
         KeyCode::Char('?') if key.modifiers.is_empty() => Some(vec![Command::ToggleHelp]),
+        KeyCode::Char('f') if key.modifiers.is_empty() => {
+            use crate::view::Panel as PanelEnum;
+            if matches!(
+                focus,
+                PanelEnum::Branches | PanelEnum::Commits | PanelEnum::Diff
+            ) {
+                Some(vec![Command::ToggleFullscreen])
+            } else {
+                None
+            }
+        }
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(vec![Command::CycleScope])
         }
@@ -254,6 +265,7 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         | Command::FocusPrev
         | Command::GoBack
         | Command::ToggleHelp
+        | Command::ToggleFullscreen
         | Command::InitiateDragVertical
         | Command::InitiateDragHorizontal
         | Command::EndDrag
@@ -609,6 +621,12 @@ pub(crate) fn mouse_click(app: &App, col: u16, row: u16) -> Vec<Command> {
     let (_full, areas, branch_visible) = compute_mouse_areas(app);
     let click_pos = (col, row);
 
+    // In fullscreen mode, route clicks to the fullscreen panel only.
+    if let Some(panel) = app.state.ui.fullscreen {
+        let fs_area = fullscreen_click_area(app);
+        return fullscreen_mouse_click(app, panel, click_pos, fs_area);
+    }
+
     // Scrollbar clicks
     if let Some(commands) = check_scrollbar_click(app, &areas, click_pos, branch_visible) {
         return commands;
@@ -704,6 +722,177 @@ fn check_scrollbar_click(
         ]);
     }
     None
+}
+
+/// Compute the visible click area for the fullscreen panel (full terminal minus help bar).
+fn fullscreen_click_area(app: &App) -> Rect {
+    let (tw, th) = app.state.ui.last_size.unwrap_or((80, 24));
+    let help_h = ui::layout::HELP_BAR_HEIGHT.min(th);
+    Rect::new(0, 0, tw, th.saturating_sub(help_h))
+}
+
+/// Route click to the appropriate fullscreen panel handler.
+fn fullscreen_mouse_click(
+    app: &App,
+    panel: PanelEnum,
+    click_pos: (u16, u16),
+    fs_area: Rect,
+) -> Vec<Command> {
+    match panel {
+        PanelEnum::Branches => {
+            // Check scrollbar first
+            if app
+                .state
+                .branch
+                .scrollbar
+                .click_to_index(fs_area, click_pos)
+                .or_else(|| {
+                    app.state
+                        .branch
+                        .scrollbar
+                        .is_click_in_scrollbar_area(fs_area, click_pos)
+                        .then_some(0)
+                })
+                .is_some()
+            {
+                return vec![
+                    Command::SetFocus(PanelEnum::Branches),
+                    Command::InitiateScrollbarDrag(PanelEnum::Branches),
+                ];
+            }
+            handle_fullscreen_branch_click(app, click_pos, fs_area)
+        }
+        PanelEnum::Commits => {
+            if app
+                .state
+                .commit
+                .scrollbar
+                .click_to_index(fs_area, click_pos)
+                .or_else(|| {
+                    app.state
+                        .commit
+                        .scrollbar
+                        .is_click_in_scrollbar_area(fs_area, click_pos)
+                        .then_some(0)
+                })
+                .is_some()
+            {
+                return vec![
+                    Command::SetFocus(PanelEnum::Commits),
+                    Command::InitiateScrollbarDrag(PanelEnum::Commits),
+                ];
+            }
+            handle_fullscreen_commit_click(app, click_pos, fs_area)
+        }
+        PanelEnum::Diff => {
+            if let Some(new_pos) = app
+                .state
+                .diff
+                .scrollbar
+                .click_to_index(fs_area, click_pos)
+                .or_else(|| {
+                    app.state
+                        .diff
+                        .scrollbar
+                        .is_click_in_scrollbar_area(fs_area, click_pos)
+                        .then_some(app.state.diff.diff_scroll)
+                })
+            {
+                return vec![
+                    Command::SetFocus(PanelEnum::Diff),
+                    Command::InitiateScrollbarDrag(PanelEnum::Diff),
+                    Command::ScrollToAbsolute(new_pos),
+                ];
+            }
+            handle_fullscreen_diff_click(app, click_pos, fs_area)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Handle click in fullscreen branch panel.
+fn handle_fullscreen_branch_click(app: &App, click_pos: (u16, u16), fs_area: Rect) -> Vec<Command> {
+    if ui::layout::rect_contains_interior(&fs_area, click_pos) {
+        let rel_row = (click_pos
+            .1
+            .saturating_sub(fs_area.y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        let actual_index = rel_row + app.state.branch.branch_list_offset;
+        if actual_index < app.state.branch.branch_tree.len() {
+            let item = &app.state.branch.branch_tree[actual_index];
+            return vec![
+                Command::SetFocus(PanelEnum::Branches),
+                Command::MouseClickBranch {
+                    index: actual_index,
+                    full_path: item.full_path.clone(),
+                    is_branch: item.is_branch,
+                    is_expandable: item.expandable,
+                    is_expanded: item.expanded,
+                    key: item.key.clone(),
+                },
+            ];
+        }
+        return vec![Command::SetFocus(PanelEnum::Branches)];
+    }
+    if ui::layout::rect_contains(&fs_area, click_pos) {
+        return vec![Command::SetFocus(PanelEnum::Branches)];
+    }
+    Vec::new()
+}
+
+/// Handle click in fullscreen commit table panel.
+fn handle_fullscreen_commit_click(app: &App, click_pos: (u16, u16), fs_area: Rect) -> Vec<Command> {
+    if ui::layout::rect_contains_interior(&fs_area, click_pos) {
+        let rel_row =
+            (click_pos.1.saturating_sub(fs_area.y).saturating_sub(
+                ui::layout::TABLE_OVERHEAD.saturating_sub(ui::layout::BORDER_OVERHEAD),
+            )) as usize;
+        let filtered_idx = rel_row + app.state.commit.table_state.offset();
+        if let Some(vis_idx) = search::filtered_to_visible(&app.state, filtered_idx) {
+            return vec![
+                Command::SetFocus(PanelEnum::Commits),
+                Command::SelectCommitIndex(vis_idx),
+            ];
+        }
+        return vec![Command::SetFocus(PanelEnum::Commits)];
+    }
+    if ui::layout::rect_contains(&fs_area, click_pos) {
+        return vec![Command::SetFocus(PanelEnum::Commits)];
+    }
+    Vec::new()
+}
+
+/// Handle click in fullscreen diff panel.
+fn handle_fullscreen_diff_click(app: &App, click_pos: (u16, u16), fs_area: Rect) -> Vec<Command> {
+    if ui::layout::rect_contains(&fs_area, click_pos) {
+        let meta_offset = if let Some(ref info) = app.state.diff.commit_info {
+            ui::diff_panel::count_metadata_lines(info)
+        } else {
+            0
+        };
+        let rel_row = (click_pos
+            .1
+            .saturating_sub(fs_area.y)
+            .saturating_sub(ui::layout::BORDER_OVERHEAD)) as usize;
+        if rel_row > meta_offset && rel_row <= meta_offset + app.state.diff.file_entries.len() + 2 {
+            let file_idx = rel_row - meta_offset - 1;
+            if file_idx < app.state.diff.file_entries.len() {
+                let offset = ui::diff_panel::diff_line_offset(
+                    app.state.diff.commit_info.as_ref(),
+                    &app.state.diff.file_entries,
+                );
+                if let Some(entry) = app.state.diff.file_entries.get(file_idx) {
+                    return vec![
+                        Command::SetFocus(PanelEnum::Diff),
+                        Command::JumpToDiffFile(file_idx),
+                        Command::ScrollToAbsolute(entry.diff_line + offset),
+                    ];
+                }
+            }
+        }
+        return vec![Command::SetFocus(PanelEnum::Diff)];
+    }
+    Vec::new()
 }
 
 /// Handle a click inside the branch panel: select branch item or just focus.
@@ -805,6 +994,10 @@ fn handle_diff_click(
 }
 
 fn check_resize_start(app: &App, col: u16, row: u16) -> Vec<Command> {
+    if app.state.ui.fullscreen.is_some() {
+        return Vec::new();
+    }
+
     let (_full, areas, _branch_visible) = compute_mouse_areas(app);
 
     if ui::layout::is_on_vertical_border(col, row, areas.branch) {
@@ -820,30 +1013,24 @@ fn mouse_drag(app: &App, col: u16, row: u16) -> Vec<Command> {
     let mut commands = Vec::new();
 
     if let Some(panel) = app.state.ui.scrollbar_drag {
+        let fs_area = if app.state.ui.fullscreen.is_some() {
+            Some(fullscreen_click_area(app))
+        } else {
+            None
+        };
         let (_full, areas, branch_visible) = compute_mouse_areas(app);
         match panel {
             PanelEnum::Branches => {
-                // scrollbar drag on branch: position is tracked via state alone
-                let _ = app
-                    .state
-                    .branch
-                    .scrollbar
-                    .click_to_index(branch_visible, (col, row));
+                let area = fs_area.unwrap_or(branch_visible);
+                let _ = app.state.branch.scrollbar.click_to_index(area, (col, row));
             }
             PanelEnum::Commits => {
-                let _ = app
-                    .state
-                    .commit
-                    .scrollbar
-                    .click_to_index(areas.table, (col, row));
+                let area = fs_area.unwrap_or(areas.table);
+                let _ = app.state.commit.scrollbar.click_to_index(area, (col, row));
             }
             PanelEnum::Diff => {
-                if let Some(new_pos) = app
-                    .state
-                    .diff
-                    .scrollbar
-                    .click_to_index(areas.diff, (col, row))
-                {
+                let area = fs_area.unwrap_or(areas.diff);
+                if let Some(new_pos) = app.state.diff.scrollbar.click_to_index(area, (col, row)) {
                     commands.push(Command::ScrollToAbsolute(new_pos));
                 }
             }
@@ -874,6 +1061,19 @@ fn mouse_drag(app: &App, col: u16, row: u16) -> Vec<Command> {
 }
 
 fn scroll_at(app: &App, col: u16, row: u16, direction: i32) -> Vec<Command> {
+    if let Some(panel) = app.state.ui.fullscreen {
+        return match panel {
+            PanelEnum::Diff => vec![Command::ScrollDiff(direction)],
+            _ => {
+                if direction > 0 {
+                    vec![Command::MoveDown]
+                } else {
+                    vec![Command::MoveUp]
+                }
+            }
+        };
+    }
+
     let (_full, areas, _branch_visible) = compute_mouse_areas(app);
     let pos = (col, row);
 

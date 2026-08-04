@@ -85,6 +85,8 @@ pub enum Command {
     JumpToSibling(i32),
     /// Toggle the help modal overlay (bound to `?`).
     ToggleHelp,
+    /// Toggle fullscreen view for the currently focused panel (bound to `f`).
+    ToggleFullscreen,
     /// Quit the application.
     Quit,
 }

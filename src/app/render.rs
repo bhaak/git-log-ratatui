@@ -45,60 +45,76 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
 
     let selected_branch_owned = app.state.branch.selected_branch.clone();
     let color_depth = app.state.color_depth;
+    let repo_path = app.state.repo_path.clone();
+    let focus = app.state.ui.focus;
+    let search_active = !app.state.search.search_query.is_empty();
+    let fullscreen = app.state.ui.fullscreen;
+
     let ctx = ui::render_ctx::RenderCtx {
-        focus: app.state.ui.focus,
+        focus,
         debug_label: None,
         theme: &theme,
         color_depth,
-        repo_path: &app.state.repo_path,
+        repo_path: &repo_path,
         selected_branch: selected_branch_owned.as_deref(),
-        search_active: !app.state.search.search_query.is_empty(),
+        search_active,
     };
 
-    // Branch panel (shortened to avoid overlap with help bar)
-    let branch_area = Rect::new(
-        areas.branch.x,
-        areas.branch.y,
-        areas.branch.width,
-        areas
-            .branch
-            .height
-            .saturating_sub(ui::layout::HELP_BAR_HEIGHT),
-    );
-    ui::branch_panel::BranchPanel.render(branch_area, frame, &mut app.state.branch, &ctx);
-
-    // Search panel
-    ui::search_panel::SearchPanel.render(areas.search, frame, &mut app.state.search, &ctx);
-
-    // Scope panel
-    ui::scope_panel::ScopePanel.render(
-        areas.scope,
-        frame,
-        &mut app.state.branch.branch_scope,
-        &ctx,
+    let fullscreen_area = Rect::new(
+        full.x,
+        full.y,
+        full.width,
+        full.height.saturating_sub(ui::layout::HELP_BAR_HEIGHT),
     );
 
-    // Commit table panel — only this panel shows debug metrics in the title.
-    let debug_label = if app.state.debug {
-        Some(app.state.metrics.format_summary())
+    if let Some(fs_panel) = fullscreen {
+        render_fullscreen(app, frame, &ctx, fullscreen_area, fs_panel);
     } else {
-        None
-    };
-    let commit_ctx = ui::render_ctx::RenderCtx {
-        debug_label: debug_label.as_deref(),
-        ..ctx
-    };
-    ui::commit_table::CommitPanel::new().render(
-        areas.table,
-        frame,
-        &mut app.state.commit,
-        &commit_ctx,
-    );
+        // Branch panel (shortened to avoid overlap with help bar)
+        let branch_area = Rect::new(
+            areas.branch.x,
+            areas.branch.y,
+            areas.branch.width,
+            areas
+                .branch
+                .height
+                .saturating_sub(ui::layout::HELP_BAR_HEIGHT),
+        );
+        ui::branch_panel::BranchPanel.render(branch_area, frame, &mut app.state.branch, &ctx);
 
-    // Diff panel
-    ui::diff_panel::DiffPanel.render(areas.diff, frame, &mut app.state.diff, &ctx);
+        // Search panel
+        ui::search_panel::SearchPanel.render(areas.search, frame, &mut app.state.search, &ctx);
 
-    // Help bar (full width at bottom) — dispatch to focused panel's help_keys + label
+        // Scope panel
+        ui::scope_panel::ScopePanel.render(
+            areas.scope,
+            frame,
+            &mut app.state.branch.branch_scope,
+            &ctx,
+        );
+
+        // Commit table panel -- only this panel shows debug metrics in the title.
+        let debug_label = if app.state.debug {
+            Some(app.state.metrics.format_summary())
+        } else {
+            None
+        };
+        let commit_ctx = ui::render_ctx::RenderCtx {
+            debug_label: debug_label.as_deref(),
+            ..ctx
+        };
+        ui::commit_table::CommitPanel::new().render(
+            areas.table,
+            frame,
+            &mut app.state.commit,
+            &commit_ctx,
+        );
+
+        // Diff panel
+        ui::diff_panel::DiffPanel.render(areas.diff, frame, &mut app.state.diff, &ctx);
+    }
+
+    // Help bar (full width at bottom) -- dispatch to focused panel's help_keys + label
     let help_area = Rect::new(
         full.x,
         full.y + full.height.saturating_sub(ui::layout::HELP_BAR_HEIGHT),
@@ -115,7 +131,7 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
         &theme,
     );
 
-    // Help modal overlay — renders on top of everything, context-sensitive to focus
+    // Help modal overlay -- renders on top of everything, context-sensitive to focus
     if app.state.ui.help_visible {
         ui::help_bar::render_help_modal(frame, full, &label, help_keys, &theme);
     }
@@ -129,6 +145,42 @@ pub(crate) fn render(app: &mut App, frame: &mut Frame) {
                 app.request_diff(&hash);
             }
         }
+    }
+}
+
+/// Render only the fullscreen panel.
+fn render_fullscreen(
+    app: &mut App,
+    frame: &mut Frame,
+    ctx: &ui::render_ctx::RenderCtx,
+    area: Rect,
+    panel: crate::view::Panel,
+) {
+    match panel {
+        crate::view::Panel::Branches => {
+            ui::branch_panel::BranchPanel.render(area, frame, &mut app.state.branch, ctx);
+        }
+        crate::view::Panel::Commits => {
+            let debug_label = if app.state.debug {
+                Some(app.state.metrics.format_summary())
+            } else {
+                None
+            };
+            let commit_ctx = ui::render_ctx::RenderCtx {
+                debug_label: debug_label.as_deref(),
+                ..*ctx
+            };
+            ui::commit_table::CommitPanel::new().render(
+                area,
+                frame,
+                &mut app.state.commit,
+                &commit_ctx,
+            );
+        }
+        crate::view::Panel::Diff => {
+            ui::diff_panel::DiffPanel.render(area, frame, &mut app.state.diff, ctx);
+        }
+        _ => {}
     }
 }
 
