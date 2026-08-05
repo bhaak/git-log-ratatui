@@ -272,7 +272,7 @@ fn cycle_theme(state: &mut AppState) {
 fn test_theme_cycles_custom_to_presets_and_back() {
     let mut state = test_state();
 
-    // Custom -> Default preset
+    // Custom -> Default
     cycle_theme(&mut state);
     assert_eq!(state.theme_preset_index, Some(0));
 
@@ -288,7 +288,19 @@ fn test_theme_cycles_custom_to_presets_and_back() {
     cycle_theme(&mut state);
     assert_eq!(state.theme_preset_index, Some(3));
 
-    // Solarized Dark -> Custom
+    // Solarized Dark -> No Color
+    cycle_theme(&mut state);
+    assert_eq!(state.theme_preset_index, Some(4));
+
+    // No Color -> 8-Color
+    cycle_theme(&mut state);
+    assert_eq!(state.theme_preset_index, Some(5));
+
+    // 8-Color -> 16-Color
+    cycle_theme(&mut state);
+    assert_eq!(state.theme_preset_index, Some(6));
+
+    // 16-Color -> Custom
     cycle_theme(&mut state);
     assert!(state.theme_preset_index.is_none());
     assert_eq!(Arc::as_ptr(&state.theme), Arc::as_ptr(&state.custom_theme));

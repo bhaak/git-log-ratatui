@@ -434,7 +434,7 @@ impl Theme {
 
 impl Theme {
     /// Number of built-in preset themes (excluding the custom/startup theme).
-    pub const PRESET_COUNT: usize = 4;
+    pub const PRESET_COUNT: usize = 7;
 
     /// Return the name of the i-th built-in preset theme (0-indexed).
     pub fn preset_name(i: usize) -> &'static str {
@@ -443,6 +443,9 @@ impl Theme {
             1 => "Monokai",
             2 => "Nord",
             3 => "Solarized Dark",
+            4 => "No Color",
+            5 => "8-Color",
+            6 => "16-Color",
             _ => "Unknown",
         }
     }
@@ -455,6 +458,9 @@ impl Theme {
             1 => Theme::preset_monokai(),
             2 => Theme::preset_nord(),
             3 => Theme::preset_solarized_dark(),
+            4 => Theme::no_color(),
+            5 => Theme::eight_color(),
+            6 => Theme::sixteen_color(),
             _ => panic!("preset index out of bounds: {}", i),
         }
     }
@@ -730,7 +736,7 @@ mod tests {
 
     #[test]
     fn test_preset_count() {
-        assert_eq!(Theme::PRESET_COUNT, 4);
+        assert_eq!(Theme::PRESET_COUNT, 7);
     }
 
     #[test]
@@ -739,6 +745,9 @@ mod tests {
         assert_eq!(Theme::preset_name(1), "Monokai");
         assert_eq!(Theme::preset_name(2), "Nord");
         assert_eq!(Theme::preset_name(3), "Solarized Dark");
+        assert_eq!(Theme::preset_name(4), "No Color");
+        assert_eq!(Theme::preset_name(5), "8-Color");
+        assert_eq!(Theme::preset_name(6), "16-Color");
     }
 
     #[test]
