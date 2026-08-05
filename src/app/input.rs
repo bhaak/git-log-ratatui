@@ -178,7 +178,10 @@ fn handle_global_key(app: &mut App, key: KeyEvent) -> Option<Vec<Command>> {
         KeyCode::BackTab => Some(vec![Command::FocusPrev]),
         KeyCode::Char('/') if key.modifiers.is_empty() => Some(vec![Command::FocusSearchClear]),
         KeyCode::Char('t') if key.modifiers.is_empty() => Some(vec![Command::CycleTheme]),
-        KeyCode::Char('T') if key.modifiers.is_empty() => Some(vec![Command::CycleThemeBackward]),
+        KeyCode::Char('T') => Some(vec![Command::CycleThemeBackward]),
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            Some(vec![Command::CycleThemeBackward])
+        }
         KeyCode::Char('?') if key.modifiers.is_empty() => Some(vec![Command::ToggleHelp]),
         KeyCode::Char('f') if key.modifiers.is_empty() => {
             use crate::view::Panel as PanelEnum;
