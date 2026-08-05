@@ -75,7 +75,7 @@ git-log-ratatui/
 │   │
 │   ├── config.rs (146L)     # Config, RawConfig, LayoutConfig, BehaviorConfig, TOML loading
 │   ├── error.rs (28L)       # AppError enum (Git, Io, Clipboard, General)
-│   ├── theme.rs (246L)      # Theme, ThemeConfig, parse_hex()
+│   ├── theme.rs (730L)      # Theme, ThemeConfig, presets (Default, Monokai, Nord, Solarized Dark), parse_hex()
 │   ├── graph.rs (62L)       # git-graph Settings factory (all/local/remote scopes)
 │   ├── tree.rs (270L)       # hierarchical branch tree: build, sort, flatten
 │   ├── lcs.rs (132L)       # word-level diff via `similar` crate
