@@ -407,7 +407,7 @@ impl Theme {
             decoration_tag: Color::LightYellow,
             decoration_local: Color::LightGreen,
             decoration_remote: Color::LightRed,
-            decoration_head: Color::LightCyan,
+            decoration_head: Color::Red,
             diff_added: Color::LightGreen,
             diff_added_word_fg: Color::LightGreen,
             diff_added_word_bg: Color::DarkGray,
@@ -428,6 +428,179 @@ impl Theme {
             scrollbar_thumb: Color::Gray,
             scrollbar_track: Color::DarkGray,
             scope_text: Color::LightYellow,
+        }
+    }
+}
+
+impl Theme {
+    /// Number of built-in preset themes (excluding the custom/startup theme).
+    pub const PRESET_COUNT: usize = 4;
+
+    /// Return the name of the i-th built-in preset theme (0-indexed).
+    pub fn preset_name(i: usize) -> &'static str {
+        match i {
+            0 => "Default",
+            1 => "Monokai",
+            2 => "Nord",
+            3 => "Solarized Dark",
+            _ => "Unknown",
+        }
+    }
+
+    /// Return the i-th built-in preset theme (0-indexed).
+    /// Panics if i >= PRESET_COUNT.
+    pub fn preset(i: usize) -> Self {
+        match i {
+            0 => Theme::preset_default(),
+            1 => Theme::preset_monokai(),
+            2 => Theme::preset_nord(),
+            3 => Theme::preset_solarized_dark(),
+            _ => panic!("preset index out of bounds: {}", i),
+        }
+    }
+
+    fn preset_default() -> Self {
+        Theme::default()
+    }
+
+    fn preset_monokai() -> Self {
+        Theme {
+            focused_border: Color::Rgb(174, 129, 255),
+            unfocused_border: Color::Rgb(117, 113, 94),
+            selected_bg: Color::Rgb(73, 72, 62),
+            unselected_bg: Color::Rgb(39, 40, 34),
+            graph_colors: [
+                Color::Rgb(249, 38, 114),
+                Color::Rgb(166, 226, 46),
+                Color::Rgb(230, 219, 116),
+                Color::Rgb(102, 217, 239),
+                Color::Rgb(174, 129, 255),
+                Color::Rgb(253, 151, 31),
+                Color::Rgb(117, 113, 94),
+                Color::Rgb(249, 38, 114),
+            ],
+            commit_merge: Color::Rgb(253, 151, 31),
+            commit_default: Color::Rgb(248, 248, 242),
+            commit_secondary: Color::Rgb(117, 113, 94),
+            text_primary: Color::Rgb(248, 248, 242),
+            decoration_tag: Color::Rgb(230, 219, 116),
+            decoration_local: Color::Rgb(166, 226, 46),
+            decoration_remote: Color::Rgb(249, 38, 114),
+            decoration_head: Color::Rgb(166, 226, 46),
+            diff_added: Color::Rgb(166, 226, 46),
+            diff_added_word_fg: Color::Rgb(39, 40, 34),
+            diff_added_word_bg: Color::Rgb(166, 226, 46),
+            diff_removed: Color::Rgb(249, 38, 114),
+            diff_removed_word_fg: Color::Rgb(39, 40, 34),
+            diff_removed_word_bg: Color::Rgb(249, 38, 114),
+            diff_modified: Color::Rgb(230, 219, 116),
+            diff_renamed: Color::Rgb(102, 217, 239),
+            diff_hunk_header: Color::Rgb(174, 129, 255),
+            diff_file_header: Color::Rgb(230, 219, 116),
+            diff_context: Color::Rgb(117, 113, 94),
+            diff_selected_file_bg: Color::Rgb(248, 248, 242),
+            diff_selected_file_fg: Color::Rgb(39, 40, 34),
+            diff_selected_file_border: Color::Rgb(166, 226, 46),
+            search_cursor_fg: Color::Rgb(39, 40, 34),
+            search_cursor_bg: Color::Rgb(230, 219, 116),
+            help_title: Color::Rgb(253, 151, 31),
+            scrollbar_thumb: Color::Rgb(174, 129, 255),
+            scrollbar_track: Color::Rgb(73, 72, 62),
+            scope_text: Color::Rgb(102, 217, 239),
+        }
+    }
+
+    fn preset_nord() -> Self {
+        Theme {
+            focused_border: Color::Rgb(136, 192, 208),
+            unfocused_border: Color::Rgb(76, 86, 106),
+            selected_bg: Color::Rgb(67, 76, 94),
+            unselected_bg: Color::Rgb(46, 52, 64),
+            graph_colors: [
+                Color::Rgb(191, 97, 106),
+                Color::Rgb(163, 190, 140),
+                Color::Rgb(235, 203, 139),
+                Color::Rgb(94, 129, 172),
+                Color::Rgb(180, 142, 173),
+                Color::Rgb(136, 192, 208),
+                Color::Rgb(129, 161, 193),
+                Color::Rgb(208, 135, 112),
+            ],
+            commit_merge: Color::Rgb(235, 203, 139),
+            commit_default: Color::Rgb(236, 239, 244),
+            commit_secondary: Color::Rgb(129, 161, 193),
+            text_primary: Color::Rgb(236, 239, 244),
+            decoration_tag: Color::Rgb(235, 203, 139),
+            decoration_local: Color::Rgb(163, 190, 140),
+            decoration_remote: Color::Rgb(191, 97, 106),
+            decoration_head: Color::Rgb(136, 192, 208),
+            diff_added: Color::Rgb(163, 190, 140),
+            diff_added_word_fg: Color::Rgb(46, 52, 64),
+            diff_added_word_bg: Color::Rgb(163, 190, 140),
+            diff_removed: Color::Rgb(191, 97, 106),
+            diff_removed_word_fg: Color::Rgb(46, 52, 64),
+            diff_removed_word_bg: Color::Rgb(191, 97, 106),
+            diff_modified: Color::Rgb(235, 203, 139),
+            diff_renamed: Color::Rgb(180, 142, 173),
+            diff_hunk_header: Color::Rgb(136, 192, 208),
+            diff_file_header: Color::Rgb(235, 203, 139),
+            diff_context: Color::Rgb(76, 86, 106),
+            diff_selected_file_bg: Color::Rgb(216, 222, 233),
+            diff_selected_file_fg: Color::Rgb(46, 52, 64),
+            diff_selected_file_border: Color::Rgb(136, 192, 208),
+            search_cursor_fg: Color::Rgb(46, 52, 64),
+            search_cursor_bg: Color::Rgb(235, 203, 139),
+            help_title: Color::Rgb(235, 203, 139),
+            scrollbar_thumb: Color::Rgb(129, 161, 193),
+            scrollbar_track: Color::Rgb(67, 76, 94),
+            scope_text: Color::Rgb(136, 192, 208),
+        }
+    }
+
+    fn preset_solarized_dark() -> Self {
+        Theme {
+            focused_border: Color::Rgb(133, 153, 0),
+            unfocused_border: Color::Rgb(101, 123, 131),
+            selected_bg: Color::Rgb(0, 43, 54),
+            unselected_bg: Color::Rgb(7, 54, 66),
+            graph_colors: [
+                Color::Rgb(220, 50, 47),
+                Color::Rgb(133, 153, 0),
+                Color::Rgb(181, 137, 0),
+                Color::Rgb(38, 139, 210),
+                Color::Rgb(211, 54, 130),
+                Color::Rgb(42, 161, 152),
+                Color::Rgb(108, 113, 196),
+                Color::Rgb(203, 75, 22),
+            ],
+            commit_merge: Color::Rgb(181, 137, 0),
+            commit_default: Color::Rgb(147, 161, 161),
+            commit_secondary: Color::Rgb(101, 123, 131),
+            text_primary: Color::Rgb(147, 161, 161),
+            decoration_tag: Color::Rgb(181, 137, 0),
+            decoration_local: Color::Rgb(133, 153, 0),
+            decoration_remote: Color::Rgb(220, 50, 47),
+            decoration_head: Color::Rgb(38, 139, 210),
+            diff_added: Color::Rgb(133, 153, 0),
+            diff_added_word_fg: Color::Rgb(0, 43, 54),
+            diff_added_word_bg: Color::Rgb(133, 153, 0),
+            diff_removed: Color::Rgb(220, 50, 47),
+            diff_removed_word_fg: Color::Rgb(0, 43, 54),
+            diff_removed_word_bg: Color::Rgb(220, 50, 47),
+            diff_modified: Color::Rgb(181, 137, 0),
+            diff_renamed: Color::Rgb(38, 139, 210),
+            diff_hunk_header: Color::Rgb(42, 161, 152),
+            diff_file_header: Color::Rgb(181, 137, 0),
+            diff_context: Color::Rgb(101, 123, 131),
+            diff_selected_file_bg: Color::Rgb(238, 232, 213),
+            diff_selected_file_fg: Color::Rgb(0, 43, 54),
+            diff_selected_file_border: Color::Rgb(133, 153, 0),
+            search_cursor_fg: Color::Rgb(0, 43, 54),
+            search_cursor_bg: Color::Rgb(181, 137, 0),
+            help_title: Color::Rgb(181, 137, 0),
+            scrollbar_thumb: Color::Rgb(108, 113, 196),
+            scrollbar_track: Color::Rgb(0, 43, 54),
+            scope_text: Color::Rgb(42, 161, 152),
         }
     }
 }

@@ -87,6 +87,8 @@ pub enum Command {
     ToggleHelp,
     /// Toggle fullscreen view for the currently focused panel (bound to `f`).
     ToggleFullscreen,
+    /// Cycle through built-in theme presets (bound to `t`).
+    CycleTheme,
     /// Quit the application.
     Quit,
 }
@@ -111,4 +113,6 @@ pub(crate) enum Effect {
     ApplySearchFilter,
     /// Mark the UI as dirty (needs re-render).
     SetDirty,
+    /// Cycle through built-in theme presets.
+    CycleTheme,
 }

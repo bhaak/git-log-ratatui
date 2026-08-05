@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use crate::app::commands::{Command, Effect};
 use crate::clipboard;
 use crate::error::AppError;
+use crate::theme::Theme;
 use crate::ui;
 use crate::ui::branch_panel::BranchPanel;
 use crate::ui::commit_table::CommitPanel;
@@ -174,6 +177,7 @@ fn handle_global_key(app: &mut App, key: KeyEvent) -> Option<Vec<Command>> {
         }]),
         KeyCode::BackTab => Some(vec![Command::FocusPrev]),
         KeyCode::Char('/') if key.modifiers.is_empty() => Some(vec![Command::FocusSearchClear]),
+        KeyCode::Char('t') if key.modifiers.is_empty() => Some(vec![Command::CycleTheme]),
         KeyCode::Char('?') if key.modifiers.is_empty() => Some(vec![Command::ToggleHelp]),
         KeyCode::Char('f') if key.modifiers.is_empty() => {
             use crate::view::Panel as PanelEnum;
@@ -310,6 +314,7 @@ fn dispatch(state: &mut super::state::AppState, cmd: &Command) -> Vec<Effect> {
         Command::CycleScope => dispatch_cycle_scope(state),
         Command::SelectBranch(name) => dispatch_select_branch(state, name.clone()),
         Command::ToggleGraph => vec![Effect::ToggleGraph, Effect::SetDirty],
+        Command::CycleTheme => vec![Effect::CycleTheme, Effect::SetDirty],
         Command::MouseClickBranch {
             index,
             full_path,
@@ -548,6 +553,26 @@ fn process_effects(effects: Vec<Effect>, app: &mut App) {
                 super::search::clamp_selection(&mut app.state);
             }
             Effect::SetDirty => app.state.ui.dirty = true,
+            Effect::CycleTheme => {
+                let next_idx = match app.state.theme_preset_index {
+                    None => Some(0),
+                    Some(i) if i + 1 < Theme::PRESET_COUNT => Some(i + 1),
+                    Some(_) => None,
+                };
+                app.state.theme_preset_index = next_idx;
+                app.state.theme = match next_idx {
+                    None => Arc::clone(&app.state.custom_theme),
+                    Some(idx) => Arc::new(Theme::preset(idx)),
+                };
+                let name = match next_idx {
+                    None => "Custom".to_string(),
+                    Some(idx) => Theme::preset_name(idx).to_string(),
+                };
+                app.state.ui.status_message = Some(format!("Theme: {}", name));
+                app.state.ui.status_expiry =
+                    Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
+                app.state.ui.dirty = true;
+            }
         }
     }
 }

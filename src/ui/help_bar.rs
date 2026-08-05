@@ -87,6 +87,7 @@ pub fn render_help_modal(
         KeyBinding::new("/", "Search", "Focus search + clear"),
         KeyBinding::new("Tab / Shift+Tab", "Focus", "Focus next / previous panel"),
         KeyBinding::new("Esc", "Go back", "Go back to previous panel"),
+        KeyBinding::new("t", "Theme", "Cycle through theme presets"),
         KeyBinding::new("Ctrl+S", "Scope", "Cycle branch scope"),
         KeyBinding::new("Ctrl+Z", "Suspend", "Suspend (background)"),
     ];

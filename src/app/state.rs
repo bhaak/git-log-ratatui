@@ -14,6 +14,10 @@ pub struct AppState {
     pub debug: bool,
     pub last_frame_time_ms: u64,
     pub theme: Arc<Theme>,
+    /// The theme loaded from config at startup, preserved for cycling back to it.
+    pub custom_theme: Arc<Theme>,
+    /// Index into the preset theme list. None means the custom theme is active.
+    pub theme_preset_index: Option<usize>,
     pub color_depth: ColorDepth,
     pub branch: BranchState,
     pub commit: CommitTableState,
@@ -33,6 +37,8 @@ impl AppState {
             debug,
             last_frame_time_ms: 0,
             theme: Arc::clone(&config.theme),
+            custom_theme: Arc::clone(&config.theme),
+            theme_preset_index: None,
             color_depth: config.color_depth,
             branch: {
                 let mut s = BranchState::new();
