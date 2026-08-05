@@ -727,4 +727,44 @@ mod tests {
         let theme = Theme::default();
         assert_eq!(theme.graph_colors.len(), 8);
     }
+
+    #[test]
+    fn test_preset_count() {
+        assert_eq!(Theme::PRESET_COUNT, 4);
+    }
+
+    #[test]
+    fn test_preset_name_known() {
+        assert_eq!(Theme::preset_name(0), "Default");
+        assert_eq!(Theme::preset_name(1), "Monokai");
+        assert_eq!(Theme::preset_name(2), "Nord");
+        assert_eq!(Theme::preset_name(3), "Solarized Dark");
+    }
+
+    #[test]
+    fn test_preset_name_unknown() {
+        assert_eq!(Theme::preset_name(999), "Unknown");
+    }
+
+    #[test]
+    fn test_preset_returns_theme_with_graph_colors() {
+        for i in 0..Theme::PRESET_COUNT {
+            let theme = Theme::preset(i);
+            assert_eq!(theme.graph_colors.len(), 8);
+        }
+    }
+
+    #[test]
+    fn test_preset_default_matches_theme_default() {
+        let preset = Theme::preset(0);
+        let default = Theme::default();
+        assert_eq!(preset.graph_colors, default.graph_colors);
+        assert_eq!(preset.focused_border, default.focused_border);
+    }
+
+    #[test]
+    #[should_panic(expected = "preset index out of bounds: 999")]
+    fn test_preset_out_of_bounds_panics() {
+        let _ = Theme::preset(999);
+    }
 }

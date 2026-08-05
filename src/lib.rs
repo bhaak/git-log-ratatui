@@ -14,6 +14,7 @@ pub(crate) mod lcs;
 pub(crate) mod state;
 pub(crate) mod text_utils;
 pub(crate) mod theme;
+pub use theme::Theme;
 pub(crate) mod time_format;
 pub(crate) mod tree;
 pub(crate) mod ui;
