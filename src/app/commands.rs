@@ -89,6 +89,8 @@ pub enum Command {
     ToggleFullscreen,
     /// Cycle through built-in theme presets (bound to `t`).
     CycleTheme,
+    /// Cycle backward through built-in theme presets (bound to `T`).
+    CycleThemeBackward,
     /// Quit the application.
     Quit,
 }
@@ -115,4 +117,6 @@ pub(crate) enum Effect {
     SetDirty,
     /// Cycle through built-in theme presets.
     CycleTheme,
+    /// Cycle backward through built-in theme presets.
+    CycleThemeBackward,
 }

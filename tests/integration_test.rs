@@ -268,6 +268,53 @@ fn cycle_theme(state: &mut AppState) {
     };
 }
 
+/// Simulate backward theme cycling logic.
+fn cycle_theme_backward(state: &mut AppState) {
+    let last = Theme::PRESET_COUNT.saturating_sub(1);
+    let next_idx = match state.theme_preset_index {
+        None => Some(last),
+        Some(0) => None,
+        Some(i) => Some(i - 1),
+    };
+    state.theme_preset_index = next_idx;
+    state.theme = match next_idx {
+        None => Arc::clone(&state.custom_theme),
+        Some(idx) => Arc::new(Theme::preset(idx)),
+    };
+}
+
+#[test]
+fn test_theme_cycles_backward_to_custom() {
+    let mut state = test_state();
+
+    // Custom -> last preset (16-Color)
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(6));
+
+    // 16-Color -> 8-Color
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(5));
+
+    // 8-Color -> No Color
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(4));
+
+    // ... back to Default
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(3));
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(2));
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(1));
+    cycle_theme_backward(&mut state);
+    assert_eq!(state.theme_preset_index, Some(0));
+
+    // Default -> Custom
+    cycle_theme_backward(&mut state);
+    assert!(state.theme_preset_index.is_none());
+    assert_eq!(Arc::as_ptr(&state.theme), Arc::as_ptr(&state.custom_theme));
+}
+
 #[test]
 fn test_theme_cycles_custom_to_presets_and_back() {
     let mut state = test_state();

@@ -46,7 +46,7 @@ If no path is given, the current directory is used.
 | `Shift+Tab` / `h` | Cycle focus backward |
 | `j` / `k` | Move down/up in focused panel |
 | `Ctrl+S` | Cycle branch scope |
-| `t` | Cycle theme preset |
+| `t` / `T` | Cycle theme forward/backward |
 | `y` | Copy short hash (7 chars) |
 | `Y` | Copy full hash |
 | `Ctrl+V` | Paste clipboard into search |
